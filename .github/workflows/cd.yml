@@ -1,0 +1,178 @@
+name: cd
+
+# Triggered by push to main (after a PR merge). For each fixture crate,
+# publishes ghcr.io/botresources/br-<crate>:<version> if that version's image
+# does not exist yet. Git tags + GitHub Releases are owned by the
+# release-tags workflow — this one only ships images. Both are idempotent,
+# so their relative order does not matter.
+#
+# No `latest` tag, on purpose: consumers pin `:<version>` (same posture as
+# the per-crate git tags), and a mutable `latest` could silently drift from
+# the newest version because the publish gate only checks `:<version>`.
+#
+# Per-arch tags are suffixed with the commit SHA so a re-run after a partial
+# failure can never assemble a manifest from another commit's artifacts.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  publish-oidc-test-idp:
+    name: publish oidc-test-idp image
+    runs-on: ubuntu-latest
+    env:
+      CRATE: oidc-test-idp
+      IMAGE: ghcr.io/botresources/br-oidc-test-idp
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # -----------------------------------------------------------------------
+      # Gate: skip if this version's image already exists on GHCR
+      # -----------------------------------------------------------------------
+      - name: resolve version + gate
+        id: ver
+        run: |
+          version="$(grep -m1 '^version = ' "crates/${CRATE}/Cargo.toml" | sed -E 's/^version = "([^"]+)".*/\1/')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          if docker manifest inspect "${IMAGE}:${version}" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${IMAGE}:${version} already exists — nothing to publish"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: verify changelog entry
+        if: steps.ver.outputs.skip == 'false'
+        run: bash .github/scripts/check-changelog.sh
+
+      # -----------------------------------------------------------------------
+      # Toolchain: static-musl cross-compile via cargo-zigbuild
+      # -----------------------------------------------------------------------
+      - name: setup rust targets
+        if: steps.ver.outputs.skip == 'false'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+
+      - name: setup zig
+        if: steps.ver.outputs.skip == 'false'
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: install cargo-zigbuild
+        if: steps.ver.outputs.skip == 'false'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: cargo cache
+        if: steps.ver.outputs.skip == 'false'
+        uses: Swatinem/rust-cache@v2
+
+      - name: setup buildx
+        if: steps.ver.outputs.skip == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      # -----------------------------------------------------------------------
+      # Build: cross-compile both targets
+      # -----------------------------------------------------------------------
+      - name: cargo zigbuild (x86_64-musl)
+        if: steps.ver.outputs.skip == 'false'
+        run: cargo zigbuild --release --locked -p "${CRATE}" --target x86_64-unknown-linux-musl
+
+      - name: cargo zigbuild (aarch64-musl)
+        if: steps.ver.outputs.skip == 'false'
+        run: cargo zigbuild --release --locked -p "${CRATE}" --target aarch64-unknown-linux-musl
+
+      # -----------------------------------------------------------------------
+      # Assert: binaries are truly static (no PT_INTERP segment)
+      # -----------------------------------------------------------------------
+      - name: assert static (no PT_INTERP)
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          for triple in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            path="target/${triple}/release/${CRATE}"
+            if readelf -l "$path" | grep -q "INTERP"; then
+              echo "::error::$path has a PT_INTERP segment — it is NOT static"
+              readelf -l "$path" | grep -A2 "INTERP"
+              exit 1
+            fi
+            echo "ok: $path is static"
+          done
+
+      # -----------------------------------------------------------------------
+      # Package: one image per arch, then multi-arch manifest
+      # -----------------------------------------------------------------------
+      - name: docker build + push (amd64)
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${GITHUB_SHA::12}-amd64"
+          docker build --provenance=false --platform linux/amd64 \
+            --build-arg "BIN_PATH=target/x86_64-unknown-linux-musl/release/${CRATE}" \
+            --file "crates/${CRATE}/Dockerfile" \
+            --tag "${ARCH_TAG}" .
+          docker push "${ARCH_TAG}"
+
+      - name: docker build + push (arm64)
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${GITHUB_SHA::12}-arm64"
+          docker build --provenance=false --platform linux/arm64 \
+            --build-arg "BIN_PATH=target/aarch64-unknown-linux-musl/release/${CRATE}" \
+            --file "crates/${CRATE}/Dockerfile" \
+            --tag "${ARCH_TAG}" .
+          docker push "${ARCH_TAG}"
+
+      - name: create + push multi-arch manifest
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          docker manifest create "${IMAGE}:${VERSION}" \
+            "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-amd64" \
+            "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-arm64"
+          docker manifest push "${IMAGE}:${VERSION}"
+
+      # -----------------------------------------------------------------------
+      # Smoke-test: --version on both arches
+      # -----------------------------------------------------------------------
+      - name: smoke-test published image (both arches)
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          EXPECTED="${CRATE} ${VERSION}"
+          for platform in linux/amd64 linux/arm64; do
+            out=$(docker run --rm --platform "${platform}" "${IMAGE}:${VERSION}" --version)
+            echo "${platform}: ${out}"
+            [[ "$out" == "$EXPECTED" ]] || {
+              echo "::error::Smoke-test failed on ${platform}: expected '${EXPECTED}', got '${out}'"
+              exit 1
+            }
+          done

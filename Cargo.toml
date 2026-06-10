@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/oidc-test-idp"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/BotResources/br-e2e-harness"
+
+[workspace.dependencies]
+axum = "0.8"
+base64 = "0.22"
+jsonwebtoken = "9"
+rand = "0.8"
+rsa = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# dev-only
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+
+# RSA key generation is pure Rust and unbearably slow without optimizations;
+# keep the crypto stack optimized even in dev/test profiles so the pre-generated
+# key pool never makes a test suite wait.
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
