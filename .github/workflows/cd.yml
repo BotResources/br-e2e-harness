@@ -5,6 +5,13 @@ name: cd
 # does not exist yet. Git tags + GitHub Releases are owned by the
 # release-tags workflow — this one only ships images. Both are idempotent,
 # so their relative order does not matter.
+#
+# No `latest` tag, on purpose: consumers pin `:<version>` (same posture as
+# the per-crate git tags), and a mutable `latest` could silently drift from
+# the newest version because the publish gate only checks `:<version>`.
+#
+# Per-arch tags are suffixed with the commit SHA so a re-run after a partial
+# failure can never assemble a manifest from another commit's artifacts.
 
 on:
   push:
@@ -126,31 +133,31 @@ jobs:
       - name: docker build + push (amd64)
         if: steps.ver.outputs.skip == 'false'
         run: |
+          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${GITHUB_SHA::12}-amd64"
           docker build --provenance=false --platform linux/amd64 \
             --build-arg "BIN_PATH=target/x86_64-unknown-linux-musl/release/${CRATE}" \
             --file "crates/${CRATE}/Dockerfile" \
-            --tag "${IMAGE}:${{ steps.ver.outputs.version }}-amd64" .
-          docker push "${IMAGE}:${{ steps.ver.outputs.version }}-amd64"
+            --tag "${ARCH_TAG}" .
+          docker push "${ARCH_TAG}"
 
       - name: docker build + push (arm64)
         if: steps.ver.outputs.skip == 'false'
         run: |
+          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${GITHUB_SHA::12}-arm64"
           docker build --provenance=false --platform linux/arm64 \
             --build-arg "BIN_PATH=target/aarch64-unknown-linux-musl/release/${CRATE}" \
             --file "crates/${CRATE}/Dockerfile" \
-            --tag "${IMAGE}:${{ steps.ver.outputs.version }}-arm64" .
-          docker push "${IMAGE}:${{ steps.ver.outputs.version }}-arm64"
+            --tag "${ARCH_TAG}" .
+          docker push "${ARCH_TAG}"
 
       - name: create + push multi-arch manifest
         if: steps.ver.outputs.skip == 'false'
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          for tag in "$VERSION" latest; do
-            docker manifest create --amend "${IMAGE}:${tag}" \
-              "${IMAGE}:${VERSION}-amd64" \
-              "${IMAGE}:${VERSION}-arm64"
-            docker manifest push "${IMAGE}:${tag}"
-          done
+          docker manifest create "${IMAGE}:${VERSION}" \
+            "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-amd64" \
+            "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-arm64"
+          docker manifest push "${IMAGE}:${VERSION}"
 
       # -----------------------------------------------------------------------
       # Smoke-test: --version on both arches

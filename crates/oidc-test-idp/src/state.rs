@@ -155,7 +155,7 @@ impl IdpState {
         claims.insert("iat".into(), json!(now));
         claims.insert(
             "exp".into(),
-            json!(now + req.expires_in_secs.unwrap_or(600)),
+            json!(now.saturating_add(req.expires_in_secs.unwrap_or(600))),
         );
         claims.insert(email_claim.to_string(), json!(req.email));
         if let Some(extra) = &req.claims {

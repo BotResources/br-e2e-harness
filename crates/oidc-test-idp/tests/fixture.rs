@@ -213,6 +213,29 @@ async fn omitting_the_kid_header_is_pilotable() {
     .await;
     let header = jsonwebtoken::decode_header(minted["id_token"].as_str().unwrap()).unwrap();
     assert!(header.kid.is_none());
+    assert_eq!(
+        minted["kid"], "e2e-key-0",
+        "the response reports the signing key even when the JWT header omits it"
+    );
+}
+
+#[tokio::test]
+async fn explicit_publish_adds_a_previously_unpublished_kid_to_the_jwks() {
+    let app = test_app();
+    let (status, state) = post(&app, "/admin/rotate", json!({"publish": ["e2e-key-2"]})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        state["published_kids"],
+        json!(["e2e-key-0", "e2e-key-1", "e2e-key-2"])
+    );
+    assert_eq!(
+        state["active_kid"], "e2e-key-0",
+        "publish alone must not change the active signing key"
+    );
+
+    let (_, jwks) = get(&app, "/jwks").await;
+    let set: JwkSet = serde_json::from_value(jwks).unwrap();
+    assert!(set.find("e2e-key-2").is_some());
 }
 
 #[tokio::test]

@@ -45,6 +45,9 @@ different `ISSUER`s.
 
 ### `POST /admin/mint` → `{ "id_token": "...", "kid": "..." }`
 
+The `kid` in the response is the key that **signed** the token — it is
+reported even when `omit_kid_header` strips it from the JWT header.
+
 ```jsonc
 {
   "email": "alice@example.com",      // required; becomes `sub` + the email claim
