@@ -1,0 +1,47 @@
+[package]
+name = "br-test-harness"
+version = "0.1.0"
+description = "Real-infra end-to-end test harness for BotResources platform services — TEST FIXTURE ONLY"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+
+[dependencies]
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", rev = "70db51f", version = "0.6" }
+
+oidc-test-idp = { path = "../oidc-test-idp", version = "0.1.0" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-nats = "0.48"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "uuid",
+] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "stream",
+] }
+axum = { workspace = true }
+uuid = { version = "1", features = ["v7"] }
+dotenvy = "0.15"
+url = "2"
+percent-encoding = "2"
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.28", default-features = false, features = [
+    "connect",
+    "rustls-tls-native-roots",
+] }
+bytes = "1"
+tempfile = "3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

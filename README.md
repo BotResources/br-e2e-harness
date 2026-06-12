@@ -43,9 +43,22 @@ shared by every repo that needs them.
 
 ## Catalog
 
+The repo holds two kinds of fixture. **Service fixtures** are deployable
+controllable equivalents of a real dependency, consumed as a container image.
+**Library fixtures** are dev-dependency crates of reusable test plumbing,
+consumed as a `git` + `tag` Cargo dependency (not an image).
+
+### Service fixtures (container images)
+
 | Fixture | Image | Replaces | Docs | Changelog |
 |---|---|---|---|---|
 | `oidc-test-idp` | `ghcr.io/botresources/br-oidc-test-idp` | A real OIDC identity provider (Entra, Google, …) | [README](crates/oidc-test-idp/README.md) | [CHANGELOG](crates/oidc-test-idp/CHANGELOG.md) |
+
+### Library fixtures (dev-dependency crates)
+
+| Fixture | Consumed as | Gives you | Docs | Changelog |
+|---|---|---|---|---|
+| `br-test-harness` | `[dev-dependencies]` git + tag | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
 
 Planned: `identity-test` — a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested
@@ -53,10 +66,14 @@ against *an* identity without depending on any project's private one.
 
 ## Distribution
 
-Each fixture is a workspace crate, versioned and tagged independently
-(`<crate>-vX.Y.Z`), and consumed as a **container image**: on merge to `main`,
-CD publishes `ghcr.io/botresources/br-<crate>:<version>` (multi-arch,
-amd64 + arm64) when that version's image does not exist yet.
+Every fixture is a workspace crate, versioned and tagged independently
+(`<crate>-vX.Y.Z`). How it is *consumed* depends on its kind:
+
+- **Service fixtures** ship as a **container image**: on merge to `main`, CD
+  publishes `ghcr.io/botresources/br-<crate>:<version>` (multi-arch, amd64 +
+  arm64) when that version's image does not exist yet.
+- **Library fixtures** (`br-test-harness`) are consumed as a `git` + `tag`
+  **dev-dependency** — there is no image. The tag is the release.
 
 ## Release process
 
@@ -65,7 +82,8 @@ amd64 + arm64) when that version's image does not exist yet.
 2. CI gates the PR (fmt, clippy, tests, deny, machete, semver-checks,
    changelog entry).
 3. On merge to `main`: `release-tags` creates the `<crate>-vX.Y.Z` tag and
-   GitHub Release; `cd` builds and publishes the missing image version.
+   GitHub Release. For a service fixture, `cd` then builds and publishes the
+   missing image version; a library fixture's tag is itself the release.
 
 ## Dev
 

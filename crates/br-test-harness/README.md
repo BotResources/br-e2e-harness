@@ -1,0 +1,175 @@
+# br-test-harness
+
+The **real-infra end-to-end test harness** for BotResources platform services —
+the "mock nothing" plumbing every service needs to write its *first* e2e test.
+
+> ⚠️ **TEST FIXTURE ONLY.** Add it as a **dev-dependency**, never a runtime one.
+> It forges `X-Passport` headers (the service is *inside* the trust boundary the
+> gateway normally establishes), provisions throwaway databases with elevated
+> roles, and spawns real binaries. Never link it into a production build.
+
+The BR doctrine is *real* end-to-end tests: real Postgres, real NATS JetStream +
+KV, the real service binary, a real `X-Passport` over the wire — **mock nothing
+inside the system under test, and no test backdoor in any production binary**.
+Test accommodations belong in the *harness*; you substitute a *dependency* with a
+controllable equivalent, you never weaken production code. Standing up that
+harness is, today, the single largest entry tax on a new service. This crate pays
+it once.
+
+Unlike a service's local copy, this harness binds to **no project's private
+crate**. It depends on exactly one platform crate — `br-core-auth`, for the
+`Passport` / `X-Passport` codec — and otherwise hands back **raw** `sqlx`,
+`async_nats`, and `reqwest` handles. Any BR service, whatever its own KV or
+persistence abstraction, can inject them.
+
+## What it gives you
+
+| Need | Helper |
+|---|---|
+| A throwaway Postgres DB + non-superuser, CNPG-shaped owner role | `E2eDatabase` |
+| A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` |
+| A connection to NATS + isolated KV buckets | `TestNats` |
+| Run the real service binary as a child (drained, readiness-polled) | `SpawnedProcess`, `run_once` |
+| An in-process Axum server on a random port | `TestServer` |
+| A forged `Passport` (`Human` / `Service`) | `PassportBuilder` |
+| A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` |
+| A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` |
+| A live GraphQL Server-Sent-Events subscription | `SseSubscription` |
+| Poll an async condition until it holds or times out | `wait_until` |
+| A pilotable in-process OIDC IdP (discovery, JWKS, mint, rotate) | `oidc` |
+
+### Claim keys are a per-project seam
+
+`PassportBuilder` owns the `Passport` **structure** — it exposes typed setters
+for `br-core-auth`'s canonical fields (`user_id`, `super_admin`, `active`, `pat`
+for the auth method, `impersonator`) — but it names **none** of the free-form
+`claims` keys. Those (`email`, `org_id`, roles, a tenant id, scopes, …) vary per
+project, so each consuming **project supplies its own** via `.claim(key, value)`
+(or `.claims(iter)`). The harness stays project-agnostic; there is no canonical
+or "standard" key list to keep in lockstep, by design.
+
+### The de-flake primitives
+
+Two helpers exist specifically to kill the classic e2e flakes:
+
+- **`WsSubscription::next_matching(predicate, timeout)`** — drain-until-match.
+  A broadcast subscription is woken by *every* event in its class, so a socket
+  opened mid-chain can receive an in-flight earlier-transition frame before the
+  one the assertion wants. `next_matching` skips non-matching frames until the
+  predicate holds, and on timeout reports every frame it skipped — so a *genuine*
+  miss is still fully diagnosable. (`next_data` remains, for the single-push case.)
+- **`wait_until(timeout, predicate)`** — poll an async condition (a projection
+  row landed, an integration event was published, a NATS consumer count moved)
+  up to a bounded deadline, instead of sleeping a fixed amount and hoping.
+
+## Why — the non-obvious bits
+
+The source is comment-free by design (it is read by agents, for which comments
+are token overhead). The intent that the signatures don't make obvious lives
+here, synthetically:
+
+| Thing | Why it is the way it is |
+|---|---|
+| `E2eDatabase` owner = `NOSUPERUSER` + a `bypassrls` flag | The owner mirrors the CNPG GitOps owner: an RLS-bypassing agent for migrations/bootstrap, `NOSUPERUSER` so `FORCE ROW LEVEL SECURITY` behaves exactly as in prod. Pass `bypassrls = false` **only** for negative tests asserting a misdeclared owner is caught — it reproduces incident **2026-06-11**, where a no-bypass owner under `FORCE RLS` read zero rows and a deploy cascade failed. |
+| `create*`'s `managed_roles` silently skips unknown roles | Only roles that **already exist** are granted to the owner `WITH ADMIN OPTION` (PG16: a `CREATEROLE` role needs `ADMIN` on a role to `ALTER` it). Roles the service creates itself at startup are deliberately left alone — this is not a typo guard. |
+| `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
+| `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
+| Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_event` returns `None` **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
+| `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
+
+## Install
+
+It is a **dev-dependency**. Pin it to a release tag (git-tag distribution; no
+crates.io — same model as the rest of the platform):
+
+```toml
+[dev-dependencies]
+br-test-harness = { git = "ssh://git@github.com/BotResources/br-e2e-harness", tag = "br-test-harness-v0.1.0" }
+```
+
+`br-test-harness` itself depends on `br-core-auth` pinned to a `br-rust-common`
+git rev. If your service already pins `br-rust-common`, keep both on the **same
+rev** so Cargo resolves a single source (two revs of one git URL are two distinct
+sources and duplicate `br-core-*` in the graph).
+
+## Running the tests it powers
+
+The harness drives **real** infrastructure; it never mocks it to make a test
+pass — it fails loud when infra is missing. A service whose suite uses it needs:
+
+- **Postgres** reachable, via `E2E_PG_ADMIN_URL` (falling back to `DATABASE_URL`)
+  with a role allowed to `CREATE DATABASE` / `CREATE ROLE` — e.g.
+  `postgresql://postgres@localhost:5432/postgres`.
+- **NATS JetStream** — either `NATS_URL` (e.g. `nats://localhost:4222`) for the
+  shared-server / per-bucket isolation path, or `nats-server` on `PATH` for the
+  `SpawnedNats` dedicated-server path.
+
+`.env` is loaded automatically (a plain `#[tokio::test]` does not do this).
+
+## Wiring it into a service's e2e tests
+
+Two shapes, both real-infra:
+
+**In-process** — provision infra, build the service's router/schema with the
+harness pool + NATS, mount it on a `TestServer`, drive it with a `GraphqlClient`
+and a forged `PassportBuilder`:
+
+```rust,ignore
+use br_test_harness::{TestNats, PassportBuilder, GraphqlClient, TestServer};
+
+#[tokio::test]
+async fn lists_only_my_rows() {
+    let nats = TestNats::setup().await;                  // real NATS + isolated buckets
+    let app  = my_service::build_router(pool, nats.kv().clone());
+    let srv  = TestServer::spawn(app).await;
+
+    // The harness owns the Passport structure; the project owns its claim keys.
+    let passport = PassportBuilder::new().claim("email", "alice@example.com").claim("scopes", vec!["read"]).build();
+    let gql = GraphqlClient::new(&srv.base_url);
+    let res = gql.query(&passport, QUERY, serde_json::json!({})).await;
+    assert_eq!(res["data"]["things"].as_array().unwrap().len(), 1);
+
+    nats.cleanup().await;
+}
+```
+
+**True end-to-end** — provision an `E2eDatabase` + a `SpawnedNats`, spawn the
+real binary with `SpawnedProcess` (it runs its own migrations and connects as the
+owner role), then drive it over HTTP / WS and assert against the DB + NATS:
+
+```rust,ignore
+use std::time::Duration;
+use br_test_harness::{E2eDatabase, SpawnedNats, SpawnedProcess, WsSubscription, PassportBuilder};
+
+let db   = E2eDatabase::create_named("identity", "identity_owner", true, &["identity_app"]).await;
+let nats = SpawnedNats::start().await;
+let mut svc = SpawnedProcess::spawn(
+    env!("CARGO_BIN_EXE_my-service"),
+    &["serve"],
+    &[("DATABASE_URL", &db.owner_url()), ("NATS_URL", &nats.url())],
+);
+svc.wait_for_http_ok(&format!("{base}/health"), Duration::from_secs(30)).await.unwrap();
+
+let passport = PassportBuilder::new().super_admin(true).build();
+let mut sub  = WsSubscription::open(&base, &passport, SUBSCRIPTION).await.unwrap();
+// … mutate …
+let push = sub.next_matching(|d| d["thingChanged"]["status"] == "ACTIVE", Duration::from_secs(5)).await.unwrap();
+
+svc.shutdown().await;
+nats.shutdown().await;
+db.cleanup().await;
+```
+
+## Relationship to `oidc-test-idp`
+
+The sibling [`oidc-test-idp`](../oidc-test-idp/README.md) — the pilotable OIDC
+test IdP — is **re-exported as `br_test_harness::oidc`**. A service that turns an
+OIDC `id_token` into an internal credential gets infra **and** a controllable IdP
+from this single dev-dependency: build `oidc::IdpState`, mount `oidc::router` on a
+`TestServer`, point the system under test's `ISSUER` at its base URL, and mint /
+rotate keys straight from the test — no second container. (The same fixture also
+ships as `ghcr.io/botresources/br-oidc-test-idp` for the out-of-process case.)
+
+## License
+
+Apache-2.0. MSRV **1.88** (edition 2024).
