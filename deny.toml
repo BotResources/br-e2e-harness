@@ -1,28 +1,15 @@
-# cargo-deny configuration — https://embarkstudios.github.io/cargo-deny/
-#
-# Enforced in CI via the `cargo-deny check` job. Run locally with:
-#   cargo install --locked cargo-deny
-#   cargo deny check
-
 [graph]
 all-features = true
 
 [advisories]
 version = 2
 yanked = "deny"
-# Crates can opt out of specific advisories here, with a comment explaining why.
 ignore = [
-    # Marvin attack: timing side-channel in `rsa` private-key *decryption*.
-    # This workspace only ships test fixtures that sign short-lived tokens on
-    # isolated test networks; there is no decryption path and no adversary with
-    # a timing oracle in the threat model. Same ignore as svc-auth's CI.
     "RUSTSEC-2023-0071",
 ]
 
 [licenses]
 version = 2
-# Permissive licenses we accept across the workspace and its transitive deps.
-# Keep the list tight — every addition is a deliberate policy decision.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -35,11 +22,6 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "MPL-2.0",
-    # Mozilla's CA-root data set, vendored by `webpki-roots` (pulled in
-    # transitively by the rustls stack under reqwest / sqlx / async-nats in
-    # `br-test-harness`). CDLA-Permissive-2.0 is an OSI-recognized permissive
-    # data license with no copyleft and no patent traps — safe for a fixtures
-    # repo. Added when br-test-harness brought the rustls TLS stack in.
     "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
@@ -52,8 +34,4 @@ wildcards = "deny"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# br-test-harness pins `br-core-auth` (the Passport / X-Passport codec) to a
-# git rev of the shared platform library — the same git-tag distribution model
-# every BR consumer uses (br-rust-common is not published to crates.io). This
-# is the only allowed git source.
 allow-git = ["https://github.com/BotResources/br-rust-common"]

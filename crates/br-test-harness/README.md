@@ -76,6 +76,8 @@ here, synthetically:
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_event` returns `None` **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
 | `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
+| `deny.toml` ignores `RUSTSEC-2023-0071` (Marvin timing attack in `rsa`) | The advisory is a side-channel in `rsa` private-key *decryption*. This workspace only ships test fixtures that **sign** short-lived tokens on isolated test networks — no decryption path, no timing-oracle adversary in the threat model. Same ignore as `svc-auth`'s CI. |
+| `deny.toml` allows `CDLA-Permissive-2.0` | Mozilla's CA-root data set, vendored by `webpki-roots`, pulled in transitively by the rustls stack under `reqwest` / `sqlx` / `async-nats`. It is an OSI-recognized permissive *data* license with no copyleft and no patent traps — safe for a fixtures repo. Added when `br-test-harness` brought the rustls TLS stack in. |
 
 ## Install
 
@@ -105,6 +107,27 @@ pass — it fails loud when infra is missing. A service whose suite uses it need
   `SpawnedNats` dedicated-server path.
 
 `.env` is loaded automatically (a plain `#[tokio::test]` does not do this).
+
+### The harness's own self-tests
+
+The two load-bearing real-infra paths — `SpawnedNats` (spawns a real
+`nats-server` and reads back its bound port) and `E2eDatabase` (provisions the
+ephemeral owner role and the transaction-local RLS context) — have focused
+self-tests in `tests/`. They are **`#[ignore]`-gated** so the default
+`cargo test` stays green without infra; run them explicitly:
+
+```sh
+# SpawnedNats path — needs `nats-server` on PATH (it spawns its OWN server):
+cargo test -p br-test-harness --test spawned_nats -- --ignored
+
+# E2eDatabase path — needs an admin Postgres able to CREATE ROLE / CREATE DATABASE,
+# via E2E_PG_ADMIN_URL (falling back to DATABASE_URL):
+E2E_PG_ADMIN_URL=postgresql://postgres:postgres@localhost:5432/postgres \
+  cargo test -p br-test-harness --test e2e_db -- --ignored
+```
+
+CI runs both in the `infra-e2e` job against a Postgres service container and a
+runner-installed `nats-server`.
 
 ## Wiring it into a service's e2e tests
 
