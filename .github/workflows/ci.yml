@@ -29,6 +29,45 @@ jobs:
       - name: cargo test
         run: cargo test --workspace --all-targets --locked
 
+  infra-e2e:
+    name: harness self-test (real infra)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      E2E_PG_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: infra-e2e
+      - name: install nats-server
+        env:
+          NATS_SERVER_VERSION: v2.10.22
+        run: |
+          set -euo pipefail
+          url="https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/nats-server-${NATS_SERVER_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL "$url" -o /tmp/nats-server.tar.gz
+          tar -xzf /tmp/nats-server.tar.gz -C /tmp
+          sudo install "/tmp/nats-server-${NATS_SERVER_VERSION}-linux-amd64/nats-server" /usr/local/bin/nats-server
+          nats-server --version
+      - name: harness real-infra self-tests
+        run: cargo test -p br-test-harness --all-targets --locked -- --ignored
+
   msrv:
     name: MSRV 1.88 build
     runs-on: ubuntu-latest

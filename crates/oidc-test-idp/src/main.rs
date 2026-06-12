@@ -10,8 +10,6 @@ fn required_env(name: &str, hint: &str) -> String {
     })
 }
 
-/// Fail-closed env parsing: absent → default, garbage → exit. A fixture that
-/// silently fell back on a default would lie to the test that configured it.
 fn usize_env(name: &str, default: usize) -> usize {
     match std::env::var(name) {
         Err(_) => default,
@@ -24,7 +22,6 @@ fn usize_env(name: &str, default: usize) -> usize {
 
 #[tokio::main]
 async fn main() {
-    // CD smoke-tests the published image with `--version`.
     if std::env::args().any(|arg| arg == "--version") {
         println!("oidc-test-idp {}", env!("CARGO_PKG_VERSION"));
         return;

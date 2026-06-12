@@ -1,6 +1,3 @@
-//! Fixture state: the key pool, which keys the JWKS publishes, the active
-//! signing key, and the fetch counters tests assert against.
-
 use std::collections::BTreeSet;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -11,17 +8,10 @@ use serde_json::{Value, json};
 
 use crate::keys::{KeyEntry, generate_pool};
 
-/// Startup configuration. All keys are generated here, once — rotation never
-/// generates anything.
 pub struct IdpConfig {
-    /// The URL by which the *system under test* reaches this fixture
-    /// (e.g. `http://oidc-idp:9100`). Used as the `iss` claim, the discovery
-    /// `issuer`, and the base of `jwks_uri` — they must all match.
     pub issuer: String,
     pub key_pool_size: usize,
-    /// How many pool keys the JWKS publishes at startup (`e2e-key-0` …).
     pub initial_published: usize,
-    /// Default `aud` for minted tokens when the request does not set one.
     pub default_client_id: String,
 }
 
@@ -38,20 +28,11 @@ pub enum AdminError {
 #[derive(Deserialize)]
 pub struct MintRequest {
     pub email: String,
-    /// Defaults to the fixture's `default_client_id`.
     pub aud: Option<String>,
-    /// Claim name carrying the email (e.g. `preferred_username` for
-    /// Entra-shaped tokens). Defaults to `email`.
     pub email_claim: Option<String>,
-    /// Signing key. Defaults to the active key. May name an *unpublished*
-    /// pool key — that is how you mint a token the JWKS will never vouch for.
     pub kid: Option<String>,
-    /// Defaults to 600. Negative values mint an already-expired token.
     pub expires_in_secs: Option<i64>,
-    /// Extra claims, merged last — they override the generated ones, so a
-    /// test can also forge a wrong `iss` or `aud` on a correctly-signed token.
     pub claims: Option<serde_json::Map<String, Value>>,
-    /// Omit the `kid` JWT header to exercise single-key-JWKS fallbacks.
     #[serde(default)]
     pub omit_kid_header: bool,
 }
@@ -64,12 +45,8 @@ pub struct MintResponse {
 
 #[derive(Deserialize, Default)]
 pub struct RotateRequest {
-    /// Kids to add to the JWKS.
     pub publish: Option<Vec<String>>,
-    /// Kids to remove from the JWKS (removing all of them is allowed —
-    /// an empty JWKS is a useful test state).
     pub unpublish: Option<Vec<String>>,
-    /// New active signing key (may be unpublished).
     pub active: Option<String>,
 }
 
@@ -85,8 +62,6 @@ pub struct IdpState {
 }
 
 impl IdpState {
-    /// Generates the whole key pool. Panics on inconsistent configuration —
-    /// this runs once at startup and must fail loud, not limp along.
     pub fn new(config: IdpConfig) -> Self {
         assert!(
             config.key_pool_size >= 2,
@@ -113,9 +88,6 @@ impl IdpState {
         &self.issuer
     }
 
-    /// The discovery document. Minimal on purpose: only what id_token
-    /// verification flows need. We do not advertise endpoints (authorization,
-    /// token) that this fixture does not implement.
     pub fn discovery_document(&self) -> Value {
         self.discovery_fetches.fetch_add(1, Ordering::Relaxed);
         json!({
@@ -127,7 +99,6 @@ impl IdpState {
         })
     }
 
-    /// The JWKS: exactly the published subset of the pool.
     pub fn jwks_document(&self) -> Value {
         self.jwks_fetches.fetch_add(1, Ordering::Relaxed);
         let published = self.published.read().unwrap();
@@ -177,9 +148,6 @@ impl IdpState {
         })
     }
 
-    /// With an empty body: publish the next unpublished pool key and make it
-    /// the active signing key (the common "the IdP rotated" gesture).
-    /// With explicit fields: apply exactly what was asked.
     pub fn rotate(&self, req: &RotateRequest) -> Result<Value, AdminError> {
         let explicit = req.publish.is_some() || req.unpublish.is_some() || req.active.is_some();
         if explicit {
@@ -211,8 +179,6 @@ impl IdpState {
         Ok(self.snapshot())
     }
 
-    /// Back to the startup state, counters zeroed — test isolation when a
-    /// single fixture instance is shared by a sequential suite.
     pub fn reset(&self) -> Value {
         *self.published.write().unwrap() = (0..self.initial_published).collect();
         *self.active.write().unwrap() = 0;

@@ -1,6 +1,3 @@
-//! HTTP surface. Public side mimics a real IdP (discovery + JWKS); the
-//! `/admin/*` side is the test-only control plane.
-
 use std::sync::Arc;
 
 use axum::extract::State;

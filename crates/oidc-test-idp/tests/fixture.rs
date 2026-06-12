@@ -1,7 +1,3 @@
-//! The fixture's own spec, exercised through its HTTP surface: what each
-//! endpoint serves, and that minted tokens verify (or deliberately fail to
-//! verify) against the JWKS exactly as a consumer's OIDC validator would see.
-
 use std::sync::Arc;
 
 use axum::Router;

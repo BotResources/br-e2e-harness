@@ -1,8 +1,3 @@
-//! RSA key-pool generation and JWK encoding.
-//!
-//! The entire pool is generated once at startup (in parallel — pure-Rust RSA
-//! keygen is slow) so that key rotation during a test is instantaneous.
-
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rsa::pkcs1::EncodeRsaPrivateKey;
@@ -11,15 +6,12 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 
 const RSA_BITS: usize = 2048;
 
-/// One signing key of the pool: the private half for minting, the public
-/// half pre-encoded as the JWK the `/jwks` endpoint serves when published.
 pub struct KeyEntry {
     pub kid: String,
     pub encoding_key: jsonwebtoken::EncodingKey,
     pub jwk: serde_json::Value,
 }
 
-/// Generate `size` RSA keys in parallel, kids `e2e-key-0` … `e2e-key-{size-1}`.
 pub fn generate_pool(size: usize) -> Vec<KeyEntry> {
     let handles: Vec<_> = (0..size)
         .map(|i| std::thread::spawn(move || generate_one(i)))
