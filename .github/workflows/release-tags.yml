@@ -48,8 +48,13 @@ jobs:
           shopt -s nullglob
           created_tags=0
           created_releases=0
+          released_by_explicit_tag="conformance-scope-cli"
           for toml in crates/*/Cargo.toml; do
             crate=$(basename "$(dirname "$toml")")
+            if [ "$crate" = "$released_by_explicit_tag" ]; then
+              echo "✓ skipping ${crate}: released by an explicit ${crate}-vX.Y.Z tag (release-cli workflow)"
+              continue
+            fi
             changelog="crates/${crate}/CHANGELOG.md"
             version=$(grep -m1 '^version = ' "$toml" | sed -E 's/^version = "([^"]+)".*/\1/')
             if [ -z "$version" ]; then

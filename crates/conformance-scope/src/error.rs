@@ -16,6 +16,10 @@ pub enum ConformanceError {
     NonConformantDeclare(String),
     #[error("timed out waiting for {0}")]
     Timeout(String),
+    #[error("polling /readyz failed: {0}")]
+    Readyz(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 pub type Result<T> = std::result::Result<T, ConformanceError>;

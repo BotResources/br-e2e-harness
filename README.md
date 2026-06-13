@@ -59,10 +59,17 @@ consumed as a `git` + `tag` Cargo dependency (not an image).
 | Fixture | Consumed as | Gives you | Docs | Changelog |
 |---|---|---|---|---|
 | `br-test-harness` | `[dev-dependencies]` git + tag | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
+| `conformance-scope` | `[dev-dependencies]` git + tag | Black-box S1–S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
 
 Planned: `identity-test` — a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested
 against *an* identity without depending on any project's private one.
+
+### CLI tools (release binaries)
+
+| Tool | Consumed as | Gives you | Docs | Changelog |
+|---|---|---|---|---|
+| `conformance-scope-cli` (bin `conformance-scope`) | GitHub Release binary (`conformance-scope-cli-vX.Y.Z`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
 
 ## Distribution
 
@@ -72,8 +79,11 @@ Every fixture is a workspace crate, versioned and tagged independently
 - **Service fixtures** ship as a **container image**: on merge to `main`, CD
   publishes `ghcr.io/botresources/br-<crate>:<version>` (multi-arch, amd64 +
   arm64) when that version's image does not exist yet.
-- **Library fixtures** (`br-test-harness`) are consumed as a `git` + `tag`
-  **dev-dependency** — there is no image. The tag is the release.
+- **Library fixtures** (`br-test-harness`, `conformance-scope`) are consumed as a
+  `git` + `tag` **dev-dependency** — there is no image. The tag is the release.
+- **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
+  (static musl-linux + macOS) built on an explicit `conformance-scope-cli-vX.Y.Z`
+  tag — no image; downloaded and run directly.
 
 ## Release process
 
@@ -84,6 +94,17 @@ Every fixture is a workspace crate, versioned and tagged independently
 3. On merge to `main`: `release-tags` creates the `<crate>-vX.Y.Z` tag and
    GitHub Release. For a service fixture, `cd` then builds and publishes the
    missing image version; a library fixture's tag is itself the release.
+
+`conformance-scope-cli` is the exception: it is **excluded from auto-tagging** and
+released by an explicit human-pushed `conformance-scope-cli-vX.Y.Z` tag, which
+triggers `release-cli` to build and upload its binaries — see its
+[README](crates/conformance-scope-cli/README.md#releasing).
+
+## Why
+
+| Thing | Why it is the way it is |
+|---|---|
+| `[profile.dev.package.{rsa,num-bigint-dig}] opt-level = 3` in the root `Cargo.toml` | Pure-Rust RSA key generation is unbearably slow unoptimized; the OIDC test IdP's pre-generated key pool would stall every test suite otherwise, so the crypto stack stays optimized even in dev/test profiles. |
 
 ## Dev
 

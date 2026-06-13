@@ -3,6 +3,45 @@
 All notable changes to `conformance-scope` are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.2.0] — 2026-06-13
+
+### Added
+
+- Single-implementation check API: each S1–S6 check (plus a `declaration-content`
+  content assertion) has one implementation in `checks/`, parameterized by a
+  `CheckContext { js, readyz, capture, expected, service_key, behavior, timeout }`
+  and returning a structured `CheckOutcome` instead of panicking. Both
+  `tests/conformance.rs` and the new `conformance-scope-cli` binary call these —
+  no second copy of the protocol logic.
+- Structured outcome types: `CheckId`, `CheckStatus { Pass, Fail, Skipped }`,
+  `CheckOutcome { id, status, expected, observed, detail }`, `ConformanceReport`
+  with `passed()` / `failed()` / `skipped()` / `is_conformant()`.
+- `ExpectedDeclaration` / `ExpectedScope` / `PlatformOnly` — the assertion input,
+  with `platform_only` modeled **per scope** (faithful to `br-core-scope`'s
+  `ScopeSpec.platform_only`); `assert_matches` renders an expected-vs-observed
+  scope-set diff. Parsers `parse_scope_keys`, `parse_platform_only` (accepts a
+  single bool or a per-scope `key=bool` CSV).
+- `ReadyzProbe` — the readiness role decoupled from any spawned process, polling
+  a given `/readyz` URL (spawn passes the subject's `base_url()`, attach passes
+  the external URL).
+- Two runners over the same checks: `run_spawn` (stands up `nats-server` + the
+  subject binary, full `s1..s6`) and `run_attach` (zero host runtime deps:
+  connects to a live service's NATS + `/readyz`, default `s1, s2` +
+  `declaration-content`, never creates the stream — the service owns it, and the
+  declare consumer fails loud if it is absent).
+- `Scenario` / `AcceptorBehavior` with scenario parsing/defaults. In spawn mode
+  the rejection scenario (s4) always exercises a rejection regardless of the
+  global accept/reject flag; the global `--reject` reason flows through when
+  given.
+- `DEFAULT_TIMEOUT` (10s).
+
+### Changed
+
+- `tests/conformance.rs` now drives the single-implementation checks and asserts
+  the returned `CheckOutcome`; the S1–S6 behavior is unchanged (a previously
+  passing scenario still passes, a violation still fails). Adds two content
+  assertions (matches-expected, flags-wrong-scopes).
+
 ## [0.1.0] — 2026-06-13
 
 ### Added

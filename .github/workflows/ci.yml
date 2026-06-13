@@ -72,6 +72,8 @@ jobs:
         run: cargo test -p br-test-harness --all-targets --locked -- --ignored
       - name: scope-declaration conformance battery
         run: cargo test -p conformance-scope --test conformance --locked -- --ignored
+      - name: scope-declaration conformance battery via the CLI binary
+        run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
 
   msrv:
     name: MSRV 1.88 build
