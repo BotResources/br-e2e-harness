@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/br-test-harness", "crates/conformance-scope", "crates/oidc-test-idp"]
+members = [
+    "crates/br-test-harness",
+    "crates/conformance-scope",
+    "crates/conformance-scope-cli",
+    "crates/oidc-test-idp",
+]
 
 [workspace.package]
 edition = "2024"

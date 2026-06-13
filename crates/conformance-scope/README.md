@@ -71,6 +71,59 @@ binary by reusing the helpers, not just the tests:
 - `create_handshake_stream`, the three subject constants
   (`DECLARE_SUBJECT` / `ACCEPTED_SUBJECT` / `REJECTED_SUBJECT`).
 
+## The single-implementation check API
+
+Each S1–S6 check (plus the `declaration-content` assertion) has **one**
+implementation in `checks/`, returning a structured outcome instead of
+panicking. Both `tests/conformance.rs` and the [`conformance-scope-cli`] binary
+call these — there is no second copy of the protocol logic.
+
+- `CheckContext<'a>` — the parameters a check needs: a `jetstream::Context`, a
+  `ReadyzProbe`, a `DeclareCapture`, the `ExpectedDeclaration`, the declaring
+  `ServiceKey`, the `AcceptorBehavior`, and a per-step `timeout`.
+- `run_scenario(scenario, ctx) -> CheckOutcome` and the individual check
+  functions (`declare_well_formed`, `declaration_content`, `readiness_gated`,
+  `republishes_same_correlation_id`, `rejection_stops_readiness`,
+  `duplicate_confirmations_tolerated`, `disabled_mode_ready_without_declare`).
+- `CheckId` / `CheckStatus { Pass, Fail, Skipped }` / `CheckOutcome { id, status,
+  expected, observed, detail }` / `ConformanceReport { outcomes }` with
+  `passed()` / `failed()` / `skipped()` / `is_conformant()`.
+- `ExpectedDeclaration` / `ExpectedScope` / `PlatformOnly` — the assertion input.
+  `platform_only` is modeled **per scope** (faithful to `br-core-scope`'s
+  `ScopeSpec.platform_only`); `PlatformOnly::All(bool)` is a convenience that
+  expands one bool over every scope, `PlatformOnly::PerScope` carries a
+  `key → bool` map. `assert_matches` renders a wire-faithful expected-vs-observed
+  diff on mismatch.
+
+## Two programmatic runners — spawn and attach
+
+Both stand up a `CheckContext` and call the same checks; they differ only in how
+the dependencies are obtained.
+
+- `run_spawn(SpawnTarget { binary }, expected, behavior, scenarios, timeout)` —
+  the convenience mode. Stands up a throwaway `SpawnedNats`, creates the
+  handshake stream, and launches the subject binary with the env contract
+  (`SERVICE_KEY`, `SCOPE_KEYS`, `PLATFORM_ONLY`, `SCOPE_DECLARATION_ENABLED`, …).
+  Runs the full `s1..s6` default because it controls the subject's config and
+  lifecycle. Needs `nats-server` on `PATH`.
+- `run_attach(AttachTarget { nats_url, readyz_url, stream_name }, expected,
+  behavior, scenarios, timeout)` — the primary mode, with **zero host runtime
+  deps**: it connects to an already-running service's NATS and polls its
+  `/readyz` URL directly, never spawning `nats-server` and never building Go. It
+  **does not** create the stream — the live service owns the handshake stream;
+  the declare consumer binds to the pre-existing stream and fails loud with a
+  clear error if it is absent. Default scenarios are `s1, s2` + the
+  `declaration-content` assertion (the lifecycle-controlling scenarios
+  s3/s4/s6 cannot run against an already-booted service).
+
+`ReadyzProbe::new(url)` is the readyz role decoupled from any spawned process —
+spawn passes the spawned subject's `base_url()`, attach passes the external URL.
+
+For a no-Rust-required CLI over both runners (`run`, `manifest`, exit codes,
+human/json/junit reports), see the [`conformance-scope-cli`] crate.
+
+[`conformance-scope-cli`]: ../conformance-scope-cli/README.md
+
 ## Running it
 
 Needs `nats-server` and the **Go toolchain** on `PATH` (the runner builds the
@@ -108,6 +161,9 @@ conformance-scope = { git = "ssh://git@github.com/BotResources/br-e2e-harness", 
 | The Go binary is built to a unique temp path per call | Each test builds its own subject; a shared output path would race under parallel `cargo test`. |
 | The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + `go` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
 | S4 reads the `/readyz` **body** before asserting no more declares | "It went quiet" alone is satisfiable by a reject that was never delivered. The subject writes `scope declaration rejected: <code>` into its `/readyz` body, so matching that body (the code is the real `ScopeDeclarationError` Display, not a literal) positively proves the reject was received and processed — only then is the tight `== count_at_reject` (no `+1` slack) sound. |
+| In **spawn** mode s4 always rejects, regardless of the global accept/reject flag | s4 is intrinsically a rejection scenario while s2/s3/s5 are acceptance scenarios, so the full `s1..s6` battery cannot share one global behavior. In spawn mode each lifecycle scenario drives its own fresh subject, so s4 synthesizes a rejection (the global `--reject` reason if given, else a default derived from the first expected scope key) while the others accept. The global flag customizes s4's reason; it never lets s4 silently skip. |
+| s2/s3/s5 accept unconditionally inside the check, ignoring `AcceptorBehavior` | These are acceptance scenarios; only `rejection_stops_readiness` reads `behavior`. The global `--reject` is meaningful for the rejection scenario (and in attach mode when the user selects it against their live service), not for the acceptance ones. |
+| Attach default omits s3/s4/s6 | Those require controlling the subject's config and lifecycle (withholding to force re-publish, rejecting, disabled mode) — impossible against an already-running attached service. Attach proves the observable contract: a well-formed declare, its content, and the acceptance gating. |
 
 ## License
 
