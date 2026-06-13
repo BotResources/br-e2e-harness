@@ -134,25 +134,24 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-semver-checks
-      - name: cargo semver-checks (per-crate)
-        # For each crate, baseline = its own latest tag (`<crate>-vX.Y.Z`).
-        # When `Cargo.toml` version > latest tag, semver-checks allows
-        # breaking changes proportional to the bump; when versions match,
-        # it enforces "no API change". Crates without any prior tag are
-        # skipped (first release).
+      - name: cargo semver-checks (unified baseline)
         run: |
           set -euo pipefail
+          baseline=$(git tag --list 'v*' | sort -V | tail -n1)
+          if [ -z "$baseline" ]; then
+            echo "::notice::no prior unified v* tag, skipping semver-checks (first lockstep release)"
+            exit 0
+          fi
           shopt -s nullglob
           fail=0
           for toml in crates/*/Cargo.toml; do
             crate=$(basename "$(dirname "$toml")")
-            latest=$(git tag --list "${crate}-v*" | sort -V | tail -n1)
-            if [ -z "$latest" ]; then
-              echo "::notice::no prior tag for ${crate}, skipping semver-checks"
+            if [ ! -f "crates/${crate}/src/lib.rs" ]; then
+              echo "::notice::${crate} has no library target, skipping semver-checks"
               continue
             fi
-            echo "::group::${crate} vs ${latest}"
-            if ! cargo semver-checks -p "${crate}" --baseline-rev "${latest}"; then
+            echo "::group::${crate} vs ${baseline}"
+            if ! cargo semver-checks -p "${crate}" --baseline-rev "${baseline}"; then
               fail=1
             fi
             echo "::endgroup::"
@@ -162,10 +161,6 @@ jobs:
   changelog:
     name: changelog entry per Cargo.toml version
     runs-on: ubuntu-latest
-    # Gate: every crate's current Cargo.toml version must have a matching
-    # `## [X.Y.Z]` section in its CHANGELOG.md. Catches the "bumped version
-    # but forgot the changelog entry" mistake at PR time, before the
-    # release-tags workflow would push an undocumented tag.
     steps:
       - uses: actions/checkout@v5
       - name: check changelog entries

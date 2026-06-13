@@ -86,13 +86,13 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "ssh://git@github.com/BotResources/br-e2e-harness", tag = "br-test-harness-v0.1.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.2.0" }
 ```
 
-`br-test-harness` itself depends on `br-core-auth` pinned to a `br-rust-common`
-git rev. If your service already pins `br-rust-common`, keep both on the **same
-rev** so Cargo resolves a single source (two revs of one git URL are two distinct
-sources and duplicate `br-core-*` in the graph).
+`br-test-harness` itself depends on `br-core-auth` pinned to the `br-rust-common`
+tag `v0.8.0`. If your service already pins `br-rust-common`, keep both on the
+**same tag** so Cargo resolves a single source (two refs of one git URL are two
+distinct sources and duplicate `br-core-*` in the graph).
 
 ## Running the tests it powers
 

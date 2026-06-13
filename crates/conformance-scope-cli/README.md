@@ -28,7 +28,7 @@ source of truth for flags and defaults; this README can lag behind the binary.
 
 ### Prebuilt binary (recommended)
 
-Each `conformance-scope-cli-vX.Y.Z` tag publishes standalone binaries as GitHub
+Each unified `v{version}` release publishes standalone binaries as GitHub
 Release assets — no Docker, no Rust toolchain needed to run. Pick the asset for
 your platform from the release page:
 
@@ -41,12 +41,12 @@ The Linux build is a static musl binary (runs on any glibc/musl distro). Each
 asset ships a matching `.sha256`:
 
 ```sh
-version=0.1.0
+version=0.2.0
 target=x86_64-unknown-linux-musl
 asset="conformance-scope-${version}-${target}.tar.gz"
 
-curl -fLO "https://github.com/<owner>/<repo>/releases/download/conformance-scope-cli-v${version}/${asset}"
-curl -fLO "https://github.com/<owner>/<repo>/releases/download/conformance-scope-cli-v${version}/${asset}.sha256"
+curl -fLO "https://github.com/BotResources/br-e2e-harness/releases/download/v${version}/${asset}"
+curl -fLO "https://github.com/BotResources/br-e2e-harness/releases/download/v${version}/${asset}.sha256"
 
 sha256sum -c "${asset}.sha256"
 tar -xzf "${asset}"
@@ -221,23 +221,20 @@ semantics (e.g. in `attach`, selecting `s4` requires `reject`, else it is
 
 ## Releasing
 
-The CLI is released by an **explicit human-pushed tag**, separate from the
-auto-tagging that releases the other crates from `crates/*/Cargo.toml`. To cut a
-release:
+The CLI binaries ride the **unified `v{version}` release**, alongside the rest of
+the workspace — there is no separate CLI tag. To cut a release:
 
-1. Bump `version` in `crates/conformance-scope-cli/Cargo.toml`.
-2. Add a `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md` (the release notes
-   are extracted from this section).
-3. Merge to `main`, then push the tag:
-
-   ```sh
-   git tag -a conformance-scope-cli-vX.Y.Z -m "conformance-scope-cli X.Y.Z"
-   git push origin conformance-scope-cli-vX.Y.Z
-   ```
+1. Bump the workspace `version` in the root `Cargo.toml`.
+2. Add a `## [X.Y.Z] — YYYY-MM-DD` section to the root `CHANGELOG.md` (the
+   release notes are extracted from this section).
+3. Merge to `main`. `release-tags` creates the `v{version}` tag and Release on
+   the merge; `release-cli` triggers on the same merge, builds the matrix, and
+   uploads the binaries.
 
 The `release-cli` workflow builds the matrix, packages each binary as
 `conformance-scope-<version>-<target>.tar.gz` + `.sha256`, and uploads them to
-the GitHub Release for the tag (notes from the CHANGELOG section).
+the unified `v{version}` GitHub Release (notes from the root `CHANGELOG.md`). To
+re-cut without a new merge, run it via `workflow_dispatch`.
 
 ### Adding a target
 

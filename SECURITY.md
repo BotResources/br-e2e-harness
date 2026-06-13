@@ -30,5 +30,5 @@ crashes the process, or the fixture leaks key material it should not).
 
 ## Supported versions
 
-We support the latest tagged version of each crate (`<crate>-vX.Y.Z`) and its
-matching container image. Older tags receive no fixes; upgrade to the latest.
+We support the latest unified workspace tag (`v{version}`) and its matching
+container images. Older tags receive no fixes; upgrade to the latest.

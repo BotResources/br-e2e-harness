@@ -1,6 +1,6 @@
 [package]
 name = "br-test-harness"
-version = "0.1.0"
+version.workspace = true
 description = "Real-infra end-to-end test harness for BotResources platform services — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
@@ -11,9 +11,9 @@ repository.workspace = true
 ignored = ["serde"]
 
 [dependencies]
-br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", rev = "70db51f", version = "0.6" }
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v0.8.0", version = "0.8.0" }
 
-oidc-test-idp = { path = "../oidc-test-idp", version = "0.1.0" }
+oidc-test-idp = { path = "../oidc-test-idp", version = "0.2.0" }
 
 tokio = { workspace = true }
 serde = { workspace = true }

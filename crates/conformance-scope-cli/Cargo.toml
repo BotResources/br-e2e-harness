@@ -1,6 +1,6 @@
 [package]
 name = "conformance-scope-cli"
-version = "0.1.0"
+version.workspace = true
 description = "Language-agnostic CLI for the BotResources scope-declaration conformance battery"
 edition.workspace = true
 rust-version.workspace = true

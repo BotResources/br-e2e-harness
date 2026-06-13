@@ -1,5 +1,5 @@
 use async_nats::jetstream;
-use br_core_integration::{Actor, IntegrationEvent, MessageMetadata, UserId};
+use br_core_integration::{Actor, EventMetadata, IntegrationEvent, UserId};
 use br_core_scope::{
     ScopeDeclarationError, ServiceKey, ServiceScopesAccepted, ServiceScopesRejected,
 };
@@ -41,8 +41,8 @@ pub async fn reject(
     publish(js, REJECTED_SUBJECT, &event).await
 }
 
-fn reply_metadata(correlation_id: Uuid) -> MessageMetadata {
-    MessageMetadata::new(Actor::Human(UserId::from(Uuid::now_v7())), correlation_id)
+fn reply_metadata(correlation_id: Uuid) -> EventMetadata {
+    EventMetadata::new(Actor::Human(UserId::from(Uuid::now_v7())), correlation_id)
 }
 
 async fn publish<T: serde::Serialize>(
