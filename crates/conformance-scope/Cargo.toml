@@ -1,0 +1,27 @@
+[package]
+name = "conformance-scope"
+version = "0.1.0"
+description = "Black-box conformance runner for the BotResources scope-declaration wire handshake — TEST FIXTURE ONLY"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", rev = "70db51f", version = "0.3" }
+br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", rev = "70db51f", version = "0.1" }
+
+br-test-harness = { path = "../br-test-harness", version = "0.1.0" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-nats = "0.48"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+uuid = { version = "1", features = ["v7"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+futures-util = "0.3"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
