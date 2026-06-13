@@ -310,8 +310,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "br-scope-declaration-contract"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+dependencies = [
+ "br-core-integration",
+]
+
+[[package]]
 name = "br-test-harness"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-nats",
  "axum",
@@ -468,11 +476,12 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-nats",
  "br-core-integration",
  "br-core-scope",
+ "br-scope-declaration-contract",
  "br-test-harness",
  "chrono",
  "futures-util",
@@ -486,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1498,7 +1507,7 @@ dependencies = [
 
 [[package]]
 name = "oidc-test-idp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64",
@@ -2618,7 +2627,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

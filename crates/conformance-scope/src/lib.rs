@@ -31,4 +31,6 @@ pub use scenario::{AcceptorBehavior, Scenario, attach_default, parse_scenarios, 
 pub use spawn::{SpawnTarget, run_spawn};
 pub use stream::create_handshake_stream;
 pub use subject::{Subject, SubjectConfig};
-pub use subjects::{ACCEPTED_SUBJECT, DECLARE_SUBJECT, REJECTED_SUBJECT, STREAM_SUBJECTS};
+pub use subjects::{
+    STREAM_SUBJECTS, accepted_event_subject, declare_subject, rejected_event_subject,
+};

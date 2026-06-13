@@ -1,23 +1,44 @@
-pub mod e2e_db;
-pub mod graphql;
-pub mod nats;
-pub mod passport;
-pub mod server;
-pub mod spawned_nats;
 pub mod spawned_process;
-pub mod sse;
 pub mod wait;
+
+#[cfg(feature = "nats")]
+pub mod nats;
+#[cfg(feature = "spawned-nats")]
+pub mod spawned_nats;
+
+#[cfg(feature = "e2e-db")]
+pub mod e2e_db;
+#[cfg(feature = "graphql")]
+pub mod graphql;
+#[cfg(feature = "passport")]
+pub mod passport;
+#[cfg(feature = "server")]
+pub mod server;
+#[cfg(feature = "sse")]
+pub mod sse;
+#[cfg(feature = "ws")]
 pub mod ws;
 
-pub use e2e_db::E2eDatabase;
-pub use graphql::GraphqlClient;
-pub use nats::TestNats;
-pub use passport::PassportBuilder;
-pub use server::TestServer;
-pub use spawned_nats::SpawnedNats;
 pub use spawned_process::{SpawnedProcess, run_once};
-pub use sse::SseSubscription;
 pub use wait::wait_until;
+
+#[cfg(feature = "nats")]
+pub use nats::TestNats;
+#[cfg(feature = "spawned-nats")]
+pub use spawned_nats::SpawnedNats;
+
+#[cfg(feature = "e2e-db")]
+pub use e2e_db::E2eDatabase;
+#[cfg(feature = "graphql")]
+pub use graphql::GraphqlClient;
+#[cfg(feature = "passport")]
+pub use passport::PassportBuilder;
+#[cfg(feature = "server")]
+pub use server::TestServer;
+#[cfg(feature = "sse")]
+pub use sse::SseSubscription;
+#[cfg(feature = "ws")]
 pub use ws::WsSubscription;
 
+#[cfg(feature = "oidc")]
 pub use oidc_test_idp as oidc;

@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(feature = "http-client")]
+use std::time::Instant;
 
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
@@ -37,6 +39,7 @@ impl SpawnedProcess {
         Self { child, logs }
     }
 
+    #[cfg(feature = "http-client")]
     pub async fn wait_for_http_ok(&mut self, url: &str, timeout: Duration) -> Result<(), String> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))

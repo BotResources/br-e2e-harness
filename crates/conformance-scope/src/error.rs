@@ -1,3 +1,4 @@
+use br_core_integration::SubjectError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -6,6 +7,8 @@ pub enum ConformanceError {
     GoUnavailable(String),
     #[error("building the scope-service subject failed: {0}")]
     Build(String),
+    #[error("deriving a contract subject failed: {0}")]
+    Subject(#[from] SubjectError),
     #[error("nats jetstream error: {0}")]
     Jetstream(String),
     #[error("publishing a confirmation failed: {0}")]
