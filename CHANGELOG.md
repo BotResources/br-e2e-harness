@@ -5,6 +5,44 @@ ships **one version**: every crate inherits `version.workspace = true`, and a
 single git tag `v{version}` releases the set. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [Unreleased]
+
+### Added
+
+- **`conformance-identity` — the G2 conformance battery (the mirror of G3 with the
+  role inverted).** Where `conformance-scope` (G3) tests a scope-*declaring* service
+  with the runner playing the acceptor, `conformance-identity` (G2) tests a
+  scope-*accepting* service (the Identity registry) with the runner playing the
+  **declaring** side. It drives a new frozen Go subject,
+  `conformance-subjects/identity-acceptor`, as a black box: it builds real
+  `IntegrationCommand<DeclareServiceScopes>` and publishes them, then decodes the
+  acceptor's reply **by deserialization** into the real
+  `IntegrationEvent<ServiceScopesAccepted>` / `IntegrationEvent<ServiceScopesRejected>`
+  types (no hand-rolled JSON, no `deny_unknown_fields`).
+  - **Oracle = the real `judge_declaration` / `ScopeRegistry`** (`br-identity-domain`,
+    tag `v0.8.0`): each scenario replays its declaration sequence through a real
+    `ScopeRegistry` and the subject's emitted verdict is asserted **equal** to the
+    lib's `DeclarationOutcome` per step — computed, never hard-coded.
+  - Scenarios **A1–A6**: clean declaration → accepted; cross-service claim → rejected;
+    intra-declaration duplicate → `duplicate_scope_in_declaration`; prefix mismatch →
+    `scope_prefix_mismatch`; invalid scope key → `invalid_scope_key`; idempotent
+    re-declare → accepted again. The acceptor keeps an in-memory `scope_key → owner`
+    registry across declarations; the runner seeds ownership by driving a prior
+    accepted declaration.
+  - **`run_spawn`** (the core deliverable) stands up a throwaway `nats-server` + the
+    Go subject and runs the full A1–A6; **`run_attach`** drives a live acceptor's NATS
+    + `/readyz` with unique per-run keys (bounding registry pollution). The Go subject
+    is an independent reimplementation of the wire + `judge_declaration` policy — a
+    backward-compat anchor, not a binding to the lib; its Go unit tests pin the
+    rejection wire shapes to the frozen `scope-wire-v1` golden JSON.
+  - **Finding (documented, not hidden):** the oracle computes A2 (cross-service claim)
+    as `scope_prefix_mismatch`, not `scope_owned_by_another_service` —
+    `judge_declaration` validates before the registry's cross-owner check, so a
+    cross-service claim never reaches that branch (it is produced in production by the
+    app-layer `UNIQUE(scope_key)` path). A2 asserts the oracle-computed verdict.
+  - The `infra-e2e` CI job (already provisioned with `go` + `nats-server` for G3) now
+    additionally runs the G2 battery.
+
 ## [0.3.0] — 2026-06-13
 
 ### Added
