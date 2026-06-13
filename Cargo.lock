@@ -310,6 +310,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "br-identity-domain"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+dependencies = [
+ "br-core-scope",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "br-scope-declaration-contract"
 version = "0.8.0"
 source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
@@ -472,6 +482,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
 dependencies = [
  "crossbeam-utils",
+]
+
+[[package]]
+name = "conformance-identity"
+version = "0.3.0"
+dependencies = [
+ "async-nats",
+ "br-core-integration",
+ "br-core-scope",
+ "br-identity-domain",
+ "br-scope-declaration-contract",
+ "br-test-harness",
+ "chrono",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
