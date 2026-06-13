@@ -7,8 +7,8 @@ name: cd
 # so their relative order does not matter.
 #
 # No `latest` tag, on purpose: consumers pin `:<version>` (same posture as
-# the per-crate git tags), and a mutable `latest` could silently drift from
-# the newest version because the publish gate only checks `:<version>`.
+# the unified `v<version>` git tag), and a mutable `latest` could silently drift
+# from the newest version because the publish gate only checks `:<version>`.
 #
 # Per-arch tags are suffixed with the commit SHA so a re-run after a partial
 # failure can never assemble a manifest from another commit's artifacts.
@@ -56,7 +56,7 @@ jobs:
       - name: resolve version + gate
         id: ver
         run: |
-          version="$(grep -m1 '^version = ' "crates/${CRATE}/Cargo.toml" | sed -E 's/^version = "([^"]+)".*/\1/')"
+          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
           if docker manifest inspect "${IMAGE}:${version}" >/dev/null 2>&1; then

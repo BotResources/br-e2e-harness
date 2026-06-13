@@ -2,13 +2,8 @@ name: release-cli
 
 on:
   push:
-    tags: ['conformance-scope-cli-v*']
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release (e.g. conformance-scope-cli-v0.1.0). Created if missing.'
-        required: false
-        type: string
 
 permissions:
   contents: write
@@ -23,8 +18,44 @@ env:
   BIN: conformance-scope
 
 jobs:
+  gate:
+    name: resolve version + gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.gate.outputs.version }}
+      tag: ${{ steps.gate.outputs.tag }}
+      skip: ${{ steps.gate.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: resolve version + gate on existing assets
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')"
+          if [ -z "$version" ]; then
+            echo "::error file=Cargo.toml::could not extract the workspace version"
+            exit 1
+          fi
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          marker="${BIN}-${version}-x86_64-unknown-linux-musl.tar.gz"
+          if gh release view "${tag}" --json assets \
+               --jq '.assets[].name' 2>/dev/null | grep -qx "${marker}"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${tag} already carries ${marker} — nothing to build"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: build ${{ matrix.target }}
+    needs: gate
+    if: needs.gate.outputs.skip == 'false'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -41,17 +72,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v5
-
-      - name: resolve version
-        id: ver
-        run: |
-          set -euo pipefail
-          version="$(grep -m1 '^version = ' "crates/${CRATE}/Cargo.toml" | sed -E 's/^version = "([^"]+)".*/\1/')"
-          if [ -z "$version" ]; then
-            echo "::error::could not extract version from crates/${CRATE}/Cargo.toml"
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: setup rust target
         uses: dtolnay/rust-toolchain@stable
@@ -97,7 +117,7 @@ jobs:
         id: pkg
         run: |
           set -euo pipefail
-          version="${{ steps.ver.outputs.version }}"
+          version="${{ needs.gate.outputs.version }}"
           target="${{ matrix.target }}"
           asset="${BIN}-${version}-${target}.tar.gz"
           src="target/${target}/release/${BIN}"
@@ -121,31 +141,19 @@ jobs:
           retention-days: 1
 
   publish:
-    name: publish release
-    needs: build
+    name: publish to the unified release
+    needs: [gate, build]
+    if: needs.gate.outputs.skip == 'false'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v5
-
-      - name: resolve tag + version
-        id: rel
-        run: |
-          set -euo pipefail
-          tag="${{ inputs.tag }}"
-          if [ -z "$tag" ]; then
-            tag="${GITHUB_REF_NAME}"
-          fi
-          version="$(grep -m1 '^version = ' "crates/${CRATE}/Cargo.toml" | sed -E 's/^version = "([^"]+)".*/\1/')"
-          expected="${CRATE}-v${version}"
-          if [ "$tag" != "$expected" ]; then
-            echo "::error::tag ${tag} does not match ${CRATE} version ${version} (expected ${expected})"
-            exit 1
-          fi
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+        with:
+          fetch-depth: 0
 
       - name: download artifacts
         uses: actions/download-artifact@v4
@@ -153,40 +161,35 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: create-or-update release
+      - name: ensure tag + release, then upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          tag="${{ steps.rel.outputs.tag }}"
-          version="${{ steps.rel.outputs.version }}"
-          changelog="crates/${CRATE}/CHANGELOG.md"
+          version="${{ needs.gate.outputs.version }}"
+          tag="${{ needs.gate.outputs.tag }}"
 
           if ! git rev-parse --verify "refs/tags/${tag}" >/dev/null 2>&1; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "${tag}" -m "${CRATE} ${version}"
+            git tag -a "${tag}" -m "br-e2e-harness ${version}"
             git push origin "${tag}"
           fi
 
-          notes_file="$(mktemp)"
-          awk -v target="## [${version}]" '
-            index($0, target) == 1 { in_section = 1; print; next }
-            in_section && index($0, "## [") == 1 { exit }
-            in_section { print }
-          ' "$changelog" > "$notes_file"
-          if [ ! -s "$notes_file" ]; then
-            echo "::warning file=${changelog}::could not extract notes for ${tag}; using placeholder"
-            printf 'See [%s](https://github.com/%s/blob/%s/%s) for changes.\n' \
-              "$changelog" "$GITHUB_REPOSITORY" "$tag" "$changelog" > "$notes_file"
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            notes_file="$(mktemp)"
+            awk -v target="## [${version}]" '
+              index($0, target) == 1 { in_section = 1; print; next }
+              in_section && index($0, "## [") == 1 { exit }
+              in_section { print }
+            ' CHANGELOG.md > "$notes_file"
+            if [ ! -s "$notes_file" ]; then
+              printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for changes.\n' \
+                "$GITHUB_REPOSITORY" "$tag" > "$notes_file"
+            fi
+            gh release create "${tag}" --title "br-e2e-harness ${version}" --notes-file "$notes_file" --verify-tag
+            rm -f "$notes_file"
           fi
-
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            gh release edit "${tag}" --title "${CRATE} ${version}" --notes-file "$notes_file"
-          else
-            gh release create "${tag}" --title "${CRATE} ${version}" --notes-file "$notes_file" --verify-tag
-          fi
-          rm -f "$notes_file"
 
           shopt -s nullglob
           assets=(dist/*.tar.gz dist/*.sha256)

@@ -1,6 +1,6 @@
 [package]
 name = "oidc-test-idp"
-version = "0.1.0"
+version.workspace = true
 description = "Pilotable OIDC identity provider for end-to-end tests — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true

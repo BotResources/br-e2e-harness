@@ -249,10 +249,11 @@ dependencies = [
 
 [[package]]
 name = "br-core-auth"
-version = "0.6.2"
-source = "git+https://github.com/BotResources/br-rust-common?rev=70db51f#70db51f6c223a8f55165d31074568225fac52732"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
 dependencies = [
  "base64",
+ "br-core-kernel",
  "serde",
  "serde_json",
  "sha2",
@@ -262,8 +263,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-events"
-version = "0.4.0"
-source = "git+https://github.com/BotResources/br-rust-common?rev=70db51f#70db51f6c223a8f55165d31074568225fac52732"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
 dependencies = [
  "br-core-kernel",
  "chrono",
@@ -274,8 +275,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-integration"
-version = "0.3.0"
-source = "git+https://github.com/BotResources/br-rust-common?rev=70db51f#70db51f6c223a8f55165d31074568225fac52732"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -292,8 +293,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-kernel"
-version = "0.4.1"
-source = "git+https://github.com/BotResources/br-rust-common?rev=70db51f#70db51f6c223a8f55165d31074568225fac52732"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
 dependencies = [
  "serde",
  "uuid",
@@ -301,8 +302,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-scope"
-version = "0.1.0"
-source = "git+https://github.com/BotResources/br-rust-common?rev=70db51f#70db51f6c223a8f55165d31074568225fac52732"
+version = "0.8.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
 dependencies = [
  "serde",
  "thiserror",
@@ -310,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "br-test-harness"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-nats",
  "axum",
@@ -485,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1497,7 +1498,7 @@ dependencies = [
 
 [[package]]
 name = "oidc-test-idp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "base64",

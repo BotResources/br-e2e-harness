@@ -8,6 +8,7 @@ members = [
 ]
 
 [workspace.package]
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -26,7 +27,6 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# dev-only
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 
