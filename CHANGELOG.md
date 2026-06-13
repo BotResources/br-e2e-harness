@@ -5,6 +5,45 @@ ships **one version**: every crate inherits `version.workspace = true`, and a
 single git tag `v{version}` releases the set. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.3.0] — 2026-06-13
+
+### Added
+
+- **`br-test-harness` is now feature-gated** (`default = ["full"]`). Each heavy
+  helper cluster is opt-in: `nats`, `spawned-nats`, `e2e-db`, `server`,
+  `passport`, `graphql`, `sse`, `ws`, `oidc`; `SpawnedProcess` / `run_once` /
+  `wait_until` stay always-compiled. A consumer can take `default-features =
+  false` with a minimal feature set and drop `sqlx` / `axum` / `rsa` / `reqwest`
+  / `tokio-tungstenite` from its build. Default consumers are unaffected (`full`
+  = the whole toolbox). `conformance-scope` now takes only `["nats",
+  "spawned-nats"]`, so the `conformance-scope` CLI binary no longer compiles the
+  Postgres / Axum / JWT stacks (≈86 fewer crates in its dependency graph).
+
+### Changed
+
+- **`conformance-scope` derives its scope-declaration subjects from
+  `br-scope-declaration-contract`** (`br-rust-common`, tag `v0.8.0`) instead of
+  hardcoding the `declare` / `accepted` / `rejected` subjects (and their
+  `event_type` strings). The frozen Go wire fixture stays the independence
+  anchor, so the battery now also **detects subject drift**: if `br-rust-common`
+  changes a subject, the derived value diverges from the Go fixture and a
+  conformance test goes red. The throwaway capture stream's `identity.>` wildcard
+  stays a literal — it is not a contract subject.
+- **`conformance-scope` publishes accept/reject via
+  `br_core_integration::NatsIntegrationPublisher`** instead of a hand-rolled
+  `js.publish(serde_json::to_vec(…))` + ack — identical wire bytes, reusing the
+  shared publisher instead of re-vendoring serialization.
+
+### Removed
+
+- **`conformance-scope`'s public subject constants** `DECLARE_SUBJECT` /
+  `ACCEPTED_SUBJECT` / `REJECTED_SUBJECT` — replaced by the contract-derived
+  functions `declare_subject()` / `accepted_event_subject()` /
+  `rejected_event_subject()` (each `-> Result<String, SubjectError>`). A breaking
+  change to the lib's symbol surface; it rides this `0.3.0` bump (a `0.x` minor is
+  the breaking position under Cargo semver, so consumers move by bumping the git
+  tag). No in-tree consumer referenced the constants.
+
 ## [0.2.0] — 2026-06-13
 
 ### Changed

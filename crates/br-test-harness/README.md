@@ -24,19 +24,19 @@ persistence abstraction, can inject them.
 
 ## What it gives you
 
-| Need | Helper |
-|---|---|
-| A throwaway Postgres DB + non-superuser, CNPG-shaped owner role | `E2eDatabase` |
-| A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` |
-| A connection to NATS + isolated KV buckets | `TestNats` |
-| Run the real service binary as a child (drained, readiness-polled) | `SpawnedProcess`, `run_once` |
-| An in-process Axum server on a random port | `TestServer` |
-| A forged `Passport` (`Human` / `Service`) | `PassportBuilder` |
-| A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` |
-| A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` |
-| A live GraphQL Server-Sent-Events subscription | `SseSubscription` |
-| Poll an async condition until it holds or times out | `wait_until` |
-| A pilotable in-process OIDC IdP (discovery, JWKS, mint, rotate) | `oidc` |
+| Need | Helper | Feature |
+|---|---|---|
+| A throwaway Postgres DB + non-superuser, CNPG-shaped owner role | `E2eDatabase` | `e2e-db` |
+| A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` | `spawned-nats` |
+| A connection to NATS + isolated KV buckets | `TestNats` | `nats` |
+| Run the real service binary as a child (drained, readiness-polled) | `SpawnedProcess`, `run_once` | *(always on)* |
+| An in-process Axum server on a random port | `TestServer` | `server` |
+| A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
+| A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
+| A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` | `ws` |
+| A live GraphQL Server-Sent-Events subscription | `SseSubscription` | `sse` |
+| Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
+| A pilotable in-process OIDC IdP (discovery, JWKS, mint, rotate) | `oidc` | `oidc` |
 
 ### Claim keys are a per-project seam
 
@@ -79,6 +79,31 @@ here, synthetically:
 | `deny.toml` ignores `RUSTSEC-2023-0071` (Marvin timing attack in `rsa`) | The advisory is a side-channel in `rsa` private-key *decryption*. This workspace only ships test fixtures that **sign** short-lived tokens on isolated test networks — no decryption path, no timing-oracle adversary in the threat model. Same ignore as `svc-auth`'s CI. |
 | `deny.toml` allows `CDLA-Permissive-2.0` | Mozilla's CA-root data set, vendored by `webpki-roots`, pulled in transitively by the rustls stack under `reqwest` / `sqlx` / `async-nats`. It is an OSI-recognized permissive *data* license with no copyleft and no patent traps — safe for a fixtures repo. Added when `br-test-harness` brought the rustls TLS stack in. |
 
+## Cargo features
+
+Everything is on by default (`default = ["full"]`), so a service e2e suite that
+wants the whole toolbox depends on the crate and changes nothing. A consumer that
+needs only a slice — e.g. a CLI that talks to NATS but touches no Postgres, Axum
+or JWT — sets `default-features = false` and names the slice, keeping the heavy
+transitive deps out of its binary:
+
+| Feature | Unlocks | Headline heavy deps |
+|---|---|---|
+| `nats` | `TestNats` | `async-nats` |
+| `spawned-nats` | `SpawnedNats` | `tempfile` |
+| `e2e-db` | `E2eDatabase` | `sqlx` |
+| `server` | `TestServer` | `axum`, `reqwest` |
+| `passport` | `PassportBuilder` | `br-core-auth` |
+| `graphql` | `GraphqlClient` | `reqwest` (+ `passport`) |
+| `sse` | `SseSubscription` | `reqwest`, `futures-util` (+ `passport`) |
+| `ws` | `WsSubscription` | `tokio-tungstenite`, `futures-util` (+ `passport`) |
+| `oidc` | the in-process OIDC IdP | `oidc-test-idp` → `rsa` |
+
+`SpawnedProcess` / `run_once` / `wait_until` are always compiled — their only deps
+are `tokio` + std — so the smallest useful dependency is `default-features =
+false` with no feature at all. `conformance-scope` rides exactly this: it takes
+`["nats", "spawned-nats"]`, so its CLI binary carries no `sqlx` / `axum` / `rsa`.
+
 ## Install
 
 It is a **dev-dependency**. Pin it to a release tag (git-tag distribution; no
@@ -86,13 +111,18 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.2.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.3.0" }
+
+# …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.3.0", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
-`br-test-harness` itself depends on `br-core-auth` pinned to the `br-rust-common`
-tag `v0.8.0`. If your service already pins `br-rust-common`, keep both on the
-**same tag** so Cargo resolves a single source (two refs of one git URL are two
-distinct sources and duplicate `br-core-*` in the graph).
+With the default `full` feature, `br-test-harness` depends on `br-core-auth`
+pinned to the `br-rust-common` tag `v0.8.0` (it backs `PassportBuilder`; a slim
+build that omits the passport-bearing features drops it). If your service already
+pins `br-rust-common`, keep both on the **same tag** so Cargo resolves a single
+source (two refs of one git URL are two distinct sources and duplicate
+`br-core-*` in the graph).
 
 ## Running the tests it powers
 

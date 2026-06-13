@@ -8,7 +8,7 @@ use futures_util::StreamExt as _;
 use uuid::Uuid;
 
 use crate::error::{ConformanceError, Result};
-use crate::subjects::DECLARE_SUBJECT;
+use crate::subjects::declare_subject;
 
 #[derive(Clone)]
 pub struct CapturedDeclare {
@@ -39,7 +39,7 @@ impl DeclareCapture {
             .create_consumer(consumer::pull::Config {
                 deliver_policy: consumer::DeliverPolicy::New,
                 ack_policy: consumer::AckPolicy::None,
-                filter_subject: DECLARE_SUBJECT.to_string(),
+                filter_subject: declare_subject()?,
                 inactive_threshold: Duration::from_secs(300),
                 ..Default::default()
             })

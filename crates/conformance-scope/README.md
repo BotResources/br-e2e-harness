@@ -26,6 +26,11 @@ real `br-rust-common` types as the oracle** — never hand-rolled JSON:
   `IntegrationEvent<ServiceScopesAccepted>` /
   `IntegrationEvent<ServiceScopesRejected>`, serialized with serde and published
   on the matching subject, echoing the command's `metadata.correlation_id`.
+- The handshake **subjects** are read from `br-scope-declaration-contract`
+  (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`),
+  not hardcoded — so the anchor below covers the *subject strings* too, not just
+  the payload shape: a renamed or re-versioned subject in `br-rust-common`
+  diverges from the frozen Go wire and the battery goes red.
 
 > **The Go subject is a frozen anchor of the external wire.** When
 > `br-rust-common` evolves, this crate bumps its lib pin and re-runs against the
@@ -68,8 +73,11 @@ binary by reusing the helpers, not just the tests:
 - `Subject` / `SubjectConfig` — spawn the built binary with its env wiring and
   poll `/readyz` / `/livez` (status, and `readyz_body()` for the rejection
   reason S4 corroborates).
-- `create_handshake_stream`, the three subject constants
-  (`DECLARE_SUBJECT` / `ACCEPTED_SUBJECT` / `REJECTED_SUBJECT`).
+- `create_handshake_stream`, and the three subject derivers
+  (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`),
+  read from `br-scope-declaration-contract` rather than hardcoded — so a subject
+  drift in `br-rust-common` diverges from the frozen Go wire fixture and the
+  battery goes red.
 
 ## The single-implementation check API
 
@@ -145,7 +153,7 @@ crates.io). Keep its `br-rust-common` tag identical to `br-test-harness`'s
 
 ```toml
 [dev-dependencies]
-conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.2.0" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.3.0" }
 ```
 
 ## Why — the non-obvious bits
