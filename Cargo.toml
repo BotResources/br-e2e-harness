@@ -30,9 +30,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 
-# RSA key generation is pure Rust and unbearably slow without optimizations;
-# keep the crypto stack optimized even in dev/test profiles so the pre-generated
-# key pool never makes a test suite wait.
 [profile.dev.package.rsa]
 opt-level = 3
 
