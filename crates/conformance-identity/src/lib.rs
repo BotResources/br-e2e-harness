@@ -17,11 +17,11 @@ pub mod wire;
 
 pub use build::{build_subject, ensure_go_available, subject_dir};
 pub use capture::{CapturedConfirmation, ConfirmationCapture, Verdict};
-pub use checks::{CheckContext, run_judged_scenario, run_scenario};
-pub use declarer::{Declarer, declaring_metadata};
+pub use checks::{CheckContext, run_scenario};
+pub use declarer::Declarer;
 pub use error::{ConformanceError, Result};
 pub use harness::{DEFAULT_STREAM_NAME, IdentityHarness};
-pub use oracle::{expected_step_verdicts, expected_verdict, outcome_to_verdict, verdict_code};
+pub use oracle::{expected_step_verdicts, expected_verdict};
 pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
 pub use readyz::ReadyzProbe;
 pub use runner::{AttachTarget, DEFAULT_TIMEOUT, run_attach};
@@ -32,4 +32,3 @@ pub use subject::{Subject, SubjectConfig};
 pub use subjects::{
     STREAM_SUBJECTS, accepted_event_subject, declare_subject, rejected_event_subject,
 };
-pub use wire::{declaration_label, declare, from_raw, raw_manifest, raw_spec};
