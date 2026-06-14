@@ -33,6 +33,7 @@ persistence abstraction, can inject them.
 | An in-process Axum server on a random port | `TestServer` | `server` |
 | A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
 | A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
+| Verdict helpers over a GraphQL response — ack / rejection / stable-code | `verdict::*` | `graphql` |
 | A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` | `ws` |
 | A live GraphQL Server-Sent-Events subscription | `SseSubscription` | `sse` |
 | Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
@@ -64,6 +65,33 @@ Two helpers exist specifically to kill the classic e2e flakes:
 - **`wait_until(timeout, predicate)`** — poll an async condition (a projection
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
+
+### The verdict vocabulary (channel 1)
+
+A BR mutation returns a **verdict, never state**: an `ack` on success, or a
+structured error carrying a **stable code** (`^[A-Z][A-Z0-9_]+$`, never English
+prose) on a rejection. The `verdict` module is the assertion vocabulary for that
+first observation channel — pure functions over the `serde_json::Value` a
+`GraphqlClient` hands back, with **zero transport coupling** (they take a
+response, not a client), so they work over any GraphQL response however obtained:
+
+| Function | Verdict |
+|---|---|
+| `is_ack(&response) -> bool` | no top-level GraphQL `errors`, and no rejection code embedded under `data` |
+| `expect_ack(&response, what)` | panics (with the response) unless the call acked |
+| `mutation_error_code(&response) -> Option<String>` | the rejection code if rejected, else `None` — looks at the top-level error's `extensions.code`, then its `message`, then a `code` / `errorCode` / `reasonCode` under `data` |
+| `expect_rejected(&response) -> String` | panics unless rejected; returns the code |
+| `expect_code_shaped(&response, what) -> String` | `expect_rejected` **and** asserts the code matches `^[A-Z][A-Z0-9_]+$`; returns it |
+| `is_code_shaped(&str) -> bool` | true iff the string is a stable code (uppercase-led, then `[A-Z0-9_]`), not prose |
+
+**The affordance-skip guarantee.** An affordance carries its own user-facing
+`reasonCode` (why an action is blocked) — that is *not* a mutation rejection. The
+private walker behind `mutation_error_code` therefore **skips any subtree under an
+`affordances` key**, at any depth: a response whose payload acks but whose
+affordances list a blocked action with a `reasonCode` reads as an **ack**, never a
+rejection. When a payload-union rejection code and an affordance `reasonCode`
+coexist, the **mutation code wins**. Without this, every affordance-aware service
+would mis-read a blocked-affordance hint as a failed mutation.
 
 ## Why — the non-obvious bits
 
@@ -97,7 +125,7 @@ transitive deps out of its binary:
 | `e2e-db` | `E2eDatabase` | `sqlx` |
 | `server` | `TestServer` | `axum`, `reqwest` |
 | `passport` | `PassportBuilder` | `br-core-auth` |
-| `graphql` | `GraphqlClient` | `reqwest` (+ `passport`) |
+| `graphql` | `GraphqlClient`, `verdict::*` | `reqwest` (+ `passport`) |
 | `sse` | `SseSubscription` | `reqwest`, `futures-util` (+ `passport`) |
 | `ws` | `WsSubscription` | `tokio-tungstenite`, `futures-util` (+ `passport`) |
 | `oidc` | the in-process OIDC IdP | `oidc-test-idp` → `rsa` |
