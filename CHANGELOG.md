@@ -61,6 +61,31 @@ single git tag `v{version}` releases the set. Format follows
   Its offline Go unit tests pin the key derivation, the deterministic `user_id`
   stand-in, the golden Passport shape, the exact top-level key set
   (`deny_unknown_fields` parity), and the bearer-header parsing.
+- **`conformance-subjects/identity-directory` — the directory (identity Published
+  Language) Go wire anchor (WU8, epic #54).** A minimal, frozen, **independent** Go
+  reimplementation of the identity directory KV wire — the read-only projection
+  identity publishes and generic services consume. It **imports no Rust** (the
+  oracle is the lib, in the Rust runner WU9); it prints the canonical KV snapshot to
+  stdout for that runner to deserialise through `br-core-directory`.
+  - **What it freezes:** the KV-key conventions (`identity/_meta`,
+    `identity/users/{uuid}`, `identity/groups/{uuid}`), the `DirectoryMeta` manifest
+    (`{version, entities}`), the `PublishedUser` core (`email`, `first_name`,
+    `last_name` — snake_case, no `rename_all`, names emitted as `null` not omitted),
+    the `PublishedGroup` core (`name`, `member_ids` — always an array), and the
+    **generic extension mechanism**: a neutral `x_custom` key riding **flat**
+    alongside the core (mirroring the Rust `#[serde(flatten)]`).
+  - **Tenancy-agnostic socle:** emits **no `organization_id`** / orgs / memberships —
+    `organization_id` is a project extension, not core (epic #54); conformance covers
+    the core + the generic extension mechanism only.
+  - **Offline Go unit tests** pin the KV-key prefixes, the user/group/meta golden
+    shapes, the exact core key sets, names-emitted-as-null, the flat-extension
+    invariant (never nested under an `extensions` key), `member_ids`-always-array,
+    and the users-only `_meta` auto-degrade.
+  - **Oracle / backward-compat gate:** the Rust WU9 runner deserialises every emitted
+    value through the real `br-core-directory` types; a renamed/retyped core field,
+    a changed serde, or a broken flatten makes the Go-frozen value fail to
+    deserialise → the battery goes red. The wire is frozen for `br-rust-common`
+    `v0.11.0`; documented in `docs/conformance/directory-wire-v1.md`.
 
 ## [0.4.0] — 2026-06-14
 
