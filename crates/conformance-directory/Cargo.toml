@@ -1,0 +1,39 @@
+[package]
+name = "conformance-directory"
+version.workspace = true
+description = "Black-box conformance runner for the BotResources identity Published Language (directory) wire + publisher/consumer kit — TEST FIXTURE ONLY"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "v0.11.0", version = "0.11.0" }
+br-util-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-directory", tag = "v0.11.0", version = "0.11.0", features = [
+    "publisher",
+    "consumer",
+] }
+
+br-test-harness = { path = "../br-test-harness", version = "0.5.0", default-features = false, features = [
+    "nats",
+    "spawned-nats",
+    "e2e-db",
+] }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-nats = "0.48"
+async-trait = "0.1"
+futures-util = "0.3"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "uuid",
+] }
+uuid = { version = "1", features = ["v7"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

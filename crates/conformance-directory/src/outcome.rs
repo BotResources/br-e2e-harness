@@ -2,34 +2,43 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CheckId {
-    ValidBearerResolvesToPassport,
-    RevokedBearerIsAnonymous,
-    UnknownBearerIsAnonymous,
-    NoCredentialIsAnonymous,
-    DistinctTokensDistinctPassports,
-    ScopesClaimRoundTrip,
+    WireUserDeserializes,
+    WireGroupDeserializes,
+    WireMetaDeserializes,
+    WireExtensionRidesFlat,
+    WireMetaAutoDegrades,
+    PublisherFloor,
+    PublisherGroupsOptional,
+    ConsumerReadsUsers,
+    ConsumerReadsGroups,
 }
 
 impl CheckId {
     pub fn code(self) -> &'static str {
         match self {
-            CheckId::ValidBearerResolvesToPassport => "p1",
-            CheckId::RevokedBearerIsAnonymous => "p2",
-            CheckId::UnknownBearerIsAnonymous => "p3",
-            CheckId::NoCredentialIsAnonymous => "p4",
-            CheckId::DistinctTokensDistinctPassports => "p5",
-            CheckId::ScopesClaimRoundTrip => "g4",
+            CheckId::WireUserDeserializes => "w1",
+            CheckId::WireGroupDeserializes => "w2",
+            CheckId::WireMetaDeserializes => "w3",
+            CheckId::WireExtensionRidesFlat => "w4",
+            CheckId::WireMetaAutoDegrades => "w5",
+            CheckId::PublisherFloor => "p1",
+            CheckId::PublisherGroupsOptional => "p2",
+            CheckId::ConsumerReadsUsers => "c1",
+            CheckId::ConsumerReadsGroups => "c2",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
         match code {
-            "p1" => Some(CheckId::ValidBearerResolvesToPassport),
-            "p2" => Some(CheckId::RevokedBearerIsAnonymous),
-            "p3" => Some(CheckId::UnknownBearerIsAnonymous),
-            "p4" => Some(CheckId::NoCredentialIsAnonymous),
-            "p5" => Some(CheckId::DistinctTokensDistinctPassports),
-            "g4" => Some(CheckId::ScopesClaimRoundTrip),
+            "w1" => Some(CheckId::WireUserDeserializes),
+            "w2" => Some(CheckId::WireGroupDeserializes),
+            "w3" => Some(CheckId::WireMetaDeserializes),
+            "w4" => Some(CheckId::WireExtensionRidesFlat),
+            "w5" => Some(CheckId::WireMetaAutoDegrades),
+            "p1" => Some(CheckId::PublisherFloor),
+            "p2" => Some(CheckId::PublisherGroupsOptional),
+            "c1" => Some(CheckId::ConsumerReadsUsers),
+            "c2" => Some(CheckId::ConsumerReadsGroups),
             _ => None,
         }
     }
@@ -137,24 +146,19 @@ impl ConformanceReport {
     }
 
     pub fn passed(&self) -> usize {
-        self.outcomes
-            .iter()
-            .filter(|o| o.status == CheckStatus::Pass)
-            .count()
+        self.count(CheckStatus::Pass)
     }
 
     pub fn failed(&self) -> usize {
-        self.outcomes
-            .iter()
-            .filter(|o| o.status == CheckStatus::Fail)
-            .count()
+        self.count(CheckStatus::Fail)
     }
 
     pub fn skipped(&self) -> usize {
-        self.outcomes
-            .iter()
-            .filter(|o| o.status == CheckStatus::Skipped)
-            .count()
+        self.count(CheckStatus::Skipped)
+    }
+
+    fn count(&self, status: CheckStatus) -> usize {
+        self.outcomes.iter().filter(|o| o.status == status).count()
     }
 
     pub fn is_conformant(&self) -> bool {
