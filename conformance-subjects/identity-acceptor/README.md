@@ -79,10 +79,10 @@ STREAM_NAME=IDENTITY \
 make test       # go vet + go test (incl. the golden-shape + judge-precedence tests)
 ```
 
-The full A1–A6 e2e (clean accept / cross-service claim / intra-declaration
-duplicate / prefix mismatch / invalid key / idempotent re-declare) is the Rust
-conformance runner's job; it brings its own declaring side and the real
-`judge_declaration` oracle.
+The full A1–A7 e2e (clean accept / cross-service claim / intra-declaration
+duplicate / prefix mismatch / invalid key / idempotent re-declare / structurally
+malformed key) is the Rust conformance runner's job; it brings its own declaring
+side and the real `judge_declaration` oracle.
 
 ## Why table
 
