@@ -73,6 +73,14 @@ impl SseSubscription {
         }
     }
 
+    pub async fn drain(&mut self, max: usize, timeout: Duration) -> usize {
+        let mut drained = 0;
+        while drained < max && self.next_event(timeout).await.is_some() {
+            drained += 1;
+        }
+        drained
+    }
+
     fn take_block(&mut self) -> Option<String> {
         let block_end = self.buffer.find("\n\n")?;
         let block = self.buffer[..block_end].to_string();

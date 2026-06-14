@@ -7,6 +7,44 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`br-test-harness::nats_assert` — NATS published-contract observation + named-stream
+  reset (the 4th e2e channel).** Three `nats`-gated free functions, promoted generic
+  from `svc-charter`'s service-local `tests/common/` (issue #55, A.2 + A.3), taking a
+  `&async_nats::jetstream::Context`:
+  - **`await_integration_event(js, stream, subject, deadline) -> Option<Value>`** — opens
+    an ephemeral pull consumer (`DeliverPolicy::All` + `filter_subject`) on the named
+    stream, awaits the first matching message within `deadline`, and returns the envelope
+    as a `serde_json::Value` for deserialization against the producer's `contract-*`
+    payload. The **stream name is a parameter** (charter hard-coded `CHARTER_STREAM`),
+    so it is service-agnostic; a clean timeout yields `None`, never a hang.
+  - **`recreate_stream(js, name, &subjects) -> stream::Stream`** /
+    **`recreate_kv(js, bucket) -> kv::Store`** — **delete-then-create** a *named*
+    service-contract JetStream stream (with its subject filters, e.g. `charter.>`) or KV
+    bucket, so each serial scenario starts from an empty bus on a shared server. Explicit
+    delete-then-create, **never silent get-or-create** — the harness is the GitOps
+    stand-in (the production service never provisions; the lib fails loud), and a
+    get-or-create would leak the prior scenario's messages while the reset passed.
+  - The helpers are **free functions, not methods on `TestNats`** — `TestNats` owns the
+    harness's own throwaway UUID-suffixed buckets, not a named service-contract stream.
+    `futures-util` joins the `nats` feature (the consumer message stream). Self-tests in
+    `tests/nats_assert.rs` cover the offline reachability check plus four `#[ignore]`-gated
+    real-`nats-server` cases (await-after-reset, timeout→`None`, delete-then-create drops
+    stale messages / prior KV entries).
+- **`SseSubscription::drain(max, timeout) -> usize`** — the third de-flake
+  primitive, alongside `WsSubscription::next_matching` and `wait_until`. Pulls up
+  to `max` events off an open SSE subscription, stops at the first that doesn't
+  arrive within `timeout` (a clean stream end or genuine silence) leaving the
+  rest for the next read, and returns the count drained. Lets a scenario flush
+  the tail of a known burst before its next leg, so a stale earlier-transition
+  frame can't satisfy a later `expect_event`. A broken stream still panics. Back-
+  ports charter's local `drain_pushes(sub, max)` as a strict superset (explicit
+  `timeout`, returned count): the harness's stream-based `SseSubscription`
+  (`open` / `next_event` / `expect_event` / `expect_silence` / `drain`) now
+  covers charter's full push/silence surface, and charter drops its channel-based
+  local copy (B.1 of #55).
+
 ### Changed
 
 - **`br-test-harness` re-exports `PassportBuilder` from `br-core-auth`.** The
@@ -72,6 +110,36 @@ single git tag `v{version}` releases the set. Format follows
   malformed entry is skipped while valid ones survive. `CheckId` gains a
   `ScopesClaimRoundTrip` (`g4`) variant. (This oracle bump was deferred to WU9 by the
   WU7 review.)
+- **`SpawnedProcess::await_boot` + `BootOutcome` — fail-loud boot classification.**
+  Alongside the happy-path `wait_for_http_ok`, `await_boot(url, timeout)` polls the
+  service's `/readyz` and classifies the boot into
+  `BootOutcome::{ Ready, Exited(ExitStatus), TimedOut }` so a scenario can **assert**
+  the verdict — including the deliberate crash of a service that refuses to start
+  with its declared GitOps infra missing (S0-style "fail loud and name the missing
+  resource"); `wait_for_http_ok` covers only the happy path. On `Exited` the captured
+  pipes are drained to EOF before returning, so `proc.logs()` carries the full tail
+  the binary printed (where the named missing resource lives). The process stays owned
+  by the caller in every outcome. `BootOutcome::is_ready()` / `exit_status()` are the
+  convenience reads. Both `BootOutcome` and `await_boot` are `http-client`-gated; the
+  existing `wait_for_http_ok` / `logs()` surface is preserved unchanged. Promotes
+  charter's service-local `await_boot` / `spawn_capturing_output` (issue #55, A.5);
+  reconciled to the harness's continuous-drain `SpawnedProcess` (no kill-before-drain
+  dance, the process is not consumed into the outcome).
+- **`br-test-harness` — the GraphQL `verdict` module (channel-1 assertion
+  vocabulary).** Pure functions over a `serde_json::Value` GraphQL response —
+  `is_ack`, `expect_ack`, `expect_rejected`, `mutation_error_code`,
+  `expect_code_shaped` (asserts the stable error-code shape `^[A-Z][A-Z0-9_]+$`,
+  so **≥2 characters** — a single `"A"` is rejected), `is_code_shaped` — with
+  **zero transport coupling** (they take a response, not a
+  `GraphqlClient`). Feature-gated under `graphql`; promoted from `svc-charter`'s
+  service-local `tests/common/gql.rs` (the BR-fatty reference unit) so every
+  affordance-aware service stops re-inventing the most load-bearing observation
+  helper (#55 A.1).
+  - **Affordance-skip guarantee:** the rejection-code walker behind
+    `mutation_error_code` skips any subtree under an `affordances` key at any
+    depth, so an affordance's own `reasonCode` (a blocked-action hint) is never
+    mistaken for a mutation rejection; a payload-union rejection code still wins
+    when both coexist. Covered by unit vectors (no infra).
 
 - **`conformance-passport` — the G1 conformance battery (bearer/PAT → Passport).**
   A black-box runner for the BotResources passport-resolution endpoint the GraphQL
