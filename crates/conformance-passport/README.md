@@ -28,8 +28,9 @@ anonymous request, never a 401 — services do authZ, never authN.
 
 ## Oracle — the real `br-rust-common` types, never hand-rolled
 
-The runner seeds and decodes **using the real `br-core-auth` types** (tag
-`v0.10.0`), never hand-rolled JSON, never a re-stated wire shape:
+The runner seeds and decodes **using the real `br-core-auth` types** (branch
+`v0.11.0`, with `test-support` for the G4 builder; the release flips it to
+`tag = "v0.11.0"`), never hand-rolled JSON, never a re-stated wire shape:
 
 - **Seeding** uses the real `bearer_token_key(raw)` for the KV key and
   serializes the real `BearerTokenEntry { email, token_id }` for the value. The
@@ -53,9 +54,13 @@ The runner seeds and decodes **using the real `br-core-auth` types** (tag
 > the external envelope didn't move**; **red is a real break** (to be fixed, or
 > acknowledged as a deliberate major bump and a coordinated subject update).
 
-## The conformance battery (P1–P5)
+## The conformance battery (P1–P5, G4)
 
-Each is an `#[ignore]`-gated real-infra test (`tests/conformance.rs`):
+P1–P5 are `#[ignore]`-gated real-infra tests (`tests/conformance.rs`); **G4** is a
+pure round-trip through the lib types (a unit test in `src/scopes.rs`, no infra). G4
+runs via `cargo test` only — it is an offline lib round-trip, never a black-box
+spawned subject, so it is **not** selectable on the `--scenario` CLI runner
+(`Scenario::from_code("g4")` returns `None` by design; only P1–P5 are spawn scenarios):
 
 | Id | Asserts |
 |---|---|
@@ -64,6 +69,7 @@ Each is an `#[ignore]`-gated real-infra test (`tests/conformance.rs`):
 | **P3** | A bearer that was **never seeded** resolves to **200, no `X-Passport`** (anonymous). |
 | **P4** | A request with **no `Authorization`** header resolves to **200, no `X-Passport`** (anonymous). |
 | **P5** | Two distinct seeded entries (distinct email + token_id) resolve, **each to its own passport** — token_id and email match respectively, with no cross-talk. |
+| **G4** | A `Passport` carrying a `scopes` claim survives the `X-Passport` base64 round-trip (`to_header` → `from_header`) **identically**, and the v0.11.0 typed-scopes API holds: `scopes()` yields the granted `ScopeKey`s, `has_scope` is true for a granted scope and false for an ungranted one, an absent claim yields no scopes, and a malformed entry is skipped while valid ones survive. |
 
 The non-tautological property **P1 + P5** prove: the independent subject agrees with
 the lib's `bearer_token_key` derivation and `BearerTokenEntry` shape. If the subject's
@@ -125,12 +131,12 @@ runner (shared with G2/G3).
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no crates.io).
-Keep its `br-rust-common` tag identical to `br-test-harness`'s (`v0.10.0`) so Cargo
+Keep its `br-rust-common` pin identical to `br-test-harness`'s (`v0.11.0`) so Cargo
 resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.4.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.5.0" }
 ```
 
 ## Why — the non-obvious bits
