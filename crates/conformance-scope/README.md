@@ -151,11 +151,11 @@ the runner (alongside `nats-server`), to build the conformance subject.
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
 crates.io). Keep its `br-rust-common` tag identical to `br-test-harness`'s
-(`v0.10.0`) so Cargo resolves a single source and never duplicates `br-core-*`:
+(`v0.11.0`) so Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.4.0" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.5.0" }
 ```
 
 ## Why — the non-obvious bits

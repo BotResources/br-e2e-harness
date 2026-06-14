@@ -7,6 +7,8 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-14
+
 ### Added
 
 - **`br-test-harness::nats_assert` — NATS published-contract observation + named-stream

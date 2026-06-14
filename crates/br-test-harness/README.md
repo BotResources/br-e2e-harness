@@ -430,16 +430,15 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.4.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.5.0" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.4.0", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.5.0", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
 (its `test-support` feature, which ships `PassportBuilder`) pinned to
-`br-rust-common` `v0.11.0` — **currently a branch pin pending the `v0.11.0`
-tag**, flipped to `tag = "v0.11.0"` at release. A slim build that omits the
+`br-rust-common` `tag = "v0.11.0"`. A slim build that omits the
 passport-bearing features drops the dependency. If your service already pins
 `br-rust-common`, keep both on the **same ref** so Cargo resolves a single
 source (two refs of one git URL are two distinct sources and duplicate
