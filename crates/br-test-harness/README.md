@@ -43,6 +43,202 @@ persistence abstraction, can inject them.
 | Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
 | A pilotable in-process OIDC IdP (discovery, JWKS, mint, rotate) | `oidc` | `oidc` |
 
+## The 4-channel observation pattern (the BR e2e doctrine)
+
+A BR service e2e scenario **is** the executable functional spec — the verification
+floor for every service, and the *primary* spec surface for **fatty** units, which
+have no pure-domain `command → event` tests-as-spec. A scenario is a complete
+functional flow (Given/When/Then, hosted in Outline; `tests/` is its executable
+transcript), and it asserts that flow across **four observation channels** —
+nothing else is a legitimate window into the running service:
+
+| # | Channel | What it observes | Harness surface |
+|---|---|---|---|
+| 1 | **Mutation ack / error** | a mutation returns a *verdict*, never state: an ack on success, or a structured error carrying a **stable code** on rejection | `verdict::{expect_ack, is_ack, expect_rejected, expect_code_shaped, is_code_shaped, mutation_error_code}` over a `GraphqlClient` response |
+| 2 | **Query + affordances** | the authoritative current state *and* the `{ action, allowed, reasonCode }` affordances the service computes for the caller's Passport | `GraphqlClient::query` + the same `verdict` helpers (the affordance-skip guarantee keeps an affordance `reasonCode` from reading as a mutation error) |
+| 3 | **Subscriptions** | the near-unfiltered domain-event stream the frontend folds — every transition, with its code | `SseSubscription::{next_event, expect_event, expect_silence, drain}` |
+| 4 | **Published contract** (KV + integration events) | the service's *published language* — its integration events on a named, GitOps-provisioned JetStream stream, and the KV mirror it writes for downstream consumers | `await_integration_event(js, stream, subject, deadline)` + `recreate_stream` / `recreate_kv` to reset the named bus clean per scenario |
+
+The non-negotiable rule that makes a scenario a *spec* and not a *fixture*: **state
+is built only through GraphQL mutations — never through DB seeds**. A seeded
+scenario can pass while the mutation write path is broken; a mutation-built one
+cannot. The `flows.rs` helpers a service writes (multi-step create → propose → vote
+sequences) are therefore pure compositions of channel-1 mutations, never SQL.
+
+Two supporting primitives underpin the four channels:
+
+- **Two-role Postgres** — `E2eDatabase::create(bypassrls, …)` then
+  `.with_app_role(name, pw)`: the `BYPASSRLS` **owner** runs the migrations and reads
+  raw state, the RLS-subject **app role** is the runtime role the service connects
+  as. Channel 2's RLS assertions (a caller sees only its own rows) run as the app
+  role while the owner — or the superuser `admin_url()` — reads the unfiltered truth.
+- **Fail-loud boot** — `SpawnedProcess::await_boot(url, timeout) -> BootOutcome`
+  (`Ready` / `Exited(status)` / `TimedOut`): the S0-style "the service refuses to
+  boot when its declared GitOps infra is missing, and names the missing resource"
+  scenario asserts an `Exited` outcome and greps `proc.logs()` for the named piece.
+  `wait_for_http_ok` remains the happy-path "ready or fail the test" checker.
+
+## Copy-me: the per-service `TestContext` assembly
+
+The harness ships the **blocks**, deliberately **not** an opinionated composite — so
+the small amount of glue that wires them into one running service stays the service's
+own, expressed in its own vocabulary (its actors, its stream names, its env-var
+contract, its readiness gate). That glue is the `TestContext` below: a new service
+copies this ~80-line template, swaps the constants for its own, and writes its first
+4-channel scenario **without re-implementing a single verdict/observation helper** —
+every one of those is imported from `br-test-harness`.
+
+The reference is `svc-charter` (the BR-fatty reference unit). What each service
+**owns** is exactly: the named actors, the named contract streams + KV bucket, the
+two PG role names, the binary's env-var contract, and the restart/boot helpers. What
+it **imports** is everything else.
+
+```rust,ignore
+use std::time::Duration;
+
+use br_test_harness::{
+    await_integration_event, recreate_kv, recreate_stream, E2eDatabase, GraphqlClient,
+    SpawnedNats, SpawnedProcess, SseSubscription,
+};
+use serde_json::Value;
+use uuid::Uuid;
+
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
+const PUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
+const CHARTER_STREAM: &str = "CHARTER";
+const IDENTITY_STREAM: &str = "IDENTITY";
+const CHARTER_KV_BUCKET: &str = "charter";
+
+const OWNER_ROLE: &str = "charter_owner";
+const APP_ROLE: &str = "charter_app";
+const APP_PW: &str = "charter_app_test_pw";
+
+pub struct Actors {
+    pub su_a: Uuid,
+    pub b: Uuid,
+    pub c: Uuid,
+    pub worker: Uuid,
+}
+
+pub struct TestContext {
+    pub gql: GraphqlClient,
+    pub base_url: String,
+    pub actors: Actors,
+    db: E2eDatabase,
+    nats: SpawnedNats,
+    js: async_nats::jetstream::Context,
+    kv: async_nats::jetstream::kv::Store,
+    service: SpawnedProcess,
+}
+
+impl TestContext {
+    pub async fn setup() -> Self {
+        let db = E2eDatabase::create_named(OWNER_ROLE, "charter_test", true, &[])
+            .await
+            .with_app_role(APP_ROLE, APP_PW)
+            .await;
+
+        let nats = SpawnedNats::start().await;
+        let client = br_test_harness::nats::connect(&nats.url()).await.unwrap();
+        let js = async_nats::jetstream::new(client.clone());
+        recreate_stream(&js, IDENTITY_STREAM, &["identity.>"]).await;
+        recreate_stream(&js, CHARTER_STREAM, &["charter.>"]).await;
+        let kv = recreate_kv(&js, CHARTER_KV_BUCKET).await;
+
+        let port = free_port();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let mut service = SpawnedProcess::spawn(
+            env!("CARGO_BIN_EXE_svc-charter"),
+            &["serve"],
+            &[
+                ("PORT", &port.to_string()),
+                ("DATABASE_URL", &db.app_url()),
+                ("DATABASE_URL_OWNER", &db.owner_url()),
+                ("NATS_URL", &nats.url()),
+                ("SCOPE_DECLARATION_ENABLED", "false"),
+            ],
+        );
+        let boot = service
+            .await_boot(&format!("{base_url}/readyz"), READY_TIMEOUT)
+            .await;
+        assert!(boot.is_ready(), "svc-charter did not boot: {}", service.logs());
+
+        Self {
+            gql: GraphqlClient::new(&base_url),
+            base_url,
+            actors: Actors {
+                su_a: Uuid::now_v7(),
+                b: Uuid::now_v7(),
+                c: Uuid::now_v7(),
+                worker: Uuid::now_v7(),
+            },
+            db,
+            nats,
+            js,
+            kv,
+            service,
+        }
+    }
+
+    pub async fn subscribe(&self, passport: &br_core_auth::Passport, query: &str) -> SseSubscription {
+        SseSubscription::open(&self.base_url, passport, query).await
+    }
+
+    pub async fn await_event(&self, subject: &str) -> Option<Value> {
+        await_integration_event(&self.js, CHARTER_STREAM, subject, PUSH_TIMEOUT).await
+    }
+
+    pub async fn kv_get(&self, key: &str) -> Option<Value> {
+        match self.kv.get(key.to_string()).await {
+            Ok(Some(bytes)) => serde_json::from_slice(&bytes).ok(),
+            _ => None,
+        }
+    }
+
+    pub async fn teardown(self) {
+        self.service.shutdown().await;
+        self.nats.shutdown().await;
+        self.db.cleanup().await;
+    }
+}
+
+fn free_port() -> u16 {
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind ephemeral port");
+    l.local_addr().expect("read port").port()
+}
+```
+
+A scenario then reads as a flat transcript over the four channels:
+
+```rust,ignore
+#[tokio::test]
+async fn s3_member_can_be_added_and_the_change_is_published() {
+    let ctx = TestContext::setup().await;
+    let su = PassportBuilder::new().user_id(ctx.actors.su_a).super_admin(true).build();
+
+    let res = ctx.gql.query(&su, CHARTER_ADD_MEMBER,
+        serde_json::json!({ "userId": ctx.actors.b.to_string() })).await;
+    verdict::expect_ack(&res, "add college member");                     // channel 1
+
+    let college = ctx.gql.query(&su, Q_COLLEGE, serde_json::json!({})).await;
+    assert_eq!(college["data"]["charterCollege"]["members"].as_array().unwrap().len(), 1); // channel 2
+
+    let event = ctx.await_event("charter.evt.college.member_added.v1").await
+        .expect("the member-added integration event is published");      // channel 4
+    assert_eq!(event["userId"], ctx.actors.b.to_string());
+
+    ctx.teardown().await;
+}
+```
+
+This is the **decided design (B.2.a of issue #55): blocks-only, charter's assembly
+blessed as the documented copy-me template** — not an opinionated `TestContext`
+builder shipped by the harness. The composite varies per service (actors, stream
+names, role names, the env contract, whether the scope handshake is opted out); the
+harness keeps its raw-handles philosophy and lets each service own the ~80 lines that
+are genuinely its own.
+
 ### Claim keys are a per-project seam
 
 `PassportBuilder` is **re-exported from `br-core-auth`** (its `test-support`
