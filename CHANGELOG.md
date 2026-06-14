@@ -7,7 +7,7 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
-## [0.5.0] — 2026-06-14
+## [0.5.1] — 2026-06-14
 
 ### Fixed
 
@@ -26,6 +26,8 @@ single git tag `v{version}` releases the set. Format follows
   stays primary (a `torn_down` flag makes the net a no-op after it). `create` /
   `create_named` signatures are unchanged. Two `#[ignore]`-gated real-PG tests cover
   re-run-after-leak recovery and the Drop-net teardown.
+
+## [0.5.0] — 2026-06-14
 
 ### Added
 

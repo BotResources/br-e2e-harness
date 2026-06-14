@@ -14,7 +14,7 @@ br-util-directory = { git = "https://github.com/BotResources/br-rust-common", pa
     "consumer",
 ] }
 
-br-test-harness = { path = "../br-test-harness", version = "0.5.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "0.5.1", default-features = false, features = [
     "nats",
     "spawned-nats",
     "e2e-db",

@@ -340,7 +340,7 @@ dependencies = [
 
 [[package]]
 name = "br-test-harness"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-nats",
  "axum",
@@ -528,7 +528,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-directory"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-identity"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-nats",
  "br-core-integration",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-passport"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-nats",
  "br-core-auth",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-nats",
  "br-core-integration",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1611,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "oidc-test-idp"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "axum",
  "base64",
