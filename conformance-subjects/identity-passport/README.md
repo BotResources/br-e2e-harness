@@ -23,7 +23,8 @@ On boot:
    (default `bearer_tokens`), then sets `/readyz` **200**. **The subject does NOT
    create the bucket** (the platform never auto-provisions). If the bucket is
    missing, the bind fails and `/readyz` stays **503**.
-2. Serves `GET` (and `POST`) on `/internal/passport`:
+2. Serves `GET` on `/internal/passport` (the frozen contract is `GET`; the handler is a
+   plain `net/http` mux entry, so other methods reach it too, but only `GET` is contractual):
    - Reads `Authorization`. Only `Authorization: Bearer <token>` is resolved.
    - Computes the KV key = **lowercase-hex SHA-256 of the raw `<token>`** (the
      full token after `Bearer `, including any `brk_` prefix — the whole string
