@@ -59,6 +59,25 @@ single git tag `v{version}` releases the set. Format follows
   enabled.** This is a **branch pin** (`branch = "v0.11.0"`) pending the
   `v0.11.0` tag — the release work flips it to `tag = "v0.11.0"`.
 
+### Documentation
+
+- **`br-test-harness` README documents the 4-channel observation pattern + the
+  copy-me `TestContext` template** (issue #55, "Done when" #4 / B.2.a). The new
+  "The 4-channel observation pattern" section frames the BR e2e doctrine — the
+  scenario *is* the executable functional spec, state built **only** through
+  GraphQL mutations (never DB seeds) — and maps each channel to the now-shipped
+  primitives: mutation ack/error → `verdict::*`; query + affordances →
+  `GraphqlClient::query` + the affordance-skip guarantee; subscriptions →
+  `SseSubscription`; published contract (KV + integration events) →
+  `await_integration_event` + `recreate_stream` / `recreate_kv`; plus the two-role
+  Postgres (`E2eDatabase::with_app_role`) and fail-loud boot
+  (`SpawnedProcess::await_boot` → `BootOutcome`) underpinnings. The "Copy-me: the
+  per-service `TestContext` assembly" section embeds `svc-charter`'s assembly
+  **adapted onto the shipped harness blocks** as the reference template a new
+  service copies (actors + named streams + KV bucket + the two PG roles +
+  restart/boot helpers), reflecting the decided **blocks-only** design (B.2.a):
+  the harness ships the blocks, the service owns the ~80-line composite.
+
 ### Added
 
 - **`E2eDatabase::with_app_role(name, password)` — two-role Postgres provisioning
