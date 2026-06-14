@@ -1,7 +1,10 @@
 use sqlx::{Connection, Executor, PgConnection};
 
 mod admin;
-use admin::{drop_db_and_owner, ensure_app_role, grant_app_schema, pg_host_port, role_exists};
+use admin::{
+    drop_db_and_owner, ensure_app_role, ensure_owner_role, grant_app_schema, pg_host_port,
+    role_exists, teardown_blocking,
+};
 
 pub struct E2eDatabase {
     admin_url: String,
@@ -11,6 +14,7 @@ pub struct E2eDatabase {
     owner_password: String,
     granted_roles: Vec<String>,
     app_role: Option<AppRole>,
+    torn_down: bool,
 }
 
 struct AppRole {
@@ -71,17 +75,7 @@ impl E2eDatabase {
             drop_db_and_owner(&mut admin, &db_name, &owner_role, &[]).await;
         }
 
-        let bypass_clause = if bypassrls { " BYPASSRLS" } else { "" };
-        admin
-            .execute(
-                format!(
-                    "CREATE ROLE \"{owner_role}\" LOGIN PASSWORD '{owner_password}' \
-                     NOSUPERUSER CREATEROLE{bypass_clause}"
-                )
-                .as_str(),
-            )
-            .await
-            .expect("failed to create e2e owner role");
+        ensure_owner_role(&mut admin, &owner_role, &owner_password, bypassrls).await;
 
         admin
             .execute(format!("CREATE DATABASE \"{db_name}\" OWNER \"{owner_role}\"").as_str())
@@ -111,6 +105,7 @@ impl E2eDatabase {
             owner_password,
             granted_roles,
             app_role: None,
+            torn_down: false,
         }
     }
 
@@ -184,7 +179,8 @@ impl E2eDatabase {
         self.app_role.as_ref().map(|r| r.name.as_str())
     }
 
-    pub async fn cleanup(self) {
+    pub async fn cleanup(mut self) {
+        self.torn_down = true;
         let mut admin = match PgConnection::connect(&self.admin_url).await {
             Ok(c) => c,
             Err(e) => {
@@ -200,5 +196,20 @@ impl E2eDatabase {
         )
         .await;
         admin.close().await.ok();
+    }
+}
+
+impl Drop for E2eDatabase {
+    fn drop(&mut self) {
+        if self.torn_down {
+            return;
+        }
+        self.torn_down = true;
+        teardown_blocking(
+            self.admin_url.clone(),
+            self.db_name.clone(),
+            self.owner_role.clone(),
+            std::mem::take(&mut self.granted_roles),
+        );
     }
 }

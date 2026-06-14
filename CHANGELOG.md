@@ -7,6 +7,22 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-06-14
+
+### Fixed
+
+- **`E2eDatabase` no longer leaks its owner role when a test panics before cleanup.** The
+  owner role is now ensured **idempotently** (same `DO … IF NOT EXISTS … duplicate_object`
+  shape as the app role), so a role left by a crashed run no longer makes the next run die
+  on `42710 role already exists`, and the path is collision-safe under parallel worktrees.
+  `E2eDatabase` also gains a best-effort **`Drop` net** that tears down the per-test DB +
+  owner when a test panics before the explicit `cleanup`/`teardown`; the explicit path
+  stays primary, and the net warns rather than panics, with a 10s bound on its admin
+  connection so an unreachable Postgres can never hang teardown. `create` / `create_named`
+  signatures are unchanged (`cleanup` stays by-value). See the README "Why" table for the
+  mechanism. Real-PG tests cover re-run-after-leak recovery and the Drop-net teardown; an
+  offline self-test proves the net survives an unreachable admin without panicking.
+
 ## [0.5.0] — 2026-06-14
 
 ### Added
