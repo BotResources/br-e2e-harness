@@ -29,7 +29,7 @@ persistence abstraction, can inject them.
 | A throwaway Postgres DB + non-superuser, CNPG-shaped owner role | `E2eDatabase` | `e2e-db` |
 | A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` | `spawned-nats` |
 | A connection to NATS + isolated KV buckets | `TestNats` | `nats` |
-| Run the real service binary as a child (drained, readiness-polled) | `SpawnedProcess`, `run_once` | *(always on)* |
+| Run the real service binary as a child (drained, readiness-polled, boot-classified) | `SpawnedProcess`, `BootOutcome`, `run_once` | *(always on; HTTP polling needs `http-client`)* |
 | An in-process Axum server on a random port | `TestServer` | `server` |
 | A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
 | A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
@@ -65,6 +65,27 @@ Two helpers exist specifically to kill the classic e2e flakes:
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
 
+### Boot classification — happy path *and* fail-loud
+
+`SpawnedProcess` has two readiness paths against the service's own health URL,
+both `http-client`-gated:
+
+- **`wait_for_http_ok(url, timeout) -> Result<(), String>`** — the happy path. A
+  non-`Ok` means "did not become ready", with the captured logs in the error
+  string. Use it when a non-boot is a test failure.
+- **`await_boot(url, timeout) -> BootOutcome`** — the fail-loud path. It
+  *classifies* the boot into `BootOutcome::{ Ready, Exited(ExitStatus), TimedOut }`
+  so a scenario can **assert** an outcome — including the deliberate crash of a
+  service that refuses to start with its declared GitOps infra missing (the
+  S0-style "fail loud, name the missing resource"). On `Exited` the captured pipes
+  are drained to EOF before returning, so `proc.logs()` carries the full tail the
+  binary printed before exiting — which is where the named missing resource lives.
+  `BootOutcome::is_ready()` / `exit_status()` are the two convenience reads.
+
+The process stays owned by the caller in every outcome (mirroring
+`wait_for_http_ok`): pair the verdict with `proc.logs()`, and `shutdown()` (or
+drop — `kill_on_drop`) reaps it.
+
 ## Why — the non-obvious bits
 
 The source is comment-free by design (it is read by agents, for which comments
@@ -79,6 +100,8 @@ here, synthetically:
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_event` returns `None` **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
 | `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
+| `SpawnedProcess` has both `wait_for_http_ok` and `await_boot` | A nominal scenario wants "ready or fail the test" (`wait_for_http_ok` → `Result`); a fail-loud scenario wants to **assert** the boot *did not* succeed and inspect *why* (`await_boot` → `BootOutcome::{Ready, Exited(status), TimedOut}`). Both are kept — the classifier adds the three-outcome verdict, it does not replace the happy-path checker. |
+| `await_boot` drains the pipes to EOF before returning `Exited` | The drain runs as background tasks, so `try_wait()` can observe the exit before those tasks have read the binary's final stderr/stdout. Awaiting them on `Exited` guarantees `proc.logs()` holds the full tail — the line naming the missing declared resource an S0-style scenario asserts on. The continuous-drain model means no kill-before-drain dance (the prod-side reference used a sync `std::process` and had to). |
 | `deny.toml` ignores `RUSTSEC-2023-0071` (Marvin timing attack in `rsa`) | The advisory is a side-channel in `rsa` private-key *decryption*. This workspace only ships test fixtures that **sign** short-lived tokens on isolated test networks — no decryption path, no timing-oracle adversary in the threat model. Same ignore as `svc-auth`'s CI. |
 | `deny.toml` allows `CDLA-Permissive-2.0` | Mozilla's CA-root data set, vendored by `webpki-roots`, pulled in transitively by the rustls stack under `reqwest` / `sqlx` / `async-nats`. It is an OSI-recognized permissive *data* license with no copyleft and no patent traps — safe for a fixtures repo. Added when `br-test-harness` brought the rustls TLS stack in. |
 
