@@ -1,5 +1,5 @@
 use br_test_harness::E2eDatabase;
-use sqlx::{Connection, PgConnection, Row as _};
+use sqlx::{Connection, Executor as _, PgConnection, Row as _};
 
 #[tokio::test]
 #[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
@@ -62,5 +62,142 @@ async fn rls_context_is_transaction_local_and_never_leaks_across_transactions() 
     tx_b.rollback().await.expect("rollback second transaction");
 
     conn.close().await.ok();
+    db.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn provisions_an_app_role_that_authenticates_and_can_use_the_public_schema() {
+    let app_name = format!("e2e_app_{}", uuid::Uuid::now_v7().simple());
+    let db = E2eDatabase::create(true, &[])
+        .await
+        .with_app_role(&app_name, "app_test_pw")
+        .await;
+
+    assert_eq!(db.app_role(), Some(app_name.as_str()));
+
+    let mut owner = PgConnection::connect(&db.owner_url())
+        .await
+        .expect("owner connection");
+    owner
+        .execute("CREATE TABLE widgets (id int primary key, owner_id text not null)")
+        .await
+        .expect("owner creates a table");
+    owner.close().await.ok();
+
+    let mut app = PgConnection::connect(&db.app_url())
+        .await
+        .expect("the provisioned app role must authenticate with its password");
+    let current: String = sqlx::query("SELECT current_user")
+        .fetch_one(&mut app)
+        .await
+        .expect("query as app role must succeed")
+        .get(0);
+    assert_eq!(current, app_name);
+
+    app.execute("INSERT INTO widgets (id, owner_id) VALUES (1, 'alice')")
+        .await
+        .expect("owner default privileges must let the app role write the new table");
+    let count: i64 = sqlx::query("SELECT count(*) FROM widgets")
+        .fetch_one(&mut app)
+        .await
+        .expect("app role reads its own write")
+        .get(0);
+    assert_eq!(count, 1);
+
+    app.close().await.ok();
+    db.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn app_role_provisioning_is_idempotent_under_a_shared_role_name() {
+    let app_name = format!("e2e_app_shared_{}", uuid::Uuid::now_v7().simple());
+
+    let first = E2eDatabase::create(true, &[])
+        .await
+        .with_app_role(&app_name, "app_test_pw")
+        .await;
+    let second = E2eDatabase::create(true, &[])
+        .await
+        .with_app_role(&app_name, "app_test_pw")
+        .await;
+
+    for db in [&first, &second] {
+        let app = PgConnection::connect(&db.app_url())
+            .await
+            .expect("the shared app role authenticates against both databases");
+        app.close().await.ok();
+    }
+
+    first.cleanup().await;
+    second.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn rls_isolates_the_app_role_while_the_bypassrls_owner_sees_raw_rows() {
+    let app_name = format!("e2e_app_rls_{}", uuid::Uuid::now_v7().simple());
+    let db = E2eDatabase::create(true, &[])
+        .await
+        .with_app_role(&app_name, "app_test_pw")
+        .await;
+
+    assert!(
+        !db.admin_url().is_empty(),
+        "the admin url must be surfaced for posture / raw-state assertions"
+    );
+
+    let mut owner = PgConnection::connect(&db.owner_url())
+        .await
+        .expect("owner connection");
+    for stmt in [
+        "CREATE TABLE notes (id int primary key, owner_id text not null, body text not null)",
+        "ALTER TABLE notes ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE notes FORCE ROW LEVEL SECURITY",
+        "CREATE POLICY notes_owner ON notes USING (owner_id = current_setting('app.current_user_id', true))",
+        "INSERT INTO notes (id, owner_id, body) VALUES (1, 'alice', 'a'), (2, 'bob', 'b')",
+    ] {
+        owner
+            .execute(stmt)
+            .await
+            .expect("owner sets up RLS fixture");
+    }
+
+    let mut app = PgConnection::connect(&db.app_url())
+        .await
+        .expect("app connection (the RLS-subject role)");
+    let mut tx = app.begin().await.expect("begin app transaction");
+    sqlx::query("SELECT set_config('app.current_user_id', $1, true)")
+        .bind("alice")
+        .execute(&mut *tx)
+        .await
+        .expect("set transaction-local RLS principal");
+    let visible: Vec<String> = sqlx::query("SELECT body FROM notes ORDER BY id")
+        .fetch_all(&mut *tx)
+        .await
+        .expect("app role reads under RLS")
+        .into_iter()
+        .map(|r| r.get(0))
+        .collect();
+    assert_eq!(
+        visible,
+        vec!["a".to_string()],
+        "the app role must see only the rows its RLS principal owns"
+    );
+    tx.commit().await.ok();
+    app.close().await.ok();
+
+    let raw: i64 = sqlx::query("SELECT count(*) FROM notes")
+        .fetch_one(&mut owner)
+        .await
+        .expect("the bypassrls owner reads raw, unfiltered state")
+        .get(0);
+    assert_eq!(
+        raw, 2,
+        "the rls-bypassing owner must see every row regardless of the RLS principal"
+    );
+    owner.close().await.ok();
+
     db.cleanup().await;
 }
