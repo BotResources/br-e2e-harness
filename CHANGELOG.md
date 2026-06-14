@@ -10,19 +10,17 @@ single git tag `v{version}` releases the set. Format follows
 ### Added
 
 - **`SseSubscription::drain(max, timeout) -> usize`** — the third de-flake
-  primitive, in the same family as `WsSubscription::next_matching` and
-  `wait_until`. It pulls up to `max` events off an open SSE subscription,
-  stopping at the first that doesn't arrive within `timeout` (a clean stream
-  end or genuine silence), and returns the count drained. Lets a scenario flush
-  the rest of a known burst before its next leg, so a stale earlier-transition
-  frame can't satisfy a later `expect_event`. It reuses `next_event`, so a
-  broken stream still panics — it never swallows an error frame. This back-ports
-  charter's local `drain_pushes(sub, max)` (which loops a hardcoded per-push
-  deadline and discards the count) as a strict superset: an explicit `timeout`
-  and a returned count. With this, the harness's stream-based `SseSubscription`
-  (`open` / `next_event` / `expect_event` / `expect_silence` / `drain`) covers
-  charter's full push/silence surface, and charter drops its channel-based local
-  copy (B.1 of #55).
+  primitive, alongside `WsSubscription::next_matching` and `wait_until`. Pulls up
+  to `max` events off an open SSE subscription, stops at the first that doesn't
+  arrive within `timeout` (a clean stream end or genuine silence) leaving the
+  rest for the next read, and returns the count drained. Lets a scenario flush
+  the tail of a known burst before its next leg, so a stale earlier-transition
+  frame can't satisfy a later `expect_event`. A broken stream still panics. Back-
+  ports charter's local `drain_pushes(sub, max)` as a strict superset (explicit
+  `timeout`, returned count): the harness's stream-based `SseSubscription`
+  (`open` / `next_event` / `expect_event` / `expect_silence` / `drain`) now
+  covers charter's full push/silence surface, and charter drops its channel-based
+  local copy (B.1 of #55).
 
 ### Changed
 

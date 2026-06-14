@@ -14,6 +14,10 @@ fn next_frames(count: usize) -> String {
         .collect()
 }
 
+fn error_frame() -> String {
+    "event: next\ndata: {\"errors\":[{\"message\":\"boom\"}]}\n\n".to_string()
+}
+
 async fn serve(body: String) -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "text/event-stream")], body)
 }
@@ -69,4 +73,12 @@ async fn drain_returns_zero_on_silence() {
     let drained = sub.drain(10, Duration::from_millis(200)).await;
 
     assert_eq!(drained, 0, "a silent stream drains nothing");
+}
+
+#[tokio::test]
+#[should_panic(expected = "subscription stream returned errors")]
+async fn drain_panics_on_an_errors_frame_never_swallows_it() {
+    let mut sub = open_against(format!("{}{}", next_frames(1), error_frame())).await;
+
+    sub.drain(10, Duration::from_secs(2)).await;
 }
