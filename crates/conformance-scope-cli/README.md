@@ -41,7 +41,7 @@ The Linux build is a static musl binary (runs on any glibc/musl distro). Each
 asset ships a matching `.sha256`:
 
 ```sh
-version=0.3.0
+version=0.4.0
 target=x86_64-unknown-linux-musl
 asset="conformance-scope-${version}-${target}.tar.gz"
 

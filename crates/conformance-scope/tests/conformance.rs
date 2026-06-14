@@ -1,6 +1,7 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use br_core_scope::ServiceKey;
+use br_test_harness::wait_until;
 use conformance_scope::checks::{
     CheckContext, declaration_content, declare_well_formed, disabled_mode_ready_without_declare,
     duplicate_confirmations_tolerated, readiness_gated, rejection_stops_readiness,
@@ -36,6 +37,10 @@ fn config(harness: &ScopeHarness) -> SubjectConfig {
         .label_key("label.notifier")
         .description_key("desc.notifier")
         .wait_timeout("500ms")
+}
+
+fn config_with_long_wait_timeout(harness: &ScopeHarness) -> SubjectConfig {
+    config(harness).wait_timeout("30s")
 }
 
 fn service_key() -> ServiceKey {
@@ -307,6 +312,58 @@ async fn s6_disabled_mode_publishes_nothing_and_is_ready_immediately() {
         outcome.is_pass(),
         "s6 must pass: {outcome:?}; logs:\n{}",
         subject.logs()
+    );
+
+    subject.shutdown().await;
+    capture.stop().await;
+    harness.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn attach_capture_replays_the_boot_declare_published_before_it() {
+    let harness = ScopeHarness::start().await.expect("harness");
+    let subject = Subject::spawn(harness.binary(), &config_with_long_wait_timeout(&harness));
+
+    let boot_declare_on_stream = wait_until(Duration::from_secs(10), || async {
+        let mut stream = match harness.jetstream().get_stream(harness.stream_name()).await {
+            Ok(stream) => stream,
+            Err(_) => return false,
+        };
+        stream
+            .info()
+            .await
+            .map(|info| info.state.messages >= 1)
+            .unwrap_or(false)
+    })
+    .await;
+    assert!(
+        boot_declare_on_stream,
+        "the boot declare must land on the stream before the capture is created; logs:\n{}",
+        subject.logs()
+    );
+
+    let started_at = Instant::now();
+    let capture = harness.capture_declares().await.expect("capture");
+
+    let replayed = wait_until(Duration::from_secs(2), || async { capture.count() >= 1 }).await;
+    let elapsed = started_at.elapsed();
+    assert!(
+        replayed,
+        "the capture must REPLAY the boot declare already on the stream; \
+         under the old DeliverPolicy::New it would see nothing until the ~30s re-publish; logs:\n{}",
+        subject.logs()
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "the replay must be sub-second, not a ~30s re-publish wait; elapsed={elapsed:?}; logs:\n{}",
+        subject.logs()
+    );
+
+    let first = capture.first().expect("a replayed declare");
+    assert!(
+        first.decode().is_ok(),
+        "the replayed declare must decode to a real IntegrationCommand<DeclareServiceScopes>"
     );
 
     subject.shutdown().await;
