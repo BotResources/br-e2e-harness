@@ -136,6 +136,84 @@ async fn app_role_provisioning_is_idempotent_under_a_shared_role_name() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn create_named_recovers_when_a_prior_crashed_run_leaked_the_owner_role() {
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let owner_name = format!("e2e_owner_leaked_{suffix}");
+    let db_name = format!("e2e_leaked_{suffix}");
+
+    let admin_url = std::env::var("E2E_PG_ADMIN_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("E2E_PG_ADMIN_URL / DATABASE_URL must be set for this real-infra test");
+    let mut admin = PgConnection::connect(&admin_url)
+        .await
+        .expect("connect as admin to simulate a leaked owner role");
+    admin
+        .execute(
+            format!("CREATE ROLE \"{owner_name}\" LOGIN PASSWORD 'stale_pw' NOSUPERUSER").as_str(),
+        )
+        .await
+        .expect("pre-create the owner role to simulate a crashed run that never cleaned up");
+    admin.close().await.ok();
+
+    let db = E2eDatabase::create_named(&owner_name, &db_name, true, &[]).await;
+
+    let mut owner = PgConnection::connect(&db.owner_url())
+        .await
+        .expect("after recovering the leaked owner, it authenticates with the fresh credentials");
+    let current: String = sqlx::query("SELECT current_user")
+        .fetch_one(&mut owner)
+        .await
+        .expect("query as the recovered owner must succeed")
+        .get(0);
+    assert_eq!(current, owner_name);
+    owner.close().await.ok();
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn the_drop_net_tears_down_a_db_dropped_without_an_explicit_cleanup() {
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let owner_name = format!("e2e_owner_dropnet_{suffix}");
+    let db_name = format!("e2e_dropnet_{suffix}");
+
+    {
+        let _db = E2eDatabase::create_named(&owner_name, &db_name, true, &[]).await;
+    }
+
+    let admin_url = std::env::var("E2E_PG_ADMIN_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("E2E_PG_ADMIN_URL / DATABASE_URL must be set for this real-infra test");
+    let mut admin = PgConnection::connect(&admin_url)
+        .await
+        .expect("connect as admin to assert the Drop net tore the resources down");
+
+    let db_left: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM pg_database WHERE datname = $1")
+        .bind(&db_name)
+        .fetch_optional(&mut admin)
+        .await
+        .expect("query pg_database");
+    assert!(
+        db_left.is_none(),
+        "the Drop net must have dropped the test database left without an explicit cleanup"
+    );
+
+    let owner_left: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM pg_roles WHERE rolname = $1")
+        .bind(&owner_name)
+        .fetch_optional(&mut admin)
+        .await
+        .expect("query pg_roles");
+    assert!(
+        owner_left.is_none(),
+        "the Drop net must have dropped the owner role left without an explicit cleanup"
+    );
+
+    admin.close().await.ok();
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
 async fn rls_isolates_the_app_role_while_the_bypassrls_owner_sees_raw_rows() {
     let app_name = format!("e2e_app_rls_{}", uuid::Uuid::now_v7().simple());
     let db = E2eDatabase::create(true, &[])

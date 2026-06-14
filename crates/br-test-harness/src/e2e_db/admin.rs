@@ -1,4 +1,4 @@
-use sqlx::{Executor, PgConnection};
+use sqlx::{Connection, Executor, PgConnection};
 
 pub(super) async fn drop_db_and_owner(
     admin: &mut PgConnection,
@@ -33,6 +33,70 @@ pub(super) async fn drop_db_and_owner(
     {
         eprintln!("warning: failed to drop e2e owner role '{owner_role}': {e}");
     }
+}
+
+pub(super) fn teardown_blocking(
+    admin_url: String,
+    db_name: String,
+    owner_role: String,
+    granted_roles: Vec<String>,
+) {
+    let join = std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("warning: e2e Drop net could not build a teardown runtime: {e}");
+                return;
+            }
+        };
+        rt.block_on(async {
+            let mut admin = match PgConnection::connect(&admin_url).await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("warning: e2e Drop net could not connect to admin PG: {e}");
+                    return;
+                }
+            };
+            drop_db_and_owner(&mut admin, &db_name, &owner_role, &granted_roles).await;
+            admin.close().await.ok();
+        });
+    });
+    if let Err(e) = join.join() {
+        eprintln!("warning: e2e Drop net teardown thread panicked: {e:?}");
+    }
+}
+
+pub(super) async fn ensure_owner_role(
+    admin: &mut PgConnection,
+    name: &str,
+    password: &str,
+    bypassrls: bool,
+) {
+    let password = password.replace('\'', "''");
+    let bypass_clause = if bypassrls {
+        "BYPASSRLS"
+    } else {
+        "NOBYPASSRLS"
+    };
+    let attributes = format!("LOGIN NOSUPERUSER CREATEROLE {bypass_clause} PASSWORD '{password}'");
+    let sql = format!(
+        "DO $$ BEGIN \
+           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{name}') THEN \
+             CREATE ROLE \"{name}\" WITH {attributes}; \
+           ELSE \
+             ALTER ROLE \"{name}\" WITH {attributes}; \
+           END IF; \
+         EXCEPTION WHEN duplicate_object THEN \
+           ALTER ROLE \"{name}\" WITH {attributes}; \
+         END $$;"
+    );
+    admin
+        .execute(sql.as_str())
+        .await
+        .unwrap_or_else(|e| panic!("failed to ensure e2e owner role '{name}': {e}"));
 }
 
 pub(super) async fn ensure_app_role(admin: &mut PgConnection, name: &str, password: &str) {

@@ -9,6 +9,24 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [0.5.0] — 2026-06-14
 
+### Fixed
+
+- **`E2eDatabase` no longer leaks its owner role when a test panics before cleanup**
+  (caught by the WU-7 charter-adoption gate). The owner role is now created
+  **idempotently** — the same `DO $$ … IF NOT EXISTS (SELECT … pg_roles) THEN CREATE
+  ROLE … ELSE ALTER ROLE … EXCEPTION WHEN duplicate_object THEN ALTER … $$` block
+  already used for the app role (`ensure_owner_role`, parameterized for the owner's
+  `NOSUPERUSER CREATEROLE` + optional `BYPASSRLS`) — so a role left behind by a prior
+  crashed run no longer makes the next run die on `42710 role already exists`, and the
+  path is collision-safe under parallel worktrees. An `ALTER` resets the freshly-generated
+  password, so `owner_url()` authenticates even against a recovered role. In addition,
+  `E2eDatabase` now has a best-effort **`Drop` net** that tears down the per-test DB +
+  owner on a dedicated thread (its own current-thread runtime, never touching the test's
+  runtime) when a test panics before the explicit `cleanup`/`teardown`; the explicit path
+  stays primary (a `torn_down` flag makes the net a no-op after it). `create` /
+  `create_named` signatures are unchanged. Two `#[ignore]`-gated real-PG tests cover
+  re-run-after-leak recovery and the Drop-net teardown.
+
 ### Added
 
 - **`br-test-harness::nats_assert` — NATS published-contract observation + named-stream
