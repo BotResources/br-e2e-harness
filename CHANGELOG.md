@@ -23,6 +23,50 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+- **`conformance-directory` — the identity Published Language (directory)
+  conformance battery (epic #54, WU9).** A new crate that guards the
+  `br-core-directory` wire and the `br-util-directory` publisher/consumer kit,
+  driving the WU8 Go anchor `conformance-subjects/identity-directory`.
+  - **Wire-deser gate (W1–W5, offline).** Builds + runs the Go anchor and
+    deserialises every emitted `{key, value}` `value` **through the real
+    `br-core-directory` types** (`PublishedUser` / `PublishedGroup` /
+    `DirectoryMeta`). A successful deser *is* the wire-shape check; a lib drift
+    (renamed/retyped core field, changed serde, broken `flatten`) makes the deser
+    fail → red. Asserts: users/groups/meta deserialise, the neutral extension
+    `x_custom` lands in `extensions` (flat) never in a core field, `member_ids` is
+    always an array, and a users-only `_meta` auto-degrades groups. Pure unit tests
+    of the same logic (inline JSON mirroring the anchor) keep plain `cargo test`
+    green with **zero** toolchain.
+  - **Px (publisher) — P1/P2, real NATS KV.** Drives `DirectoryPublisher` against a
+    `SpawnedNats` KV bucket. **P1 (mandatory floor):** `reconcile` writes `_meta` +
+    every user, the published wire round-trips identically to the source through the
+    lib types, a second reconcile is the empty diff (idempotent), and dropping a user
+    orphan-deletes its KV key (PII propagation). **P2 (optional):** a users-only
+    source publishes no group keys and a `_meta` that omits groups (gated on `_meta`).
+  - **Cx (consumer) — C1/C2, real NATS KV + real PG.** Drives `DirectoryProjector`
+    (KV→PG over an `E2eDatabase`) and the `DirectorySnapshot` readers; all opt-in,
+    none mandatory. **C1:** reconcile-on-boot projects users, `resolve_user` returns
+    the carried fields, retracting a KV user orphan-deletes its projection row.
+    **C2:** `is_member` / `group_name` resolve with groups in `_meta`, and
+    auto-degrade to empty under a users-only `_meta`.
+  - **Oracle = the real `br-core-directory` / `br-util-directory` types**, pinned to
+    `br-rust-common` **branch `v0.11.0`** (`version = "0.11.0"` alongside, pending the
+    `v0.11.0` tag; the release work flips it to `tag = "v0.11.0"`). The Go anchor
+    never imports the lib — its independence is what makes the detector trustworthy.
+
+- **`conformance-passport` — G4 (`scopes` claim round-trip) + the oracle bumped to
+  `br-rust-common` v0.11.0.** The `br-core-auth` pin moves from `tag = "v0.10.0"` to
+  `branch = "v0.11.0"` (`version = "0.11.0"`, `test-support` enabled) so the battery
+  guards the new typed-scopes surface (`SCOPES_CLAIM_KEY`,
+  `Passport::scopes() -> Vec<ScopeKey>`, `has_scope`). **G4** (a pure unit test, no
+  infra) forges a `Passport` with a `scopes` claim, round-trips it through the
+  `X-Passport` base64 header (`to_header` → `from_header`) and asserts the decoded
+  Passport is identical, `scopes()` yields the granted typed keys, `has_scope` is
+  correct for granted/ungranted scopes, an absent claim yields no scopes, and a
+  malformed entry is skipped while valid ones survive. `CheckId` gains a
+  `ScopesClaimRoundTrip` (`g4`) variant. (This oracle bump was deferred to WU9 by the
+  WU7 review.)
+
 - **`conformance-passport` — the G1 conformance battery (bearer/PAT → Passport).**
   A black-box runner for the BotResources passport-resolution endpoint the GraphQL
   gateway calls before every authenticated request (`GET /internal/passport`). It

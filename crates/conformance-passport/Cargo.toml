@@ -8,7 +8,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v0.10.0", version = "0.10.0" }
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", branch = "v0.11.0", version = "0.11.0", features = [
+    "test-support",
+] }
 
 br-test-harness = { path = "../br-test-harness", version = "0.4.0", default-features = false, features = [
     "nats",

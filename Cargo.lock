@@ -249,22 +249,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-auth"
-version = "0.10.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
-dependencies = [
- "base64",
- "br-core-kernel 0.10.0",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "uuid",
-]
-
-[[package]]
-name = "br-core-auth"
 version = "0.11.0"
-source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#9201e1f419610d6d460e67d4e4112f36cf5fbe48"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#3c1284e5f887aa99c085ee5026856be73f3a6a13"
 dependencies = [
  "base64",
  "br-core-kernel 0.11.0",
@@ -273,6 +259,16 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "br-core-directory"
+version = "0.11.0"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#3c1284e5f887aa99c085ee5026856be73f3a6a13"
+dependencies = [
+ "serde",
+ "serde_json",
  "uuid",
 ]
 
@@ -318,7 +314,7 @@ dependencies = [
 [[package]]
 name = "br-core-kernel"
 version = "0.11.0"
-source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#9201e1f419610d6d460e67d4e4112f36cf5fbe48"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#3c1284e5f887aa99c085ee5026856be73f3a6a13"
 dependencies = [
  "serde",
  "uuid",
@@ -336,7 +332,7 @@ dependencies = [
 [[package]]
 name = "br-core-scope"
 version = "0.11.0"
-source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#9201e1f419610d6d460e67d4e4112f36cf5fbe48"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#3c1284e5f887aa99c085ee5026856be73f3a6a13"
 dependencies = [
  "serde",
  "thiserror",
@@ -366,7 +362,7 @@ version = "0.4.0"
 dependencies = [
  "async-nats",
  "axum",
- "br-core-auth 0.11.0",
+ "br-core-auth",
  "bytes",
  "dotenvy",
  "futures-util",
@@ -379,6 +375,37 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "br-util-directory"
+version = "0.11.0"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#3c1284e5f887aa99c085ee5026856be73f3a6a13"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "br-core-directory",
+ "br-util-postgres",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "br-util-postgres"
+version = "0.11.0"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#3c1284e5f887aa99c085ee5026856be73f3a6a13"
+dependencies = [
+ "br-core-auth",
+ "sqlx",
+ "thiserror",
+ "tracing",
  "url",
  "uuid",
 ]
@@ -518,6 +545,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "conformance-directory"
+version = "0.4.0"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "br-core-directory",
+ "br-test-harness",
+ "br-util-directory",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "conformance-identity"
 version = "0.4.0"
 dependencies = [
@@ -542,7 +587,7 @@ name = "conformance-passport"
 version = "0.4.0"
 dependencies = [
  "async-nats",
- "br-core-auth 0.10.0",
+ "br-core-auth",
  "br-test-harness",
  "reqwest",
  "serde_json",

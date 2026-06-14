@@ -183,8 +183,9 @@ identically whether or not extensions are present.
 
 ## 6. Oracle — how the lib is guarded
 
-The conformance runner (WU9) validates **only by deserialising the Go-frozen wire
-into the real `br-core-directory` types**:
+The conformance runner (`crates/conformance-directory`, the **W1–W5** wire gate)
+validates **only by deserialising the Go-frozen wire into the real
+`br-core-directory` types**:
 
 ```
 from_value::<PublishedUser>(go_user_value)
@@ -227,7 +228,29 @@ offline mirror of the existing scope/passport anchors.
 
 ---
 
-## 8. Deliberately OUT of the frozen contract
+## 8. The live batteries — Px (publisher) and Cx (consumer)
+
+The byte-freeze (§6–§7) guards the *types*. The **behaviour** of the
+`br-util-directory` kit is guarded by `crates/conformance-directory` against real
+infra:
+
+- **Px** (`publisher_floor` / `publisher_groups_optional`) — drives
+  `DirectoryPublisher` against a real NATS KV bucket. **P1 (mandatory floor):**
+  `reconcile` writes `_meta` + every user, the published wire round-trips
+  identically to the source through the lib types, a second reconcile is the empty
+  diff (idempotent), and dropping a user orphan-deletes its KV key (PII
+  propagation). **P2 (optional):** a users-only source publishes no group keys and
+  a `_meta` that omits groups (gated on `_meta`).
+- **Cx** (`consumer_reads_users` / `consumer_reads_groups`) — drives
+  `DirectoryProjector` (KV→PG) and the `DirectorySnapshot` readers against real
+  NATS KV + real Postgres. **All opt-in, none mandatory.** **C1:** reconcile-on-boot
+  projects users into PG, `resolve_user` returns the carried fields, retracting a
+  user orphan-deletes its row. **C2:** `is_member` / `group_name` resolve with
+  groups in `_meta`, and auto-degrade to empty under a users-only `_meta`.
+
+---
+
+## 9. Deliberately OUT of the frozen contract
 
 Not part of this wire; do not infer them:
 
