@@ -197,4 +197,11 @@ mod tests {
         let response = json!({ "data": { "signCharter": { "code": "ALREADY_SIGNED" } } });
         assert_eq!(expect_code_shaped(&response, "sign"), "ALREADY_SIGNED");
     }
+
+    #[test]
+    #[should_panic]
+    fn expect_code_shaped_panics_on_a_single_char_code() {
+        let response = json!({ "data": { "x": { "code": "A" } } });
+        expect_code_shaped(&response, "x");
+    }
 }

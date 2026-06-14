@@ -26,8 +26,9 @@ single git tag `v{version}` releases the set. Format follows
 - **`br-test-harness` — the GraphQL `verdict` module (channel-1 assertion
   vocabulary).** Pure functions over a `serde_json::Value` GraphQL response —
   `is_ack`, `expect_ack`, `expect_rejected`, `mutation_error_code`,
-  `expect_code_shaped` (stable error-code regex `^[A-Z][A-Z0-9_]+$`),
-  `is_code_shaped` — with **zero transport coupling** (they take a response, not a
+  `expect_code_shaped` (asserts the stable error-code shape `^[A-Z][A-Z0-9_]+$`,
+  so **≥2 characters** — a single `"A"` is rejected), `is_code_shaped` — with
+  **zero transport coupling** (they take a response, not a
   `GraphqlClient`). Feature-gated under `graphql`; promoted from `svc-charter`'s
   service-local `tests/common/gql.rs` (the BR-fatty reference unit) so every
   affordance-aware service stops re-inventing the most load-bearing observation

@@ -69,8 +69,9 @@ Two helpers exist specifically to kill the classic e2e flakes:
 ### The verdict vocabulary (channel 1)
 
 A BR mutation returns a **verdict, never state**: an `ack` on success, or a
-structured error carrying a **stable code** (`^[A-Z][A-Z0-9_]+$`, never English
-prose) on a rejection. The `verdict` module is the assertion vocabulary for that
+structured error carrying a **stable code** (shaped `^[A-Z][A-Z0-9_]+$`,
+≥2 characters, never English prose) on a rejection. The `verdict` module is the
+assertion vocabulary for that
 first observation channel — pure functions over the `serde_json::Value` a
 `GraphqlClient` hands back, with **zero transport coupling** (they take a
 response, not a client), so they work over any GraphQL response however obtained:
@@ -81,8 +82,8 @@ response, not a client), so they work over any GraphQL response however obtained
 | `expect_ack(&response, what)` | panics (with the response) unless the call acked |
 | `mutation_error_code(&response) -> Option<String>` | the rejection code if rejected, else `None` — looks at the top-level error's `extensions.code`, then its `message`, then a `code` / `errorCode` / `reasonCode` under `data` |
 | `expect_rejected(&response) -> String` | panics unless rejected; returns the code |
-| `expect_code_shaped(&response, what) -> String` | `expect_rejected` **and** asserts the code matches `^[A-Z][A-Z0-9_]+$`; returns it |
-| `is_code_shaped(&str) -> bool` | true iff the string is a stable code (uppercase-led, then `[A-Z0-9_]`), not prose |
+| `expect_code_shaped(&response, what) -> String` | `expect_rejected` **and** asserts the code matches the shape `^[A-Z][A-Z0-9_]+$` (so ≥2 chars — a single `"A"` is rejected); returns it |
+| `is_code_shaped(&str) -> bool` | true iff the string matches the shape `^[A-Z][A-Z0-9_]+$` — uppercase-led, then `[A-Z0-9_]`, ≥2 chars — a stable code, not prose |
 
 **The affordance-skip guarantee.** An affordance carries its own user-facing
 `reasonCode` (why an action is blocked) — that is *not* a mutation rejection. The
