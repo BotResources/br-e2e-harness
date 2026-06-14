@@ -253,7 +253,22 @@ version = "0.10.0"
 source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "base64",
- "br-core-kernel",
+ "br-core-kernel 0.10.0",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "br-core-auth"
+version = "0.11.0"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#9201e1f419610d6d460e67d4e4112f36cf5fbe48"
+dependencies = [
+ "base64",
+ "br-core-kernel 0.11.0",
+ "br-core-scope 0.11.0",
  "serde",
  "serde_json",
  "sha2",
@@ -266,7 +281,7 @@ name = "br-core-events"
 version = "0.10.0"
 source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
- "br-core-kernel",
+ "br-core-kernel 0.10.0",
  "chrono",
  "serde",
  "serde_json",
@@ -301,9 +316,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "br-core-kernel"
+version = "0.11.0"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#9201e1f419610d6d460e67d4e4112f36cf5fbe48"
+dependencies = [
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "br-core-scope"
 version = "0.10.0"
 source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "br-core-scope"
+version = "0.11.0"
+source = "git+https://github.com/BotResources/br-rust-common?branch=v0.11.0#9201e1f419610d6d460e67d4e4112f36cf5fbe48"
 dependencies = [
  "serde",
  "thiserror",
@@ -314,7 +347,7 @@ name = "br-identity-domain"
 version = "0.10.0"
 source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
- "br-core-scope",
+ "br-core-scope 0.10.0",
  "serde",
  "thiserror",
 ]
@@ -333,7 +366,7 @@ version = "0.4.0"
 dependencies = [
  "async-nats",
  "axum",
- "br-core-auth",
+ "br-core-auth 0.11.0",
  "bytes",
  "dotenvy",
  "futures-util",
@@ -490,7 +523,7 @@ version = "0.4.0"
 dependencies = [
  "async-nats",
  "br-core-integration",
- "br-core-scope",
+ "br-core-scope 0.10.0",
  "br-identity-domain",
  "br-scope-declaration-contract",
  "br-test-harness",
@@ -509,7 +542,7 @@ name = "conformance-passport"
 version = "0.4.0"
 dependencies = [
  "async-nats",
- "br-core-auth",
+ "br-core-auth 0.10.0",
  "br-test-harness",
  "reqwest",
  "serde_json",
@@ -524,7 +557,7 @@ version = "0.4.0"
 dependencies = [
  "async-nats",
  "br-core-integration",
- "br-core-scope",
+ "br-core-scope 0.10.0",
  "br-scope-declaration-contract",
  "br-test-harness",
  "chrono",

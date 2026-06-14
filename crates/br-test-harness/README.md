@@ -40,8 +40,11 @@ persistence abstraction, can inject them.
 
 ### Claim keys are a per-project seam
 
-`PassportBuilder` owns the `Passport` **structure** — it exposes typed setters
-for `br-core-auth`'s canonical fields (`user_id`, `super_admin`, `active`, `pat`
+`PassportBuilder` is **re-exported from `br-core-auth`** (its `test-support`
+feature) — it lives next to the `Passport` type it forges, so it tracks every
+field change with zero drift, and the harness re-exports it under the same
+`br_test_harness::PassportBuilder` path. It exposes typed setters for
+`br-core-auth`'s canonical fields (`user_id`, `super_admin`, `active`, `pat`
 for the auth method, `impersonator`) — but it names **none** of the free-form
 `claims` keys. Those (`email`, `org_id`, roles, a tenant id, scopes, …) vary per
 project, so each consuming **project supplies its own** via `.claim(key, value)`
@@ -118,9 +121,11 @@ br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag 
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
-pinned to the `br-rust-common` tag `v0.10.0` (it backs `PassportBuilder`; a slim
-build that omits the passport-bearing features drops it). If your service already
-pins `br-rust-common`, keep both on the **same tag** so Cargo resolves a single
+(its `test-support` feature, which ships `PassportBuilder`) pinned to
+`br-rust-common` `v0.11.0` — **currently a branch pin pending the `v0.11.0`
+tag**, flipped to `tag = "v0.11.0"` at release. A slim build that omits the
+passport-bearing features drops the dependency. If your service already pins
+`br-rust-common`, keep both on the **same ref** so Cargo resolves a single
 source (two refs of one git URL are two distinct sources and duplicate
 `br-core-*` in the graph).
 
