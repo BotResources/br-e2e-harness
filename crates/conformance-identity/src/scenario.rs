@@ -7,33 +7,38 @@ use crate::wire::{declare, from_raw, raw_manifest, raw_spec};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scenario {
     CleanDeclarationAccepted,
-    CrossServiceClaimRejected,
+    OwnedScopeReclaimAfterPriorAccept,
     IntraDeclarationDuplicateRejected,
     PrefixMismatchRejected,
     InvalidScopeKeyRejected,
     IdempotentRedeclareAccepted,
+    MalformedScopeKeyRejected,
 }
 
-pub const ALL: [Scenario; 6] = [
+pub const ALL: [Scenario; 7] = [
     Scenario::CleanDeclarationAccepted,
-    Scenario::CrossServiceClaimRejected,
+    Scenario::OwnedScopeReclaimAfterPriorAccept,
     Scenario::IntraDeclarationDuplicateRejected,
     Scenario::PrefixMismatchRejected,
     Scenario::InvalidScopeKeyRejected,
     Scenario::IdempotentRedeclareAccepted,
+    Scenario::MalformedScopeKeyRejected,
 ];
 
 impl Scenario {
     pub fn check_id(self) -> CheckId {
         match self {
             Scenario::CleanDeclarationAccepted => CheckId::CleanDeclarationAccepted,
-            Scenario::CrossServiceClaimRejected => CheckId::CrossServiceClaimRejected,
+            Scenario::OwnedScopeReclaimAfterPriorAccept => {
+                CheckId::OwnedScopeReclaimAfterPriorAccept
+            }
             Scenario::IntraDeclarationDuplicateRejected => {
                 CheckId::IntraDeclarationDuplicateRejected
             }
             Scenario::PrefixMismatchRejected => CheckId::PrefixMismatchRejected,
             Scenario::InvalidScopeKeyRejected => CheckId::InvalidScopeKeyRejected,
             Scenario::IdempotentRedeclareAccepted => CheckId::IdempotentRedeclareAccepted,
+            Scenario::MalformedScopeKeyRejected => CheckId::MalformedScopeKeyRejected,
         }
     }
 
@@ -44,13 +49,16 @@ impl Scenario {
     pub fn from_code(code: &str) -> Option<Self> {
         match CheckId::from_code(code)? {
             CheckId::CleanDeclarationAccepted => Some(Scenario::CleanDeclarationAccepted),
-            CheckId::CrossServiceClaimRejected => Some(Scenario::CrossServiceClaimRejected),
+            CheckId::OwnedScopeReclaimAfterPriorAccept => {
+                Some(Scenario::OwnedScopeReclaimAfterPriorAccept)
+            }
             CheckId::IntraDeclarationDuplicateRejected => {
                 Some(Scenario::IntraDeclarationDuplicateRejected)
             }
             CheckId::PrefixMismatchRejected => Some(Scenario::PrefixMismatchRejected),
             CheckId::InvalidScopeKeyRejected => Some(Scenario::InvalidScopeKeyRejected),
             CheckId::IdempotentRedeclareAccepted => Some(Scenario::IdempotentRedeclareAccepted),
+            CheckId::MalformedScopeKeyRejected => Some(Scenario::MalformedScopeKeyRejected),
         }
     }
 
@@ -61,7 +69,7 @@ impl Scenario {
                 &primary,
                 &[&scope_key(&primary, "read"), &scope_key(&primary, "admin")],
             )],
-            Scenario::CrossServiceClaimRejected => {
+            Scenario::OwnedScopeReclaimAfterPriorAccept => {
                 let owner = service_key("notifier", namespace);
                 let claimer = service_key("billing", namespace);
                 let contested = scope_key(&owner, "read");
@@ -95,6 +103,10 @@ impl Scenario {
                 let decl = declare(&primary, &[&scope_key(&primary, "read")]);
                 vec![decl.clone(), decl]
             }
+            Scenario::MalformedScopeKeyRejected => vec![from_raw(RawScopeDeclaration {
+                manifest: raw_manifest(&primary),
+                scopes: vec![raw_spec(&format!("{primary}read"), false)],
+            })],
         }
     }
 }
@@ -144,7 +156,7 @@ pub fn attach_default() -> Vec<Scenario> {
 mod tests {
     use super::*;
     use crate::capture::Verdict;
-    use crate::oracle::expected_verdict;
+    use crate::oracle::{expected_step_verdicts, expected_verdict};
     use br_core_scope::{KeyValidationError, ScopeDeclarationError};
 
     #[test]
@@ -156,15 +168,39 @@ mod tests {
     }
 
     #[test]
+    fn a2_proves_registry_state_carries_across_declarations() {
+        let steps =
+            expected_step_verdicts(&Scenario::OwnedScopeReclaimAfterPriorAccept.sequence("t"))
+                .unwrap();
+        assert_eq!(steps.len(), 2, "A2 is the only multi-step scenario");
+        assert!(
+            matches!(steps[0], Verdict::Accepted { .. }),
+            "the prior declaration is accepted and stays accepted: {:?}",
+            steps[0]
+        );
+        assert!(
+            matches!(
+                steps[1],
+                Verdict::Rejected {
+                    reason: ScopeDeclarationError::ScopePrefixMismatch { .. }
+                }
+            ),
+            "the reclaim is rejected as prefix-mismatch (the ownership-conflict branch \
+             is unreachable via judge_declaration): {:?}",
+            steps[1]
+        );
+    }
+
+    #[test]
     fn every_scenario_yields_the_expected_oracle_verdict() {
         let ns = "t";
         for scenario in ALL {
-            let verdict = expected_verdict(&scenario.sequence(ns));
+            let verdict = expected_verdict(&scenario.sequence(ns)).unwrap();
             match scenario {
                 Scenario::CleanDeclarationAccepted | Scenario::IdempotentRedeclareAccepted => {
                     assert!(matches!(verdict, Verdict::Accepted { .. }), "{scenario:?}");
                 }
-                Scenario::CrossServiceClaimRejected | Scenario::PrefixMismatchRejected => {
+                Scenario::OwnedScopeReclaimAfterPriorAccept | Scenario::PrefixMismatchRejected => {
                     assert!(
                         matches!(
                             verdict,
@@ -193,6 +229,20 @@ mod tests {
                             }
                         }
                     ));
+                }
+                Scenario::MalformedScopeKeyRejected => {
+                    assert!(
+                        matches!(
+                            verdict,
+                            Verdict::Rejected {
+                                reason: ScopeDeclarationError::InvalidScopeKey {
+                                    validation: KeyValidationError::MalformedSegments,
+                                    ..
+                                }
+                            }
+                        ),
+                        "{scenario:?} -> {verdict:?}"
+                    );
                 }
             }
         }

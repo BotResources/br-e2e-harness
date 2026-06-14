@@ -76,8 +76,8 @@ async fn a1_clean_declaration_is_accepted() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
-async fn a2_cross_service_claim_is_rejected() {
-    assert_scenario(Scenario::CrossServiceClaimRejected).await;
+async fn a2_owned_scope_reclaim_after_prior_accept_is_rejected() {
+    assert_scenario(Scenario::OwnedScopeReclaimAfterPriorAccept).await;
 }
 
 #[tokio::test]
@@ -106,6 +106,12 @@ async fn a6_idempotent_redeclare_is_accepted() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn a7_malformed_scope_key_is_rejected() {
+    assert_scenario(Scenario::MalformedScopeKeyRejected).await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn full_battery_is_conformant_via_run_spawn() {
     use conformance_identity::{SpawnTarget, build_subject, run_spawn, spawn_default};
     let binary = build_subject().await.expect("build subject");
@@ -114,11 +120,11 @@ async fn full_battery_is_conformant_via_run_spawn() {
         .expect("run_spawn");
     assert!(
         report.is_conformant(),
-        "the full A1..A6 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
+        "the full A1..A7 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
         report.passed(),
         report.failed(),
         report.skipped(),
         report.outcomes,
     );
-    assert_eq!(report.passed(), 6, "all six checks must pass");
+    assert_eq!(report.passed(), 7, "all seven checks must pass");
 }

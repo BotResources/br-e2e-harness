@@ -3,33 +3,36 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CheckId {
     CleanDeclarationAccepted,
-    CrossServiceClaimRejected,
+    OwnedScopeReclaimAfterPriorAccept,
     IntraDeclarationDuplicateRejected,
     PrefixMismatchRejected,
     InvalidScopeKeyRejected,
     IdempotentRedeclareAccepted,
+    MalformedScopeKeyRejected,
 }
 
 impl CheckId {
     pub fn code(self) -> &'static str {
         match self {
             CheckId::CleanDeclarationAccepted => "a1",
-            CheckId::CrossServiceClaimRejected => "a2",
+            CheckId::OwnedScopeReclaimAfterPriorAccept => "a2",
             CheckId::IntraDeclarationDuplicateRejected => "a3",
             CheckId::PrefixMismatchRejected => "a4",
             CheckId::InvalidScopeKeyRejected => "a5",
             CheckId::IdempotentRedeclareAccepted => "a6",
+            CheckId::MalformedScopeKeyRejected => "a7",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
         match code {
             "a1" => Some(CheckId::CleanDeclarationAccepted),
-            "a2" => Some(CheckId::CrossServiceClaimRejected),
+            "a2" => Some(CheckId::OwnedScopeReclaimAfterPriorAccept),
             "a3" => Some(CheckId::IntraDeclarationDuplicateRejected),
             "a4" => Some(CheckId::PrefixMismatchRejected),
             "a5" => Some(CheckId::InvalidScopeKeyRejected),
             "a6" => Some(CheckId::IdempotentRedeclareAccepted),
+            "a7" => Some(CheckId::MalformedScopeKeyRejected),
             _ => None,
         }
     }

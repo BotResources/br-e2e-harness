@@ -84,6 +84,17 @@ func TestInvalidScopeKeyRejected(t *testing.T) {
 	}
 }
 
+func TestMalformedScopeKeyRejected(t *testing.T) {
+	r := newRegistry()
+	_, fault := r.judge(declare("notifier", "notifierread"))
+	if fault == nil || fault.Reason != "invalid_scope_key" || fault.Validation.Validation != "malformed_segments" {
+		t.Fatalf("unexpected fault %+v", fault)
+	}
+	if fault.Key != "notifierread" {
+		t.Fatalf("fault key = %q, want notifierread", fault.Key)
+	}
+}
+
 func TestIdempotentRedeclarationAccepted(t *testing.T) {
 	r := newRegistry()
 	if _, fault := r.judge(declare("notifier", "notifier:read")); fault != nil {
@@ -136,6 +147,11 @@ func TestRejectedReasonMatchesGoldenWire(t *testing.T) {
 			"too_long",
 			invalidScopeKey("x", keyValidationFault{Validation: "too_long", Max: 128, Actual: 200}),
 			`{"reason":"invalid_scope_key","key":"x","validation":{"validation":"too_long","max":128,"actual":200}}`,
+		},
+		{
+			"malformed_segments",
+			invalidScopeKey("notifierread", keyValidationFault{Validation: "malformed_segments"}),
+			`{"reason":"invalid_scope_key","key":"notifierread","validation":{"validation":"malformed_segments"}}`,
 		},
 	}
 	for _, tc := range cases {
