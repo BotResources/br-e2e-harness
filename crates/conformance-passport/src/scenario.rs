@@ -42,6 +42,7 @@ impl Scenario {
             CheckId::DistinctTokensDistinctPassports => {
                 Some(Scenario::DistinctTokensDistinctPassports)
             }
+            CheckId::ScopesClaimRoundTrip => None,
         }
     }
 }

@@ -30,10 +30,14 @@ persistence abstraction, can inject them.
 | A second, RLS-subject **app role** on that DB (the runtime role) | `E2eDatabase::with_app_role` | `e2e-db` |
 | A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` | `spawned-nats` |
 | A connection to NATS + isolated KV buckets | `TestNats` | `nats` |
+| Await a producer's integration event on a named stream + subject | `await_integration_event` | `nats` |
+| Reset a *named* service-contract stream / KV bucket clean per test | `recreate_stream`, `recreate_kv` | `nats` |
 | Run the real service binary as a child (drained, readiness-polled) | `SpawnedProcess`, `run_once` | *(always on)* |
+| Run the real service binary as a child (drained, readiness-polled, boot-classified) | `SpawnedProcess`, `BootOutcome`, `run_once` | *(always on; HTTP polling needs `http-client`)* |
 | An in-process Axum server on a random port | `TestServer` | `server` |
 | A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
 | A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
+| Verdict helpers over a GraphQL response — ack / rejection / stable-code | `verdict::*` | `graphql` |
 | A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` | `ws` |
 | A live GraphQL Server-Sent-Events subscription | `SseSubscription` | `sse` |
 | Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
@@ -83,10 +87,30 @@ own rows, while the `BYPASSRLS` owner (or the superuser `admin_url()`) reads the
 unfiltered state. `app_url()` panics if `with_app_role` was never called; `cleanup`
 drops only the per-test DB and the per-test owner — the app role persists (like
 `managed_roles`), since a shared name may be in use by a parallel run.
+### Observing the published contract (the 4th channel)
+
+A BR service's published language — its integration events on a *named*,
+GitOps-provisioned JetStream stream (`CHARTER`, `IDENTITY`, …) — is the fourth
+e2e observation channel, alongside the mutation verdict, the query + affordances,
+and the subscription. Three free functions on the `nats` feature observe and
+reset it; **none lives on `TestNats`**, which owns only the harness's own
+throwaway UUID-suffixed buckets, not a service-contract stream:
+
+- **`await_integration_event(js, stream, subject, deadline)`** — opens an
+  ephemeral pull consumer (`DeliverPolicy::All`, so an event published *before*
+  the call is still caught) filtered to `subject`, awaits the first message
+  within `deadline`, and returns the envelope as a `serde_json::Value`. Deserialize
+  it against the **producer's** `contract-*` payload type to assert the wire shape.
+  Returns `None` on a clean timeout — never hangs. The stream name is a parameter,
+  so it is service-agnostic.
+- **`recreate_stream(js, name, &subjects)`** / **`recreate_kv(js, bucket)`** —
+  delete-then-create a named stream (with its subject filters, e.g. `charter.>`)
+  or KV bucket, giving each serial scenario an empty bus on a shared server.
+  Names are caller-supplied; the helpers carry zero service knowledge.
 
 ### The de-flake primitives
 
-Two helpers exist specifically to kill the classic e2e flakes:
+Three helpers exist specifically to kill the classic e2e flakes:
 
 - **`WsSubscription::next_matching(predicate, timeout)`** — drain-until-match.
   A broadcast subscription is woken by *every* event in its class, so a socket
@@ -94,9 +118,66 @@ Two helpers exist specifically to kill the classic e2e flakes:
   one the assertion wants. `next_matching` skips non-matching frames until the
   predicate holds, and on timeout reports every frame it skipped — so a *genuine*
   miss is still fully diagnosable. (`next_data` remains, for the single-push case.)
+- **`SseSubscription::drain(max, timeout) -> usize`** — drain-to-quiescence.
+  A scenario that has already asserted the push it cares about often needs to
+  flush the *rest* of a known burst before opening the next leg, so a stale
+  earlier-transition frame can't satisfy a later `expect_event`. `drain` pulls
+  up to `max` events, stopping at the first that doesn't arrive within `timeout`
+  (a clean stream end or genuine silence), and returns the count it drained. It
+  reuses `next_event`, so a broken stream still panics — it never swallows an
+  error frame. (`next_event` / `expect_event` / `expect_silence` remain, for the
+  single-push and silence cases.)
 - **`wait_until(timeout, predicate)`** — poll an async condition (a projection
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
+
+### Boot classification — happy path *and* fail-loud
+
+`SpawnedProcess` has two readiness paths against the service's own health URL,
+both `http-client`-gated:
+
+- **`wait_for_http_ok(url, timeout) -> Result<(), String>`** — the happy path. A
+  non-`Ok` means "did not become ready", with the captured logs in the error
+  string. Use it when a non-boot is a test failure.
+- **`await_boot(url, timeout) -> BootOutcome`** — the fail-loud path. It
+  *classifies* the boot into `BootOutcome::{ Ready, Exited(ExitStatus), TimedOut }`
+  so a scenario can **assert** an outcome — including the deliberate crash of a
+  service that refuses to start with its declared GitOps infra missing (the
+  S0-style "fail loud, name the missing resource"). On `Exited` the captured pipes
+  are drained to EOF before returning, so `proc.logs()` carries the full tail the
+  binary printed before exiting — which is where the named missing resource lives.
+  `BootOutcome::is_ready()` / `exit_status()` are the two convenience reads.
+
+The process stays owned by the caller in every outcome (mirroring
+`wait_for_http_ok`): pair the verdict with `proc.logs()`, and `shutdown()` (or
+drop — `kill_on_drop`) reaps it.
+### The verdict vocabulary (channel 1)
+
+A BR mutation returns a **verdict, never state**: an `ack` on success, or a
+structured error carrying a **stable code** (shaped `^[A-Z][A-Z0-9_]+$`,
+≥2 characters, never English prose) on a rejection. The `verdict` module is the
+assertion vocabulary for that
+first observation channel — pure functions over the `serde_json::Value` a
+`GraphqlClient` hands back, with **zero transport coupling** (they take a
+response, not a client), so they work over any GraphQL response however obtained:
+
+| Function | Verdict |
+|---|---|
+| `is_ack(&response) -> bool` | no top-level GraphQL `errors`, and no rejection code embedded under `data` |
+| `expect_ack(&response, what)` | panics (with the response) unless the call acked |
+| `mutation_error_code(&response) -> Option<String>` | the rejection code if rejected, else `None` — looks at the top-level error's `extensions.code`, then its `message`, then a `code` / `errorCode` / `reasonCode` under `data` |
+| `expect_rejected(&response) -> String` | panics unless rejected; returns the code |
+| `expect_code_shaped(&response, what) -> String` | `expect_rejected` **and** asserts the code matches the shape `^[A-Z][A-Z0-9_]+$` (so ≥2 chars — a single `"A"` is rejected); returns it |
+| `is_code_shaped(&str) -> bool` | true iff the string matches the shape `^[A-Z][A-Z0-9_]+$` — uppercase-led, then `[A-Z0-9_]`, ≥2 chars — a stable code, not prose |
+
+**The affordance-skip guarantee.** An affordance carries its own user-facing
+`reasonCode` (why an action is blocked) — that is *not* a mutation rejection. The
+private walker behind `mutation_error_code` therefore **skips any subtree under an
+`affordances` key**, at any depth: a response whose payload acks but whose
+affordances list a blocked action with a `reasonCode` reads as an **ack**, never a
+rejection. When a payload-union rejection code and an affordance `reasonCode`
+coexist, the **mutation code wins**. Without this, every affordance-aware service
+would mis-read a blocked-affordance hint as a failed mutation.
 
 ## Why — the non-obvious bits
 
@@ -112,8 +193,12 @@ here, synthetically:
 | The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
+| `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. |
+| `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
 | Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_event` returns `None` **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
 | `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
+| `SpawnedProcess` has both `wait_for_http_ok` and `await_boot` | A nominal scenario wants "ready or fail the test" (`wait_for_http_ok` → `Result`); a fail-loud scenario wants to **assert** the boot *did not* succeed and inspect *why* (`await_boot` → `BootOutcome::{Ready, Exited(status), TimedOut}`). Both are kept — the classifier adds the three-outcome verdict, it does not replace the happy-path checker. |
+| `await_boot` drains the pipes to EOF before returning `Exited` | The drain runs as background tasks, so `try_wait()` can observe the exit before those tasks have read the binary's final stderr/stdout. Awaiting them on `Exited` guarantees `proc.logs()` holds the full tail — the line naming the missing declared resource an S0-style scenario asserts on. The continuous-drain model means no kill-before-drain dance (the prod-side reference used a sync `std::process` and had to). |
 | `deny.toml` ignores `RUSTSEC-2023-0071` (Marvin timing attack in `rsa`) | The advisory is a side-channel in `rsa` private-key *decryption*. This workspace only ships test fixtures that **sign** short-lived tokens on isolated test networks — no decryption path, no timing-oracle adversary in the threat model. Same ignore as `svc-auth`'s CI. |
 | `deny.toml` allows `CDLA-Permissive-2.0` | Mozilla's CA-root data set, vendored by `webpki-roots`, pulled in transitively by the rustls stack under `reqwest` / `sqlx` / `async-nats`. It is an OSI-recognized permissive *data* license with no copyleft and no patent traps — safe for a fixtures repo. Added when `br-test-harness` brought the rustls TLS stack in. |
 
@@ -127,12 +212,12 @@ transitive deps out of its binary:
 
 | Feature | Unlocks | Headline heavy deps |
 |---|---|---|
-| `nats` | `TestNats` | `async-nats` |
+| `nats` | `TestNats`, `await_integration_event`, `recreate_stream`, `recreate_kv` | `async-nats`, `futures-util` |
 | `spawned-nats` | `SpawnedNats` | `tempfile` |
 | `e2e-db` | `E2eDatabase` | `sqlx` |
 | `server` | `TestServer` | `axum`, `reqwest` |
 | `passport` | `PassportBuilder` | `br-core-auth` |
-| `graphql` | `GraphqlClient` | `reqwest` (+ `passport`) |
+| `graphql` | `GraphqlClient`, `verdict::*` | `reqwest` (+ `passport`) |
 | `sse` | `SseSubscription` | `reqwest`, `futures-util` (+ `passport`) |
 | `ws` | `WsSubscription` | `tokio-tungstenite`, `futures-util` (+ `passport`) |
 | `oidc` | the in-process OIDC IdP | `oidc-test-idp` → `rsa` |
@@ -180,15 +265,19 @@ pass — it fails loud when infra is missing. A service whose suite uses it need
 
 ### The harness's own self-tests
 
-The two load-bearing real-infra paths — `SpawnedNats` (spawns a real
-`nats-server` and reads back its bound port) and `E2eDatabase` (provisions the
-ephemeral owner role and the transaction-local RLS context) — have focused
-self-tests in `tests/`. They are **`#[ignore]`-gated** so the default
-`cargo test` stays green without infra; run them explicitly:
+The load-bearing real-infra paths — `SpawnedNats` (spawns a real `nats-server`
+and reads back its bound port), the `nats_assert` helpers (await an event on a
+reset named stream / KV bucket), and `E2eDatabase` (provisions the ephemeral
+owner role and the transaction-local RLS context) — have focused self-tests in
+`tests/`. They are **`#[ignore]`-gated** so the default `cargo test` stays green
+without infra; run them explicitly:
 
 ```sh
 # SpawnedNats path — needs `nats-server` on PATH (it spawns its OWN server):
 cargo test -p br-test-harness --test spawned_nats -- --ignored
+
+# nats_assert path — needs `nats-server` on PATH (each test spawns its OWN server):
+cargo test -p br-test-harness --test nats_assert -- --ignored
 
 # E2eDatabase path — needs an admin Postgres able to CREATE ROLE / CREATE DATABASE,
 # via E2E_PG_ADMIN_URL (falling back to DATABASE_URL):

@@ -14,7 +14,7 @@ ignored = ["serde"]
 default = ["full"]
 full = ["nats", "spawned-nats", "e2e-db", "server", "passport", "graphql", "sse", "ws", "oidc"]
 
-nats = ["dep:async-nats", "dep:dotenvy", "dep:url", "dep:percent-encoding"]
+nats = ["dep:async-nats", "dep:dotenvy", "dep:url", "dep:percent-encoding", "dep:futures-util"]
 spawned-nats = ["dep:tempfile"]
 e2e-db = ["dep:sqlx", "dep:dotenvy"]
 server = ["dep:axum", "http-client"]
