@@ -7,6 +7,21 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`SseSubscription::drain(max, timeout) -> usize`** — the third de-flake
+  primitive, alongside `WsSubscription::next_matching` and `wait_until`. Pulls up
+  to `max` events off an open SSE subscription, stops at the first that doesn't
+  arrive within `timeout` (a clean stream end or genuine silence) leaving the
+  rest for the next read, and returns the count drained. Lets a scenario flush
+  the tail of a known burst before its next leg, so a stale earlier-transition
+  frame can't satisfy a later `expect_event`. A broken stream still panics. Back-
+  ports charter's local `drain_pushes(sub, max)` as a strict superset (explicit
+  `timeout`, returned count): the harness's stream-based `SseSubscription`
+  (`open` / `next_event` / `expect_event` / `expect_silence` / `drain`) now
+  covers charter's full push/silence surface, and charter drops its channel-based
+  local copy (B.1 of #55).
+
 ### Changed
 
 - **`br-test-harness` re-exports `PassportBuilder` from `br-core-auth`.** The
@@ -38,6 +53,22 @@ single git tag `v{version}` releases the set. Format follows
   charter's service-local `await_boot` / `spawn_capturing_output` (issue #55, A.5);
   reconciled to the harness's continuous-drain `SpawnedProcess` (no kill-before-drain
   dance, the process is not consumed into the outcome).
+- **`br-test-harness` — the GraphQL `verdict` module (channel-1 assertion
+  vocabulary).** Pure functions over a `serde_json::Value` GraphQL response —
+  `is_ack`, `expect_ack`, `expect_rejected`, `mutation_error_code`,
+  `expect_code_shaped` (asserts the stable error-code shape `^[A-Z][A-Z0-9_]+$`,
+  so **≥2 characters** — a single `"A"` is rejected), `is_code_shaped` — with
+  **zero transport coupling** (they take a response, not a
+  `GraphqlClient`). Feature-gated under `graphql`; promoted from `svc-charter`'s
+  service-local `tests/common/gql.rs` (the BR-fatty reference unit) so every
+  affordance-aware service stops re-inventing the most load-bearing observation
+  helper (#55 A.1).
+  - **Affordance-skip guarantee:** the rejection-code walker behind
+    `mutation_error_code` skips any subtree under an `affordances` key at any
+    depth, so an affordance's own `reasonCode` (a blocked-action hint) is never
+    mistaken for a mutation rejection; a payload-union rejection code still wins
+    when both coexist. Covered by unit vectors (no infra).
+
 - **`conformance-passport` — the G1 conformance battery (bearer/PAT → Passport).**
   A black-box runner for the BotResources passport-resolution endpoint the GraphQL
   gateway calls before every authenticated request (`GET /internal/passport`). It

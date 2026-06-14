@@ -33,6 +33,7 @@ persistence abstraction, can inject them.
 | An in-process Axum server on a random port | `TestServer` | `server` |
 | A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
 | A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
+| Verdict helpers over a GraphQL response — ack / rejection / stable-code | `verdict::*` | `graphql` |
 | A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` | `ws` |
 | A live GraphQL Server-Sent-Events subscription | `SseSubscription` | `sse` |
 | Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
@@ -53,7 +54,7 @@ or "standard" key list to keep in lockstep, by design.
 
 ### The de-flake primitives
 
-Two helpers exist specifically to kill the classic e2e flakes:
+Three helpers exist specifically to kill the classic e2e flakes:
 
 - **`WsSubscription::next_matching(predicate, timeout)`** — drain-until-match.
   A broadcast subscription is woken by *every* event in its class, so a socket
@@ -61,6 +62,15 @@ Two helpers exist specifically to kill the classic e2e flakes:
   one the assertion wants. `next_matching` skips non-matching frames until the
   predicate holds, and on timeout reports every frame it skipped — so a *genuine*
   miss is still fully diagnosable. (`next_data` remains, for the single-push case.)
+- **`SseSubscription::drain(max, timeout) -> usize`** — drain-to-quiescence.
+  A scenario that has already asserted the push it cares about often needs to
+  flush the *rest* of a known burst before opening the next leg, so a stale
+  earlier-transition frame can't satisfy a later `expect_event`. `drain` pulls
+  up to `max` events, stopping at the first that doesn't arrive within `timeout`
+  (a clean stream end or genuine silence), and returns the count it drained. It
+  reuses `next_event`, so a broken stream still panics — it never swallows an
+  error frame. (`next_event` / `expect_event` / `expect_silence` remain, for the
+  single-push and silence cases.)
 - **`wait_until(timeout, predicate)`** — poll an async condition (a projection
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
@@ -85,6 +95,33 @@ both `http-client`-gated:
 The process stays owned by the caller in every outcome (mirroring
 `wait_for_http_ok`): pair the verdict with `proc.logs()`, and `shutdown()` (or
 drop — `kill_on_drop`) reaps it.
+### The verdict vocabulary (channel 1)
+
+A BR mutation returns a **verdict, never state**: an `ack` on success, or a
+structured error carrying a **stable code** (shaped `^[A-Z][A-Z0-9_]+$`,
+≥2 characters, never English prose) on a rejection. The `verdict` module is the
+assertion vocabulary for that
+first observation channel — pure functions over the `serde_json::Value` a
+`GraphqlClient` hands back, with **zero transport coupling** (they take a
+response, not a client), so they work over any GraphQL response however obtained:
+
+| Function | Verdict |
+|---|---|
+| `is_ack(&response) -> bool` | no top-level GraphQL `errors`, and no rejection code embedded under `data` |
+| `expect_ack(&response, what)` | panics (with the response) unless the call acked |
+| `mutation_error_code(&response) -> Option<String>` | the rejection code if rejected, else `None` — looks at the top-level error's `extensions.code`, then its `message`, then a `code` / `errorCode` / `reasonCode` under `data` |
+| `expect_rejected(&response) -> String` | panics unless rejected; returns the code |
+| `expect_code_shaped(&response, what) -> String` | `expect_rejected` **and** asserts the code matches the shape `^[A-Z][A-Z0-9_]+$` (so ≥2 chars — a single `"A"` is rejected); returns it |
+| `is_code_shaped(&str) -> bool` | true iff the string matches the shape `^[A-Z][A-Z0-9_]+$` — uppercase-led, then `[A-Z0-9_]`, ≥2 chars — a stable code, not prose |
+
+**The affordance-skip guarantee.** An affordance carries its own user-facing
+`reasonCode` (why an action is blocked) — that is *not* a mutation rejection. The
+private walker behind `mutation_error_code` therefore **skips any subtree under an
+`affordances` key**, at any depth: a response whose payload acks but whose
+affordances list a blocked action with a `reasonCode` reads as an **ack**, never a
+rejection. When a payload-union rejection code and an affordance `reasonCode`
+coexist, the **mutation code wins**. Without this, every affordance-aware service
+would mis-read a blocked-affordance hint as a failed mutation.
 
 ## Why — the non-obvious bits
 
@@ -120,7 +157,7 @@ transitive deps out of its binary:
 | `e2e-db` | `E2eDatabase` | `sqlx` |
 | `server` | `TestServer` | `axum`, `reqwest` |
 | `passport` | `PassportBuilder` | `br-core-auth` |
-| `graphql` | `GraphqlClient` | `reqwest` (+ `passport`) |
+| `graphql` | `GraphqlClient`, `verdict::*` | `reqwest` (+ `passport`) |
 | `sse` | `SseSubscription` | `reqwest`, `futures-util` (+ `passport`) |
 | `ws` | `WsSubscription` | `tokio-tungstenite`, `futures-util` (+ `passport`) |
 | `oidc` | the in-process OIDC IdP | `oidc-test-idp` → `rsa` |
