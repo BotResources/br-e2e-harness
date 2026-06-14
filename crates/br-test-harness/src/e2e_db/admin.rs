@@ -35,6 +35,43 @@ pub(super) async fn drop_db_and_owner(
     }
 }
 
+pub(super) async fn ensure_app_role(admin: &mut PgConnection, name: &str, password: &str) {
+    let password = password.replace('\'', "''");
+    let sql = format!(
+        "DO $$ BEGIN \
+           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{name}') THEN \
+             CREATE ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
+           ELSE \
+             ALTER ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
+           END IF; \
+         EXCEPTION WHEN duplicate_object THEN \
+           ALTER ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
+         END $$;"
+    );
+    admin
+        .execute(sql.as_str())
+        .await
+        .unwrap_or_else(|e| panic!("failed to ensure e2e app role '{name}': {e}"));
+}
+
+pub(super) async fn grant_app_schema(owner: &mut PgConnection, owner_role: &str, app_role: &str) {
+    for stmt in [
+        format!("GRANT USAGE, CREATE ON SCHEMA public TO \"{app_role}\""),
+        format!(
+            "ALTER DEFAULT PRIVILEGES FOR ROLE \"{owner_role}\" IN SCHEMA public \
+             GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{app_role}\""
+        ),
+        format!(
+            "ALTER DEFAULT PRIVILEGES FOR ROLE \"{owner_role}\" IN SCHEMA public \
+             GRANT USAGE, SELECT ON SEQUENCES TO \"{app_role}\""
+        ),
+    ] {
+        owner.execute(stmt.as_str()).await.unwrap_or_else(|e| {
+            panic!("failed to grant public schema to app role '{app_role}': {e}")
+        });
+    }
+}
+
 pub(super) async fn role_exists(admin: &mut PgConnection, role: &str) -> bool {
     let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM pg_roles WHERE rolname = $1")
         .bind(role)

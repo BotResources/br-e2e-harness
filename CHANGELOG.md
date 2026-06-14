@@ -61,6 +61,29 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+- **`E2eDatabase::with_app_role(name, password)` — two-role Postgres provisioning
+  for RLS tests.** Alongside the existing schema **owner** (the migration agent),
+  the harness now provisions the **runtime app role** an RLS-enforcing service
+  connects as — the RLS *subject*, gated by `current_setting('app.current_user_id')`.
+  The builder step is optional (`create` / `create_named` are unchanged): it ensures
+  the role idempotently via a `DO … IF NOT EXISTS … $$` block (`NOBYPASSRLS`, `LOGIN`;
+  collision-safe when parallel worktrees share a role name), `GRANT CONNECT`s it to
+  the fresh DB, and on the owner connection runs `GRANT USAGE, CREATE ON SCHEMA public`
+  plus the two `ALTER DEFAULT PRIVILEGES FOR ROLE <owner> … GRANT … TO <app>` (tables
+  + sequences) so tables the owner's migrations later create are reachable by the
+  runtime role. Role **names** are caller-supplied; the grant dance is the generic,
+  load-bearing part lifted out of every service's hand-rolled `tests/common`.
+  - New accessors: **`app_url()`** (the runtime DSN; panics if `with_app_role` was
+    never called), **`admin_url()`** (the superuser DSN, surfaced for posture /
+    raw-state assertions), and **`app_role()`** (`Option<&str>`).
+  - `cleanup` drops only the per-test DB and the unique-suffixed owner; the app role
+    persists (a shared name may be in use by a parallel run — same posture as
+    `managed_roles`).
+  - Real-PG tests (env-gated `#[ignore]`, `E2E_PG_ADMIN_URL` / `DATABASE_URL`): the
+    app role authenticates and writes a fresh owner-created table via default
+    privileges; provisioning is idempotent under a shared role name; an RLS-isolation
+    proof asserts the app role sees only its principal's rows while the `BYPASSRLS`
+    owner reads the raw, unfiltered state. Additive, public-surface minor.
 - **`conformance-directory` — the identity Published Language (directory)
   conformance battery (epic #54, WU9).** A new crate that guards the
   `br-core-directory` wire and the `br-util-directory` publisher/consumer kit,

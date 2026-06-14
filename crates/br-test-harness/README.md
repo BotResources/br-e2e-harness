@@ -27,6 +27,7 @@ persistence abstraction, can inject them.
 | Need | Helper | Feature |
 |---|---|---|
 | A throwaway Postgres DB + non-superuser, CNPG-shaped owner role | `E2eDatabase` | `e2e-db` |
+| A second, RLS-subject **app role** on that DB (the runtime role) | `E2eDatabase::with_app_role` | `e2e-db` |
 | A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` | `spawned-nats` |
 | A connection to NATS + isolated KV buckets | `TestNats` | `nats` |
 | Await a producer's integration event on a named stream + subject | `await_integration_event` | `nats` |
@@ -55,6 +56,37 @@ project, so each consuming **project supplies its own** via `.claim(key, value)`
 (or `.claims(iter)`). The harness stays project-agnostic; there is no canonical
 or "standard" key list to keep in lockstep, by design.
 
+### Two runtime roles, for RLS assertions
+
+`E2eDatabase` provisions the **owner** (`NOSUPERUSER`, optionally `BYPASSRLS`)
+that owns the schema and runs migrations. A service that enforces authZ via
+Postgres RLS also needs the **runtime role** the app actually connects as — the
+RLS *subject*, gated by `current_setting('app.current_user_id')`. Add it with one
+builder step:
+
+```rust
+let db = E2eDatabase::create(true, &[])         // owner: BYPASSRLS, the migration agent
+    .await
+    .with_app_role("svc_app", "app_pw")         // runtime role: NOBYPASSRLS, RLS-subject
+    .await;
+
+let owner = PgConnection::connect(&db.owner_url()).await?;  // migrate + raw-state asserts
+let app   = PgConnection::connect(&db.app_url()).await?;    // the role under test, sees only its rows
+let admin = PgConnection::connect(db.admin_url()).await?;   // the superuser: posture / cluster asserts
+```
+
+`with_app_role` is **idempotent** — it ensures the role via a
+`DO … IF NOT EXISTS … $$` block (collision-safe when parallel worktrees share a
+role name), `GRANT CONNECT`s it to the fresh DB, and on the owner connection runs
+`GRANT USAGE, CREATE ON SCHEMA public` plus the two
+`ALTER DEFAULT PRIVILEGES … TO <app>` (tables + sequences) so the tables the
+owner's migrations *later* create are reachable by the runtime role. Role **names**
+are caller-supplied; the grant dance is the generic part. An **RLS isolation test**
+sets the principal transaction-locally as the app role and asserts it sees only its
+own rows, while the `BYPASSRLS` owner (or the superuser `admin_url()`) reads the raw,
+unfiltered state. `app_url()` panics if `with_app_role` was never called; `cleanup`
+drops only the per-test DB and the per-test owner — the app role persists (like
+`managed_roles`), since a shared name may be in use by a parallel run.
 ### Observing the published contract (the 4th channel)
 
 A BR service's published language — its integration events on a *named*,
@@ -157,6 +189,8 @@ here, synthetically:
 |---|---|
 | `E2eDatabase` owner = `NOSUPERUSER` + a `bypassrls` flag | The owner mirrors the CNPG GitOps owner: an RLS-bypassing agent for migrations/bootstrap, `NOSUPERUSER` so `FORCE ROW LEVEL SECURITY` behaves exactly as in prod. Pass `bypassrls = false` **only** for negative tests asserting a misdeclared owner is caught — it reproduces incident **2026-06-11**, where a no-bypass owner under `FORCE RLS` read zero rows and a deploy cascade failed. |
 | `create*`'s `managed_roles` silently skips unknown roles | Only roles that **already exist** are granted to the owner `WITH ADMIN OPTION` (PG16: a `CREATEROLE` role needs `ADMIN` on a role to `ALTER` it). Roles the service creates itself at startup are deliberately left alone — this is not a typo guard. |
+| `with_app_role` ensures-not-creates, and `cleanup` never drops the app role | The app role is a cluster-global object that a **shared name** (`svc_app`) leaves in use across parallel worktrees — so it is ensured idempotently (`DO … IF NOT EXISTS` with a `duplicate_object` handler that falls through to the `ALTER` path, so the loser of a true concurrent `CREATE ROLE` race still recovers), `ALTER`ed in place if present, and **left standing** on cleanup. Only the per-test DB + the per-test (unique-suffixed) owner are dropped. Same posture as `managed_roles`: a shared role is the cluster's, not one test's to delete. |
+| The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. |

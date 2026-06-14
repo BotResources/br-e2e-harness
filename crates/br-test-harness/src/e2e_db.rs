@@ -1,7 +1,7 @@
 use sqlx::{Connection, Executor, PgConnection};
 
 mod admin;
-use admin::{drop_db_and_owner, pg_host_port, role_exists};
+use admin::{drop_db_and_owner, ensure_app_role, grant_app_schema, pg_host_port, role_exists};
 
 pub struct E2eDatabase {
     admin_url: String,
@@ -10,6 +10,12 @@ pub struct E2eDatabase {
     owner_role: String,
     owner_password: String,
     granted_roles: Vec<String>,
+    app_role: Option<AppRole>,
+}
+
+struct AppRole {
+    name: String,
+    password: String,
 }
 
 impl E2eDatabase {
@@ -104,7 +110,44 @@ impl E2eDatabase {
             owner_role,
             owner_password,
             granted_roles,
+            app_role: None,
         }
+    }
+
+    pub async fn with_app_role(mut self, name: &str, password: &str) -> Self {
+        let mut admin = PgConnection::connect(&self.admin_url)
+            .await
+            .expect("failed to connect to PG admin URL to provision the app role");
+        ensure_app_role(&mut admin, name, password).await;
+        admin
+            .execute(
+                format!(
+                    "GRANT CONNECT ON DATABASE \"{}\" TO \"{name}\"",
+                    self.db_name
+                )
+                .as_str(),
+            )
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to grant connect on '{}' to '{name}': {e}",
+                    self.db_name
+                )
+            });
+        admin.close().await.ok();
+
+        let owner_url = self.owner_url();
+        let mut owner = PgConnection::connect(&owner_url)
+            .await
+            .expect("failed to connect as owner to grant the app role public-schema rights");
+        grant_app_schema(&mut owner, &self.owner_role, name).await;
+        owner.close().await.ok();
+
+        self.app_role = Some(AppRole {
+            name: name.to_string(),
+            password: password.to_string(),
+        });
+        self
     }
 
     pub fn owner_url(&self) -> String {
@@ -114,12 +157,31 @@ impl E2eDatabase {
         )
     }
 
+    pub fn app_url(&self) -> String {
+        let app = self
+            .app_role
+            .as_ref()
+            .expect("app_url requires with_app_role(name, password) to have been called");
+        format!(
+            "postgresql://{}:{}@{}/{}",
+            app.name, app.password, self.host_port, self.db_name
+        )
+    }
+
+    pub fn admin_url(&self) -> &str {
+        &self.admin_url
+    }
+
     pub fn db_name(&self) -> &str {
         &self.db_name
     }
 
     pub fn owner_role(&self) -> &str {
         &self.owner_role
+    }
+
+    pub fn app_role(&self) -> Option<&str> {
+        self.app_role.as_ref().map(|r| r.name.as_str())
     }
 
     pub async fn cleanup(self) {
