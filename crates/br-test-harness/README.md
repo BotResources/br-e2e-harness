@@ -53,7 +53,7 @@ or "standard" key list to keep in lockstep, by design.
 
 ### The de-flake primitives
 
-Two helpers exist specifically to kill the classic e2e flakes:
+Three helpers exist specifically to kill the classic e2e flakes:
 
 - **`WsSubscription::next_matching(predicate, timeout)`** — drain-until-match.
   A broadcast subscription is woken by *every* event in its class, so a socket
@@ -61,6 +61,15 @@ Two helpers exist specifically to kill the classic e2e flakes:
   one the assertion wants. `next_matching` skips non-matching frames until the
   predicate holds, and on timeout reports every frame it skipped — so a *genuine*
   miss is still fully diagnosable. (`next_data` remains, for the single-push case.)
+- **`SseSubscription::drain(max, timeout) -> usize`** — drain-to-quiescence.
+  A scenario that has already asserted the push it cares about often needs to
+  flush the *rest* of a known burst before opening the next leg, so a stale
+  earlier-transition frame can't satisfy a later `expect_event`. `drain` pulls
+  up to `max` events, stopping at the first that doesn't arrive within `timeout`
+  (a clean stream end or genuine silence), and returns the count it drained. It
+  reuses `next_event`, so a broken stream still panics — it never swallows an
+  error frame. (`next_event` / `expect_event` / `expect_silence` remain, for the
+  single-push and silence cases.)
 - **`wait_until(timeout, predicate)`** — poll an async condition (a projection
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
