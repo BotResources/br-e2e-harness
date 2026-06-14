@@ -36,6 +36,7 @@ pub(super) async fn drop_db_and_owner(
 }
 
 pub(super) async fn ensure_app_role(admin: &mut PgConnection, name: &str, password: &str) {
+    let password = password.replace('\'', "''");
     let sql = format!(
         "DO $$ BEGIN \
            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{name}') THEN \
@@ -43,6 +44,8 @@ pub(super) async fn ensure_app_role(admin: &mut PgConnection, name: &str, passwo
            ELSE \
              ALTER ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
            END IF; \
+         EXCEPTION WHEN duplicate_object THEN \
+           ALTER ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
          END $$;"
     );
     admin
