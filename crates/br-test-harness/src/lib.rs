@@ -16,6 +16,8 @@ pub mod passport;
 pub mod server;
 #[cfg(feature = "sse")]
 pub mod sse;
+#[cfg(feature = "graphql")]
+pub mod verdict;
 #[cfg(feature = "ws")]
 pub mod ws;
 
