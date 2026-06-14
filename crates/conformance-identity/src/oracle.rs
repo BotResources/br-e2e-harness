@@ -2,14 +2,15 @@ use br_core_scope::DeclareServiceScopes;
 use br_identity_domain::{DeclarationOutcome, ScopeRegistry, judge_declaration};
 
 use crate::capture::Verdict;
+use crate::error::{ConformanceError, Result};
 
-pub fn expected_verdict(sequence: &[DeclareServiceScopes]) -> Verdict {
-    expected_step_verdicts(sequence)
+pub fn expected_verdict(sequence: &[DeclareServiceScopes]) -> Result<Verdict> {
+    Ok(expected_step_verdicts(sequence)?
         .pop()
-        .expect("a scenario must declare at least once")
+        .expect("a scenario must declare at least once"))
 }
 
-pub fn expected_step_verdicts(sequence: &[DeclareServiceScopes]) -> Vec<Verdict> {
+pub fn expected_step_verdicts(sequence: &[DeclareServiceScopes]) -> Result<Vec<Verdict>> {
     let mut registry = ScopeRegistry::new();
     sequence
         .iter()
@@ -17,13 +18,13 @@ pub fn expected_step_verdicts(sequence: &[DeclareServiceScopes]) -> Vec<Verdict>
         .collect()
 }
 
-pub fn outcome_to_verdict(outcome: DeclarationOutcome) -> Verdict {
+pub fn outcome_to_verdict(outcome: DeclarationOutcome) -> Result<Verdict> {
     match outcome {
-        DeclarationOutcome::Accepted { service, .. } => Verdict::Accepted {
+        DeclarationOutcome::Accepted { service, .. } => Ok(Verdict::Accepted {
             service: service.as_str().to_string(),
-        },
-        DeclarationOutcome::Rejected { reason } => Verdict::Rejected { reason },
-        _ => unreachable!("DeclarationOutcome is non_exhaustive but fully handled above"),
+        }),
+        DeclarationOutcome::Rejected { reason } => Ok(Verdict::Rejected { reason }),
+        _ => Err(ConformanceError::OracleOutcomeUnknown),
     }
 }
 
@@ -42,7 +43,7 @@ mod tests {
 
     #[test]
     fn clean_declaration_is_accepted() {
-        let verdict = expected_verdict(&[declare("notifier", &["notifier:read"])]);
+        let verdict = expected_verdict(&[declare("notifier", &["notifier:read"])]).unwrap();
         assert_eq!(
             verdict,
             Verdict::Accepted {
@@ -54,7 +55,7 @@ mod tests {
     #[test]
     fn idempotent_redeclaration_is_accepted() {
         let decl = declare("notifier", &["notifier:read"]);
-        let verdict = expected_verdict(&[decl.clone(), decl]);
+        let verdict = expected_verdict(&[decl.clone(), decl]).unwrap();
         assert_eq!(
             verdict,
             Verdict::Accepted {
@@ -70,7 +71,7 @@ mod tests {
             manifest: raw_manifest("billing"),
             scopes: vec![raw_spec("notifier:read", false)],
         });
-        let verdict = expected_verdict(&[seed, claim]);
+        let verdict = expected_verdict(&[seed, claim]).unwrap();
         assert_eq!(
             verdict,
             Verdict::Rejected {
@@ -91,7 +92,7 @@ mod tests {
                 raw_spec("notifier:read", false),
             ],
         });
-        let verdict = expected_verdict(&[dup]);
+        let verdict = expected_verdict(&[dup]).unwrap();
         assert_eq!(
             verdict,
             Verdict::Rejected {
@@ -108,7 +109,7 @@ mod tests {
             manifest: raw_manifest("notifier"),
             scopes: vec![raw_spec("notifier:BAD", false)],
         });
-        let verdict = expected_verdict(&[bad]);
+        let verdict = expected_verdict(&[bad]).unwrap();
         assert_eq!(
             verdict,
             Verdict::Rejected {

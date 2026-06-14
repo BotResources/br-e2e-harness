@@ -21,6 +21,8 @@ pub enum ConformanceError {
     Readyz(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
+    #[error("DeclarationOutcome gained an unknown variant — the oracle must be updated to map it")]
+    OracleOutcomeUnknown,
 }
 
 pub type Result<T> = std::result::Result<T, ConformanceError>;

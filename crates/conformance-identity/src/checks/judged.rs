@@ -13,7 +13,17 @@ use super::CheckContext;
 pub async fn run_judged_scenario(scenario: Scenario, ctx: &CheckContext<'_>) -> CheckOutcome {
     let id = scenario.check_id();
     let sequence = scenario.sequence(ctx.namespace);
-    let expected = expected_step_verdicts(&sequence);
+    let expected = match expected_step_verdicts(&sequence) {
+        Ok(expected) => expected,
+        Err(e) => {
+            return CheckOutcome::fail(
+                id,
+                "a lib-computed oracle verdict",
+                "the oracle could not map the lib's DeclarationOutcome",
+                format!("{e}"),
+            );
+        }
+    };
     let final_expected = expected.last().expect("scenario declares at least once");
     let expected_label = verdict_code(final_expected);
 
