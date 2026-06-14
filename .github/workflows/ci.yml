@@ -152,6 +152,10 @@ jobs:
               echo "::notice::${crate} has no library target, skipping semver-checks"
               continue
             fi
+            if ! git cat-file -e "${baseline}:crates/${crate}/Cargo.toml" 2>/dev/null; then
+              echo "::notice::${crate} is new since ${baseline}, no baseline to compare, skipping semver-checks"
+              continue
+            fi
             echo "::group::${crate} vs ${baseline}"
             if ! cargo semver-checks -p "${crate}" --baseline-rev "${baseline}"; then
               fail=1
