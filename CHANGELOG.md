@@ -23,23 +23,42 @@ single git tag `v{version}` releases the set. Format follows
     tag `v0.8.0`): each scenario replays its declaration sequence through a real
     `ScopeRegistry` and the subject's emitted verdict is asserted **equal** to the
     lib's `DeclarationOutcome` per step — computed, never hard-coded.
-  - Scenarios **A1–A6**: clean declaration → accepted; cross-service claim → rejected;
-    intra-declaration duplicate → `duplicate_scope_in_declaration`; prefix mismatch →
-    `scope_prefix_mismatch`; invalid scope key → `invalid_scope_key`; idempotent
-    re-declare → accepted again. The acceptor keeps an in-memory `scope_key → owner`
-    registry across declarations; the runner seeds ownership by driving a prior
-    accepted declaration.
+  - Scenarios **A1–A7**: clean declaration → accepted; owned-scope reclaim after a
+    prior accept → rejected (multi-step state carry); intra-declaration duplicate →
+    `duplicate_scope_in_declaration`; prefix mismatch → `scope_prefix_mismatch`;
+    charset-invalid scope key → `invalid_scope_key` (`invalid_charset`); idempotent
+    re-declare → accepted again; structurally malformed scope key (no `:` separator) →
+    `invalid_scope_key` (`malformed_segments`). The acceptor keeps an in-memory
+    `scope_key → owner` registry across declarations; the runner seeds ownership by
+    driving a prior accepted declaration.
   - **`run_spawn`** (the core deliverable) stands up a throwaway `nats-server` + the
-    Go subject and runs the full A1–A6; **`run_attach`** drives a live acceptor's NATS
+    Go subject and runs the full A1–A7; **`run_attach`** drives a live acceptor's NATS
     + `/readyz` with unique per-run keys (bounding registry pollution). The Go subject
     is an independent reimplementation of the wire + `judge_declaration` policy — a
     backward-compat anchor, not a binding to the lib; its Go unit tests pin the
-    rejection wire shapes to the frozen `scope-wire-v1` golden JSON.
-  - **Finding (documented, not hidden):** the oracle computes A2 (cross-service claim)
-    as `scope_prefix_mismatch`, not `scope_owned_by_another_service` —
-    `judge_declaration` validates before the registry's cross-owner check, so a
-    cross-service claim never reaches that branch (it is produced in production by the
-    app-layer `UNIQUE(scope_key)` path). A2 asserts the oracle-computed verdict.
+    rejection wire shapes (incl. `invalid_charset`, `too_long`, `malformed_segments`)
+    to the frozen `scope-wire-v1` golden JSON.
+  - **A2 proves cross-declaration state carry.** It is the only multi-step scenario:
+    a prior declaration is accepted and stays accepted while a later reclaim of the
+    same key is rejected — proving the subject's registry persists across declarations.
+    Its rejection reason is `scope_prefix_mismatch`, **not**
+    `scope_owned_by_another_service`: `judge_declaration` validates before the
+    registry's cross-owner check, so a prefixed key can only be declared by its own
+    service and the reclaim never reaches that branch (it is produced in production by
+    the app-layer `UNIQUE(scope_key)` path). The unit test asserts A2's step verdicts
+    explicitly (`[0]` Accepted, `[1]` prefix-mismatch Rejected).
+  - **A7 closes the oracle loop on `malformed_segments`.** The Go subject already
+    implements the `too_long` / `malformed_segments` / `empty` key-validation paths,
+    but the battery only cross-checked `invalid_charset` (via A5); A7 adds a
+    structurally malformed key so both the frozen subject and the real
+    `ScopeKey::new` / `judge_declaration` oracle reject with
+    `KeyValidationError::MalformedSegments`.
+  - **Trust model (documented, not tested):** the acceptor trusts the manifest's
+    self-asserted identity; the prefix rule is a coherence check, not authentication.
+    Impersonation is out of the threat model — the trust boundary is the deployment
+    scope (only first-party services run in it; the NATS bus runs without per-service
+    auth today), so G2 tests no impersonation: it is an infrastructure property, not a
+    domain one.
   - The `infra-e2e` CI job (already provisioned with `go` + `nats-server` for G3) now
     additionally runs the G2 battery.
 
