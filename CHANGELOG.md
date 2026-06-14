@@ -5,6 +5,74 @@ ships **one version**: every crate inherits `version.workspace = true`, and a
 single git tag `v{version}` releases the set. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [Unreleased]
+
+### Changed
+
+- **`br-rust-common` pin bumped `v0.8.0` → `v0.10.0`** (tag `v0.10.0`, commit
+  `32c463adc19791205230de75cd603ae375b7633d`) across `conformance-scope`,
+  `conformance-identity`, and `br-test-harness`. Both conformance batteries stay
+  green against the bumped library — `conformance-scope` S1–S6 and
+  `conformance-identity` A1–A7 — proving the published scope-declaration wire is
+  backward-compatible across `0.8 → 0.10`, which is exactly what these batteries
+  exist to prove. A mechanical bump: nothing in the harness uses any symbol the
+  `0.10.0` release removed.
+
+### Added
+
+- **`conformance-identity` — the G2 conformance battery (the mirror of G3 with the
+  role inverted).** Where `conformance-scope` (G3) tests a scope-*declaring* service
+  with the runner playing the acceptor, `conformance-identity` (G2) tests a
+  scope-*accepting* service (the Identity registry) with the runner playing the
+  **declaring** side. It drives a new frozen Go subject,
+  `conformance-subjects/identity-acceptor`, as a black box: it builds real
+  `IntegrationCommand<DeclareServiceScopes>` and publishes them, then decodes the
+  acceptor's reply **by deserialization** into the real
+  `IntegrationEvent<ServiceScopesAccepted>` / `IntegrationEvent<ServiceScopesRejected>`
+  types (no hand-rolled JSON, no `deny_unknown_fields`).
+  - **Oracle = the real `judge_declaration` / `ScopeRegistry`** (`br-identity-domain`,
+    tag `v0.10.0`): each scenario replays its declaration sequence through a real
+    `ScopeRegistry` and the subject's emitted verdict is asserted **equal** to the
+    lib's `DeclarationOutcome` per step — computed, never hard-coded.
+  - Scenarios **A1–A7**: clean declaration → accepted; owned-scope reclaim after a
+    prior accept → rejected (multi-step state carry); intra-declaration duplicate →
+    `duplicate_scope_in_declaration`; prefix mismatch → `scope_prefix_mismatch`;
+    charset-invalid scope key → `invalid_scope_key` (`invalid_charset`); idempotent
+    re-declare → accepted again; structurally malformed scope key (no `:` separator) →
+    `invalid_scope_key` (`malformed_segments`). The acceptor keeps an in-memory
+    `scope_key → owner` registry across declarations; the runner seeds ownership by
+    driving a prior accepted declaration.
+  - **`run_spawn`** (the core deliverable) stands up a throwaway `nats-server` + the
+    Go subject and runs the full A1–A7; **`run_attach`** drives a live acceptor's NATS
+    + `/readyz` with unique per-run keys (bounding registry pollution). The Go subject
+    is an independent reimplementation of the wire + `judge_declaration` policy — a
+    backward-compat anchor, not a binding to the lib; its Go unit tests pin the
+    rejection wire shapes (incl. `invalid_charset`, `too_long`, `malformed_segments`)
+    to the frozen `scope-wire-v1` golden JSON.
+  - **A2 proves cross-declaration state carry.** It is the only multi-step scenario:
+    a prior declaration is accepted and stays accepted while a later reclaim of the
+    same key is rejected — proving the subject's registry persists across declarations.
+    Its rejection reason is `scope_prefix_mismatch`, **not**
+    `scope_owned_by_another_service`: `judge_declaration` validates before the
+    registry's cross-owner check, so a prefixed key can only be declared by its own
+    service and the reclaim never reaches that branch (it is produced in production by
+    the app-layer `UNIQUE(scope_key)` path). The unit test asserts A2's step verdicts
+    explicitly (`[0]` Accepted, `[1]` prefix-mismatch Rejected).
+  - **A7 closes the oracle loop on `malformed_segments`.** The Go subject already
+    implements the `too_long` / `malformed_segments` / `empty` key-validation paths,
+    but the battery only cross-checked `invalid_charset` (via A5); A7 adds a
+    structurally malformed key so both the frozen subject and the real
+    `ScopeKey::new` / `judge_declaration` oracle reject with
+    `KeyValidationError::MalformedSegments`.
+  - **Trust model (documented, not tested):** the acceptor trusts the manifest's
+    self-asserted identity; the prefix rule is a coherence check, not authentication.
+    Impersonation is out of the threat model — the trust boundary is the deployment
+    scope (only first-party services run in it; the NATS bus runs without per-service
+    auth today), so G2 tests no impersonation: it is an infrastructure property, not a
+    domain one.
+  - The `infra-e2e` CI job (already provisioned with `go` + `nats-server` for G3) now
+    additionally runs the G2 battery.
+
 ## [0.3.0] — 2026-06-13
 
 ### Added

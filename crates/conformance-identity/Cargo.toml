@@ -1,7 +1,7 @@
 [package]
-name = "conformance-scope"
+name = "conformance-identity"
 version.workspace = true
-description = "Black-box conformance runner for the BotResources scope-declaration wire handshake — TEST FIXTURE ONLY"
+description = "Black-box conformance runner for the BotResources Identity scope-acceptance side of the scope-declaration wire handshake — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v0.10.0", version = "0.10.0" }
 br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "v0.10.0", version = "0.10.0" }
+br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", package = "br-identity-domain", tag = "v0.10.0", version = "0.10.0" }
 br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v0.10.0", version = "0.10.0" }
 
 br-test-harness = { path = "../br-test-harness", version = "0.3.0", default-features = false, features = [

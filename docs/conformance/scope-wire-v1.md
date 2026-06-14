@@ -339,4 +339,21 @@ Readiness liveness split (the G3 subject exposes both as HTTP):
    declarer will re-publish with the same correlation_id until you answer.
 7. Minimal viable `metadata` on the reply: `{"actor_id":"<any uuid>","correlation_id":"<echoed>"}`.
    `actor_kind` optional (defaults human). Do not emit an unknown `actor_kind`.
-```
+
+---
+
+## 9. Trust model / out of scope
+
+The acceptor trusts the manifest's self-asserted identity. The prefix rule
+(`{service}:{capability}`, a scope key may only be declared by the service it names)
+is a **coherence check, not authentication** — nothing binds the command's actor to the
+declared manifest. The app pipeline discards the command metadata and judges only the
+payload; the declaring actor is a self-derived `Uuid::new_v5(NAMESPACE, service_key)`,
+which is forgeable.
+
+Impersonation is **out of the threat model**: the trust boundary is the deployment
+scope — only first-party services run in it (Infra `ARCHITECTURE.md`, "the trust
+boundary is the scope itself") — and the NATS bus runs **without per-service auth
+today**. The conformance batteries (G2/G3) therefore do **not** test impersonation: it
+is an infrastructure property, not a domain one. A consumer must not read the prefix
+rule as an authentication control.

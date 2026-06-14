@@ -74,6 +74,8 @@ jobs:
         run: cargo test -p conformance-scope --test conformance --locked -- --ignored
       - name: scope-declaration conformance battery via the CLI binary
         run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
+      - name: scope-acceptance conformance battery
+        run: cargo test -p conformance-identity --test conformance --locked -- --ignored
 
   msrv:
     name: MSRV 1.88 build
@@ -148,6 +150,10 @@ jobs:
             crate=$(basename "$(dirname "$toml")")
             if [ ! -f "crates/${crate}/src/lib.rs" ]; then
               echo "::notice::${crate} has no library target, skipping semver-checks"
+              continue
+            fi
+            if ! git cat-file -e "${baseline}:crates/${crate}/Cargo.toml" 2>/dev/null; then
+              echo "::notice::${crate} is new since ${baseline}, no baseline to compare, skipping semver-checks"
               continue
             fi
             echo "::group::${crate} vs ${baseline}"

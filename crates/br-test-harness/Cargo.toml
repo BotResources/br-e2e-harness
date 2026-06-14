@@ -27,7 +27,7 @@ oidc = ["dep:oidc-test-idp"]
 http-client = ["dep:reqwest"]
 
 [dependencies]
-br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v0.8.0", version = "0.8.0", optional = true }
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v0.10.0", version = "0.10.0", optional = true }
 
 oidc-test-idp = { path = "../oidc-test-idp", version = "0.3.0", optional = true }
 
