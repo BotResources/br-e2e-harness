@@ -140,7 +140,7 @@ resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.3.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.4.0" }
 ```
 
 ## Why — the non-obvious bits

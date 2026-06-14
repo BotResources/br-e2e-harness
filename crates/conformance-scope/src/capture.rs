@@ -37,7 +37,7 @@ impl DeclareCapture {
             .map_err(|e| ConformanceError::Jetstream(format!("get stream '{stream_name}': {e}")))?;
         let consumer = stream
             .create_consumer(consumer::pull::Config {
-                deliver_policy: consumer::DeliverPolicy::New,
+                deliver_policy: consumer::DeliverPolicy::All,
                 ack_policy: consumer::AckPolicy::None,
                 filter_subject: declare_subject()?,
                 inactive_threshold: Duration::from_secs(300),

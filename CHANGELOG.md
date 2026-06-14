@@ -7,6 +7,23 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-14
+
+### Fixed
+
+- **`conformance-scope` declare-capture now replays the stream (`DeliverPolicy::All`).**
+  In attach mode the capture consumer is created *after* the service under test has
+  already published its boot `declare`; with `DeliverPolicy::New` it skipped that
+  first declare and only converged on the service's re-publish cycle (~10s), making
+  the G3 gate slow and hiding the scope-declaration boot speedup shipped in
+  `br-rust-common` v0.10.0. Replaying from the start of the stream catches
+  the boot declare immediately; the attach battery now converges sub-second. Safe
+  across all modes — battery/spawn use a fresh per-run stream and start the capture
+  before spawning, and attach runs against a fresh per-run JetStream store.
+  Regression-locked by `attach_capture_replays_the_boot_declare_published_before_it`,
+  which uses a long `wait_timeout` so only a replay (not a re-publish) can satisfy
+  its bounded assertion.
+
 ### Changed
 
 - **`br-rust-common` pin bumped `v0.8.0` → `v0.10.0`** (tag `v0.10.0`, commit
