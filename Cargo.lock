@@ -249,8 +249,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-auth"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "base64",
  "br-core-kernel",
@@ -263,8 +263,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-events"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "br-core-kernel",
  "chrono",
@@ -275,8 +275,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-integration"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -293,8 +293,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-kernel"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "serde",
  "uuid",
@@ -302,8 +302,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-scope"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "serde",
  "thiserror",
@@ -311,8 +311,8 @@ dependencies = [
 
 [[package]]
 name = "br-identity-domain"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "br-core-scope",
  "serde",
@@ -321,8 +321,8 @@ dependencies = [
 
 [[package]]
 name = "br-scope-declaration-contract"
-version = "0.8.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.8.0#4d1defe957864dd967dc27c76274c109eb119a53"
+version = "0.10.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v0.10.0#32c463adc19791205230de75cd603ae375b7633d"
 dependencies = [
  "br-core-integration",
 ]

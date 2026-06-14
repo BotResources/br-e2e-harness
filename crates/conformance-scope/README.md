@@ -149,7 +149,7 @@ the runner (alongside `nats-server`), to build the conformance subject.
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
 crates.io). Keep its `br-rust-common` tag identical to `br-test-harness`'s
-(`v0.8.0`) so Cargo resolves a single source and never duplicates `br-core-*`:
+(`v0.10.0`) so Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]

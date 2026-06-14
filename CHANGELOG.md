@@ -7,6 +7,17 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`br-rust-common` pin bumped `v0.8.0` → `v0.10.0`** (tag `v0.10.0`, commit
+  `32c463adc19791205230de75cd603ae375b7633d`) across `conformance-scope`,
+  `conformance-identity`, and `br-test-harness`. Both conformance batteries stay
+  green against the bumped library — `conformance-scope` S1–S6 and
+  `conformance-identity` A1–A7 — proving the published scope-declaration wire is
+  backward-compatible across `0.8 → 0.10`, which is exactly what these batteries
+  exist to prove. A mechanical bump: nothing in the harness uses any symbol the
+  `0.10.0` release removed.
+
 ### Added
 
 - **`conformance-identity` — the G2 conformance battery (the mirror of G3 with the
@@ -20,7 +31,7 @@ single git tag `v{version}` releases the set. Format follows
   `IntegrationEvent<ServiceScopesAccepted>` / `IntegrationEvent<ServiceScopesRejected>`
   types (no hand-rolled JSON, no `deny_unknown_fields`).
   - **Oracle = the real `judge_declaration` / `ScopeRegistry`** (`br-identity-domain`,
-    tag `v0.8.0`): each scenario replays its declaration sequence through a real
+    tag `v0.10.0`): each scenario replays its declaration sequence through a real
     `ScopeRegistry` and the subject's emitted verdict is asserted **equal** to the
     lib's `DeclarationOutcome` per step — computed, never hard-coded.
   - Scenarios **A1–A7**: clean declaration → accepted; owned-scope reclaim after a

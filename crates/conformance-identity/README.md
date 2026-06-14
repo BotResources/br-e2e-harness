@@ -135,7 +135,7 @@ runner (shared with G3).
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no crates.io).
-Keep its `br-rust-common` tag identical to `br-test-harness`'s (`v0.8.0`) so Cargo
+Keep its `br-rust-common` tag identical to `br-test-harness`'s (`v0.10.0`) so Cargo
 resolves a single source and never duplicates `br-core-*`:
 
 ```toml
