@@ -7,6 +7,47 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`conformance-passport` — the G1 conformance battery (bearer/PAT → Passport).**
+  A black-box runner for the BotResources passport-resolution endpoint the GraphQL
+  gateway calls before every authenticated request (`GET /internal/passport`). It
+  drives a new frozen Go subject, `conformance-subjects/identity-passport`, as a
+  black box: it stands up a `nats-server`, creates the `bearer_tokens` JetStream KV
+  bucket, seeds entries, calls the endpoint with various `Authorization` headers,
+  and decodes the returned `X-Passport`.
+  - **Oracle = the real `br-core-auth` types** (tag `v0.10.0`): seeding uses the real
+    `bearer_token_key(raw)` for the KV key and serializes the real
+    `BearerTokenEntry { email, token_id }`; decoding the `X-Passport` is the real
+    `PassportHeader::from_header` into `br_core_auth::Passport`. Deserialization
+    succeeding *is* the wire-shape check (`Passport` is `deny_unknown_fields`); there
+    is no hand-rolled JSON or shape guard to drift from the types.
+  - Scenarios **P1–P5**: a valid seeded bearer → `Passport::Human` with
+    `auth_method == Pat { token_id }` matching the seeded token_id, `claims.email`
+    matching the seeded email, and a present valid `user_id` (not value-asserted, a
+    subject-side stand-in); a revoked bearer → 200 anonymous (no `X-Passport`); an
+    unknown bearer → 200 anonymous; no `Authorization` → 200 anonymous; two distinct
+    seeded entries → each resolves to its own passport with no cross-talk.
+  - **The non-tautological gate is P1 + P5**: the independent Go subject must agree
+    with the lib's `bearer_token_key` derivation and `BearerTokenEntry` shape — a
+    divergence means the seeded key is never found, the bearer resolves to anonymous,
+    and the battery goes red. That is the backward-compat property.
+  - **`run_spawn`** (the core deliverable) stands up a throwaway `nats-server` + the
+    `bearer_tokens` bucket + the Go subject and runs the full P1–P5; per-test broker
+    isolation (each test spawns its own `SpawnedNats`), with emails/tokens namespaced
+    per run by a UUIDv7. The subject fails loud if the bucket is missing, so the boot
+    order is bucket → subject → `/readyz=200` → scenarios. An attach runner against a
+    live `svc-identity` is a future addition (G1 ships spawn only).
+  - **Trust model:** the endpoint **resolves**, it does not **gate** — an unresolvable
+    credential is a 200 anonymous request (never a 401), matching the platform
+    posture that services do authZ, never authN.
+- **`conformance-subjects/identity-passport` — the G1 Go anchor.** A minimal, frozen
+  Go reimplementation of the passport-resolution wire: lowercase-hex SHA-256 KV key,
+  `BearerTokenEntry` parse, and the `Passport::Human` envelope (base64 `X-Passport`).
+  Its offline Go unit tests pin the key derivation, the deterministic `user_id`
+  stand-in, the golden Passport shape, the exact top-level key set
+  (`deny_unknown_fields` parity), and the bearer-header parsing.
+
 ## [0.4.0] — 2026-06-14
 
 ### Fixed

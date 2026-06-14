@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/br-test-harness",
     "crates/conformance-identity",
+    "crates/conformance-passport",
     "crates/conformance-scope",
     "crates/conformance-scope-cli",
     "crates/oidc-test-idp",

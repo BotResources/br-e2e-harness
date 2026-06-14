@@ -1,0 +1,23 @@
+pub mod build;
+pub mod checks;
+pub mod endpoint;
+pub mod error;
+pub mod harness;
+pub mod outcome;
+pub mod readyz;
+pub mod scenario;
+pub mod seed;
+pub mod spawn;
+pub mod subject;
+
+pub use build::{build_subject, ensure_go_available, subject_dir};
+pub use checks::{CheckContext, run_scenario};
+pub use endpoint::{PASSPORT_HEADER, PASSPORT_PATH, PassportEndpoint, Resolution};
+pub use error::{ConformanceError, Result};
+pub use harness::PassportHarness;
+pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
+pub use readyz::ReadyzProbe;
+pub use scenario::{ALL, Scenario, parse_scenarios};
+pub use seed::{BEARER_BUCKET, BearerSeeder, SeededToken, unknown_bearer};
+pub use spawn::{DEFAULT_TIMEOUT, SpawnTarget, run_spawn};
+pub use subject::{Subject, SubjectConfig};

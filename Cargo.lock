@@ -505,6 +505,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "conformance-passport"
+version = "0.4.0"
+dependencies = [
+ "async-nats",
+ "br-core-auth",
+ "br-test-harness",
+ "reqwest",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "conformance-scope"
 version = "0.4.0"
 dependencies = [
