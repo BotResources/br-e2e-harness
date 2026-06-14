@@ -21,7 +21,7 @@ pub mod verdict;
 #[cfg(feature = "ws")]
 pub mod ws;
 
-pub use spawned_process::{SpawnedProcess, run_once};
+pub use spawned_process::{BootOutcome, SpawnedProcess, run_once};
 pub use wait::wait_until;
 
 #[cfg(feature = "nats")]

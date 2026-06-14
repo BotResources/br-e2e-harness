@@ -38,6 +38,21 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+- **`SpawnedProcess::await_boot` + `BootOutcome` — fail-loud boot classification.**
+  Alongside the happy-path `wait_for_http_ok`, `await_boot(url, timeout)` polls the
+  service's `/readyz` and classifies the boot into
+  `BootOutcome::{ Ready, Exited(ExitStatus), TimedOut }` so a scenario can **assert**
+  the verdict — including the deliberate crash of a service that refuses to start
+  with its declared GitOps infra missing (S0-style "fail loud and name the missing
+  resource"); `wait_for_http_ok` covers only the happy path. On `Exited` the captured
+  pipes are drained to EOF before returning, so `proc.logs()` carries the full tail
+  the binary printed (where the named missing resource lives). The process stays owned
+  by the caller in every outcome. `BootOutcome::is_ready()` / `exit_status()` are the
+  convenience reads. Both `BootOutcome` and `await_boot` are `http-client`-gated; the
+  existing `wait_for_http_ok` / `logs()` surface is preserved unchanged. Promotes
+  charter's service-local `await_boot` / `spawn_capturing_output` (issue #55, A.5);
+  reconciled to the harness's continuous-drain `SpawnedProcess` (no kill-before-drain
+  dance, the process is not consumed into the outcome).
 - **`br-test-harness` — the GraphQL `verdict` module (channel-1 assertion
   vocabulary).** Pure functions over a `serde_json::Value` GraphQL response —
   `is_ack`, `expect_ack`, `expect_rejected`, `mutation_error_code`,

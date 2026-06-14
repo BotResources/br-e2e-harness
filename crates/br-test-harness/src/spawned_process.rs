@@ -5,10 +5,32 @@ use std::time::Instant;
 
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
+use tokio::task::JoinHandle;
 
 pub struct SpawnedProcess {
     child: Child,
     logs: Arc<Mutex<String>>,
+    drains: Vec<JoinHandle<()>>,
+}
+
+#[derive(Debug)]
+pub enum BootOutcome {
+    Ready,
+    Exited(std::process::ExitStatus),
+    TimedOut,
+}
+
+impl BootOutcome {
+    pub fn is_ready(&self) -> bool {
+        matches!(self, BootOutcome::Ready)
+    }
+
+    pub fn exit_status(&self) -> Option<std::process::ExitStatus> {
+        match self {
+            BootOutcome::Exited(status) => Some(*status),
+            BootOutcome::Ready | BootOutcome::TimedOut => None,
+        }
+    }
 }
 
 impl SpawnedProcess {
@@ -28,15 +50,20 @@ impl SpawnedProcess {
             .unwrap_or_else(|e| panic!("failed to spawn '{program}': {e}"));
 
         let logs = Arc::new(Mutex::new(String::new()));
+        let mut drains = Vec::new();
 
         if let Some(stdout) = child.stdout.take() {
-            spawn_drain(stdout, logs.clone());
+            drains.push(spawn_drain(stdout, logs.clone()));
         }
         if let Some(stderr) = child.stderr.take() {
-            spawn_drain(stderr, logs.clone());
+            drains.push(spawn_drain(stderr, logs.clone()));
         }
 
-        Self { child, logs }
+        Self {
+            child,
+            logs,
+            drains,
+        }
     }
 
     #[cfg(feature = "http-client")]
@@ -68,6 +95,37 @@ impl SpawnedProcess {
         }
     }
 
+    #[cfg(feature = "http-client")]
+    pub async fn await_boot(&mut self, url: &str, timeout: Duration) -> BootOutcome {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("failed to build reqwest client");
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                self.drain_to_eof().await;
+                return BootOutcome::Exited(status);
+            }
+            if let Ok(resp) = client.get(url).send().await
+                && resp.status().is_success()
+            {
+                return BootOutcome::Ready;
+            }
+            if Instant::now() >= deadline {
+                return BootOutcome::TimedOut;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[cfg(feature = "http-client")]
+    async fn drain_to_eof(&mut self) {
+        for handle in self.drains.drain(..) {
+            let _ = handle.await;
+        }
+    }
+
     pub fn logs(&self) -> String {
         self.logs.lock().expect("logs mutex poisoned").clone()
     }
@@ -75,10 +133,13 @@ impl SpawnedProcess {
     pub async fn shutdown(mut self) {
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
+        for handle in self.drains.drain(..) {
+            let _ = handle.await;
+        }
     }
 }
 
-fn spawn_drain<R>(mut reader: R, logs: Arc<Mutex<String>>)
+fn spawn_drain<R>(mut reader: R, logs: Arc<Mutex<String>>) -> JoinHandle<()>
 where
     R: AsyncReadExt + Unpin + Send + 'static,
 {
@@ -95,7 +156,7 @@ where
                 }
             }
         }
-    });
+    })
 }
 
 pub async fn run_once(
