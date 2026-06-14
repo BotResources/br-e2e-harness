@@ -34,9 +34,15 @@ single git tag `v{version}` releases the set. Format follows
     (renamed/retyped core field, changed serde, broken `flatten`) makes the deser
     fail → red. Asserts: users/groups/meta deserialise, the neutral extension
     `x_custom` lands in `extensions` (flat) never in a core field, `member_ids` is
-    always an array, and a users-only `_meta` auto-degrades groups. Pure unit tests
-    of the same logic (inline JSON mirroring the anchor) keep plain `cargo test`
-    green with **zero** toolchain.
+    always an array, and a users-only `_meta` auto-degrades groups. **W1 also
+    positively binds the optional core names:** a populated user (`first_name` +
+    `last_name` both non-null) must deserialise with both as `Some` — closing the
+    blind spot where renaming an *optional* core field (`first_name` → `firstName`)
+    would silently land in `extensions` and leave the field `None` undetected (the
+    `flatten` makes the deser lenient, so a missing-required-field check alone never
+    catches it). Pure unit tests of the same logic (inline JSON mirroring the anchor,
+    including the `firstName` rename going red) keep plain `cargo test` green with
+    **zero** toolchain.
   - **Px (publisher) — P1/P2, real NATS KV.** Drives `DirectoryPublisher` against a
     `SpawnedNats` KV bucket. **P1 (mandatory floor):** `reconcile` writes `_meta` +
     every user, the published wire round-trips identically to the source through the

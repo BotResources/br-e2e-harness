@@ -43,7 +43,7 @@ pub fn run_wire_battery(snapshot: &DirectorySnapshotWire) -> ConformanceReport {
 
 fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireUserDeserializes;
-    let expected = "every users/{uuid} value deserializes through br_core_directory::PublishedUser";
+    let expected = "every users/{uuid} value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
     if snapshot.users.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -52,24 +52,39 @@ fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
             "the anchor must emit at least one user",
         );
     }
+    let mut populated_names = false;
     for entry in &snapshot.users {
-        match deserialize_user(entry) {
-            Ok(user) if user.email.is_empty() => {
-                return CheckOutcome::fail(
-                    id,
-                    expected,
-                    "empty email",
-                    format!("{} carried an empty core email", entry.key),
-                );
-            }
-            Ok(_) => {}
+        let user = match deserialize_user(entry) {
+            Ok(user) => user,
             Err(e) => return CheckOutcome::fail(id, expected, "deser failed", e.to_string()),
+        };
+        if user.email.is_empty() {
+            return CheckOutcome::fail(
+                id,
+                expected,
+                "empty email",
+                format!("{} carried an empty core email", entry.key),
+            );
         }
+        if user.first_name.is_some() && user.last_name.is_some() {
+            populated_names = true;
+        }
+    }
+    if !populated_names {
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "no user binds both first_name and last_name",
+            "the anchor must emit a user with non-null first_name + last_name so a rename of an optional core field (first_name -> firstName) lands it in extensions as None and fails this check",
+        );
     }
     CheckOutcome::pass(
         id,
         expected,
-        format!("{} user value(s) deserialized", snapshot.users.len()),
+        format!(
+            "{} user value(s) deserialized, optional core names bound on a populated user",
+            snapshot.users.len()
+        ),
     )
 }
 
@@ -301,6 +316,38 @@ mod tests {
         });
         let report = run_wire_battery(&snapshot);
         assert!(!report.is_conformant());
+    }
+
+    #[test]
+    fn a_renamed_optional_core_user_field_fails_the_user_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.users[0].value = json!({
+            "email": "ada@example.com",
+            "firstName": "Ada",
+            "lastName": "Lovelace",
+            "x_custom": { "nested": "value" }
+        });
+        let report = run_wire_battery(&snapshot);
+        assert!(
+            !report.is_conformant(),
+            "renaming first_name -> firstName must drop it into extensions as None and fail W1: {:#?}",
+            report.outcomes
+        );
+    }
+
+    #[test]
+    fn a_snapshot_with_only_null_name_users_fails_the_user_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.users = vec![entry(
+            "identity/users/01938c1f-0000-7000-8000-000000000002",
+            json!({ "email": "grace@example.com", "first_name": null, "last_name": null }),
+        )];
+        let report = run_wire_battery(&snapshot);
+        assert!(
+            !report.is_conformant(),
+            "a snapshot binding no populated names cannot exercise the optional-core-field guard: {:#?}",
+            report.outcomes
+        );
     }
 
     #[test]

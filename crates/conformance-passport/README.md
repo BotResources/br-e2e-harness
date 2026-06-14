@@ -57,7 +57,10 @@ The runner seeds and decodes **using the real `br-core-auth` types** (branch
 ## The conformance battery (P1–P5, G4)
 
 P1–P5 are `#[ignore]`-gated real-infra tests (`tests/conformance.rs`); **G4** is a
-pure round-trip through the lib types (a unit test in `src/scopes.rs`, no infra):
+pure round-trip through the lib types (a unit test in `src/scopes.rs`, no infra). G4
+runs via `cargo test` only — it is an offline lib round-trip, never a black-box
+spawned subject, so it is **not** selectable on the `--scenario` CLI runner
+(`Scenario::from_code("g4")` returns `None` by design; only P1–P5 are spawn scenarios):
 
 | Id | Asserts |
 |---|---|
