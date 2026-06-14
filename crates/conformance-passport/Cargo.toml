@@ -1,0 +1,26 @@
+[package]
+name = "conformance-passport"
+version.workspace = true
+description = "Black-box conformance runner for the BotResources bearer/PAT -> Passport resolution endpoint — TEST FIXTURE ONLY"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v0.10.0", version = "0.10.0" }
+
+br-test-harness = { path = "../br-test-harness", version = "0.4.0", default-features = false, features = [
+    "nats",
+    "spawned-nats",
+] }
+
+tokio = { workspace = true }
+serde_json = { workspace = true }
+async-nats = "0.48"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+uuid = { version = "1", features = ["v7"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
