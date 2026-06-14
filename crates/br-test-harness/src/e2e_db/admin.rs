@@ -53,10 +53,18 @@ pub(super) fn teardown_blocking(
             }
         };
         rt.block_on(async {
-            let mut admin = match PgConnection::connect(&admin_url).await {
-                Ok(c) => c,
-                Err(e) => {
+            let connect = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                PgConnection::connect(&admin_url),
+            );
+            let mut admin = match connect.await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => {
                     eprintln!("warning: e2e Drop net could not connect to admin PG: {e}");
+                    return;
+                }
+                Err(_) => {
+                    eprintln!("warning: e2e Drop net timed out connecting to admin PG");
                     return;
                 }
             };
@@ -158,7 +166,17 @@ pub(super) fn pg_host_port(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::pg_host_port;
+    use super::{pg_host_port, teardown_blocking};
+
+    #[test]
+    fn teardown_against_an_unreachable_admin_returns_without_panicking() {
+        teardown_blocking(
+            "postgresql://e2e_drop_net@127.0.0.1:1/postgres".to_string(),
+            "e2e_unreachable_db".to_string(),
+            "e2e_unreachable_owner".to_string(),
+            Vec::new(),
+        );
+    }
 
     #[test]
     fn extracts_host_port_with_credentials() {

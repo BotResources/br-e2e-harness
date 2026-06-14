@@ -11,21 +11,17 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Fixed
 
-- **`E2eDatabase` no longer leaks its owner role when a test panics before cleanup**
-  (caught by the WU-7 charter-adoption gate). The owner role is now created
-  **idempotently** — the same `DO $$ … IF NOT EXISTS (SELECT … pg_roles) THEN CREATE
-  ROLE … ELSE ALTER ROLE … EXCEPTION WHEN duplicate_object THEN ALTER … $$` block
-  already used for the app role (`ensure_owner_role`, parameterized for the owner's
-  `NOSUPERUSER CREATEROLE` + optional `BYPASSRLS`) — so a role left behind by a prior
-  crashed run no longer makes the next run die on `42710 role already exists`, and the
-  path is collision-safe under parallel worktrees. An `ALTER` resets the freshly-generated
-  password, so `owner_url()` authenticates even against a recovered role. In addition,
-  `E2eDatabase` now has a best-effort **`Drop` net** that tears down the per-test DB +
-  owner on a dedicated thread (its own current-thread runtime, never touching the test's
-  runtime) when a test panics before the explicit `cleanup`/`teardown`; the explicit path
-  stays primary (a `torn_down` flag makes the net a no-op after it). `create` /
-  `create_named` signatures are unchanged. Two `#[ignore]`-gated real-PG tests cover
-  re-run-after-leak recovery and the Drop-net teardown.
+- **`E2eDatabase` no longer leaks its owner role when a test panics before cleanup.** The
+  owner role is now ensured **idempotently** (same `DO … IF NOT EXISTS … duplicate_object`
+  shape as the app role), so a role left by a crashed run no longer makes the next run die
+  on `42710 role already exists`, and the path is collision-safe under parallel worktrees.
+  `E2eDatabase` also gains a best-effort **`Drop` net** that tears down the per-test DB +
+  owner when a test panics before the explicit `cleanup`/`teardown`; the explicit path
+  stays primary, and the net warns rather than panics, with a 10s bound on its admin
+  connection so an unreachable Postgres can never hang teardown. `create` / `create_named`
+  signatures are unchanged (`cleanup` stays by-value). See the README "Why" table for the
+  mechanism. Real-PG tests cover re-run-after-leak recovery and the Drop-net teardown; an
+  offline self-test proves the net survives an unreachable admin without panicking.
 
 ## [0.5.0] — 2026-06-14
 
