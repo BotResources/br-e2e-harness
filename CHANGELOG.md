@@ -7,6 +7,20 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`br-test-harness` re-exports `PassportBuilder` from `br-core-auth`.** The
+  hand-rolled builder in `br-test-harness/src/passport.rs` is deleted; the crate
+  now re-exports `br_core_auth::PassportBuilder` (its `test-support` feature)
+  under the same `br_test_harness::PassportBuilder` path. The builder now lives
+  next to the `Passport` it forges, tracking field changes with zero drift.
+  API parity is exact (`.user_id() .super_admin() .active() .pat()
+  .impersonator() .claim() .claims() .build() .build_service()` + `Default`),
+  so current users (svc-notifier e2e, conformance crates) see no behavior change.
+- **`br-core-auth` re-pinned to `br-rust-common` `v0.11.0`, with `test-support`
+  enabled.** This is a **branch pin** (`branch = "v0.11.0"`) pending the
+  `v0.11.0` tag — the release work flips it to `tag = "v0.11.0"`.
+
 ### Added
 
 - **`conformance-passport` — the G1 conformance battery (bearer/PAT → Passport).**
