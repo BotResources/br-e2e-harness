@@ -3,6 +3,8 @@ pub mod wait;
 
 #[cfg(feature = "nats")]
 pub mod nats;
+#[cfg(feature = "nats")]
+pub mod nats_assert;
 #[cfg(feature = "spawned-nats")]
 pub mod spawned_nats;
 
@@ -24,6 +26,8 @@ pub use wait::wait_until;
 
 #[cfg(feature = "nats")]
 pub use nats::TestNats;
+#[cfg(feature = "nats")]
+pub use nats_assert::{await_integration_event, recreate_kv, recreate_stream};
 #[cfg(feature = "spawned-nats")]
 pub use spawned_nats::SpawnedNats;
 

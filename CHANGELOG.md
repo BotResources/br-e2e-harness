@@ -7,6 +7,32 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`br-test-harness::nats_assert` — NATS published-contract observation + named-stream
+  reset (the 4th e2e channel).** Three `nats`-gated free functions, promoted generic
+  from `svc-charter`'s service-local `tests/common/` (issue #55, A.2 + A.3), taking a
+  `&async_nats::jetstream::Context`:
+  - **`await_integration_event(js, stream, subject, deadline) -> Option<Value>`** — opens
+    an ephemeral pull consumer (`DeliverPolicy::All` + `filter_subject`) on the named
+    stream, awaits the first matching message within `deadline`, and returns the envelope
+    as a `serde_json::Value` for deserialization against the producer's `contract-*`
+    payload. The **stream name is a parameter** (charter hard-coded `CHARTER_STREAM`),
+    so it is service-agnostic; a clean timeout yields `None`, never a hang.
+  - **`recreate_stream(js, name, &subjects) -> stream::Stream`** /
+    **`recreate_kv(js, bucket) -> kv::Store`** — **delete-then-create** a *named*
+    service-contract JetStream stream (with its subject filters, e.g. `charter.>`) or KV
+    bucket, so each serial scenario starts from an empty bus on a shared server. Explicit
+    delete-then-create, **never silent get-or-create** — the harness is the GitOps
+    stand-in (the production service never provisions; the lib fails loud), and a
+    get-or-create would leak the prior scenario's messages while the reset passed.
+  - The helpers are **free functions, not methods on `TestNats`** — `TestNats` owns the
+    harness's own throwaway UUID-suffixed buckets, not a named service-contract stream.
+    `futures-util` joins the `nats` feature (the consumer message stream). Self-tests in
+    `tests/nats_assert.rs` cover the offline reachability check plus four `#[ignore]`-gated
+    real-`nats-server` cases (await-after-reset, timeout→`None`, delete-then-create drops
+    stale messages / prior KV entries).
+
 ### Changed
 
 - **`br-test-harness` re-exports `PassportBuilder` from `br-core-auth`.** The
