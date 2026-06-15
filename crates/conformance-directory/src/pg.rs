@@ -12,7 +12,7 @@ pub struct ConsumerDb {
 impl ConsumerDb {
     pub async fn provision() -> Result<Self> {
         let db = E2eDatabase::create(false, &[]).await;
-        let pool = connect_pool(&db.owner_url())
+        let pool = connect_pool(&db.owner_migration_url())
             .await
             .map_err(|e| ConformanceError::Postgres(format!("connect pool: {e}")))?;
         Ok(Self { db, pool })

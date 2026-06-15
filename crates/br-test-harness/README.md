@@ -27,7 +27,8 @@ persistence abstraction, can inject them.
 | Need | Helper | Feature |
 |---|---|---|
 | A throwaway Postgres DB + non-superuser, CNPG-shaped owner role | `E2eDatabase` | `e2e-db` |
-| A second, RLS-subject **app role** on that DB (the runtime role) | `E2eDatabase::with_app_role` | `e2e-db` |
+| A DB + owner + RLS-subject **app role** in one RLS-safe call (the default) | `E2eDatabase::create_with_app_role` | `e2e-db` |
+| A second, RLS-subject **app role** on an existing DB (the runtime role) | `E2eDatabase::with_app_role` | `e2e-db` |
 | A dedicated, ephemeral `nats-server -js` for one test chain | `SpawnedNats` | `spawned-nats` |
 | A connection to NATS + isolated KV buckets | `TestNats` | `nats` |
 | Await a producer's integration event on a named stream + subject | `await_integration_event` | `nats` |
@@ -67,11 +68,13 @@ sequences) are therefore pure compositions of channel-1 mutations, never SQL.
 
 Two supporting primitives underpin the four channels:
 
-- **Two-role Postgres** — `E2eDatabase::create(bypassrls, …)` then
-  `.with_app_role(name, pw)`: the `BYPASSRLS` **owner** runs the migrations and reads
-  raw state, the RLS-subject **app role** is the runtime role the service connects
-  as. Channel 2's RLS assertions (a caller sees only its own rows) run as the app
-  role while the owner — or the superuser `admin_url()` — reads the unfiltered truth.
+- **Two-role Postgres** — `E2eDatabase::create_with_app_role(owner, db, app, pw,
+  bypassrls, …)` (or `create(bypassrls, …).with_app_role(name, pw)`): the
+  `BYPASSRLS` **owner** runs the migrations (`owner_migration_url()`) and reads raw
+  state, the RLS-subject **app role** is the runtime role the service connects as
+  (`app_url()` — this is the binary's `DATABASE_URL`, never the owner). Channel 2's
+  RLS assertions (a caller sees only its own rows) run as the app role while the
+  owner — or the superuser `admin_url()` — reads the unfiltered truth.
 - **Fail-loud boot** — `SpawnedProcess::await_boot(url, timeout) -> BootOutcome`
   (`Ready` / `Exited(status)` / `TimedOut`): the S0-style "the service refuses to
   boot when its declared GitOps infra is missing, and names the missing resource"
@@ -134,10 +137,9 @@ pub struct TestContext {
 
 impl TestContext {
     pub async fn setup() -> Self {
-        let db = E2eDatabase::create_named(OWNER_ROLE, "charter_test", true, &[])
-            .await
-            .with_app_role(APP_ROLE, APP_PW)
-            .await;
+        let db =
+            E2eDatabase::create_with_app_role(OWNER_ROLE, "charter_test", APP_ROLE, APP_PW, true, &[])
+                .await;
 
         let nats = SpawnedNats::start().await;
         let client = br_test_harness::nats::connect(&nats.url()).await.unwrap();
@@ -154,7 +156,7 @@ impl TestContext {
             &[
                 ("PORT", &port.to_string()),
                 ("DATABASE_URL", &db.app_url()),
-                ("DATABASE_URL_OWNER", &db.owner_url()),
+                ("DATABASE_URL_OWNER", &db.owner_migration_url()),
                 ("NATS_URL", &nats.url()),
                 ("SCOPE_DECLARATION_ENABLED", "false"),
             ],
@@ -257,35 +259,46 @@ or "standard" key list to keep in lockstep, by design.
 `E2eDatabase` provisions the **owner** (`NOSUPERUSER`, optionally `BYPASSRLS`)
 that owns the schema and runs migrations. A service that enforces authZ via
 Postgres RLS also needs the **runtime role** the app actually connects as — the
-RLS *subject*, gated by `current_setting('app.current_user_id')`. Add it with one
-builder step:
+RLS *subject*, gated by `current_setting('app.current_user_id')`. The RLS-safe
+two-role provisioning is the **default**, in one call:
 
 ```rust
-let db = E2eDatabase::create(true, &[])         // owner: BYPASSRLS, the migration agent
-    .await
-    .with_app_role("svc_app", "app_pw")         // runtime role: NOBYPASSRLS, RLS-subject
-    .await;
+let db = E2eDatabase::create_with_app_role(
+    "svc_owner", "svc_db", "svc_app", "app_pw", true, &[],  // owner BYPASSRLS, app NOBYPASSRLS
+).await;
 
-let owner = PgConnection::connect(&db.owner_url()).await?;  // migrate + raw-state asserts
-let app   = PgConnection::connect(&db.app_url()).await?;    // the role under test, sees only its rows
-let admin = PgConnection::connect(db.admin_url()).await?;   // the superuser: posture / cluster asserts
+let owner = PgConnection::connect(&db.owner_migration_url()).await?; // migrate + raw-state asserts
+let app   = PgConnection::connect(&db.app_url()).await?;             // the runtime DATABASE_URL, sees only its rows
+let admin = PgConnection::connect(db.admin_url()).await?;            // the superuser: posture / cluster asserts
 ```
 
-`with_app_role` is **idempotent** — it ensures the role via a
-`DO … IF NOT EXISTS … $$` block (collision-safe when parallel worktrees share a
-role name), `GRANT CONNECT`s it to the fresh DB, and on the owner connection runs
-`GRANT USAGE, CREATE ON SCHEMA public` plus the two
-`ALTER DEFAULT PRIVILEGES … TO <app>` (tables + sequences) so the tables the
-owner's migrations *later* create are reachable by the runtime role. Role **names**
-are caller-supplied; the grant dance is the generic part. An **RLS isolation test**
-sets the principal transaction-locally as the app role and asserts it sees only its
-own rows, while the `BYPASSRLS` owner (or the superuser `admin_url()`) reads the raw,
-unfiltered state. `app_url()` panics if `with_app_role` was never called; `cleanup`
+The runtime binary's `DATABASE_URL` is **`app_url()`**, never
+`owner_migration_url()`: the owner carries `BYPASSRLS` and exists only to run
+migrations and read raw state. Wiring the owner DSN as `DATABASE_URL` runs the
+service with RLS silently off — the misuse `owner_migration_url()` is named to
+make obvious. `create(bypassrls, …).with_app_role(name, pw)` remains for the rare
+case that adds an app role to an already-provisioned DB.
+
+`with_app_role` is **idempotent and concurrency-safe** — it ensures the role via a
+`DO … IF NOT EXISTS … $$` block run inside a transaction that first takes
+`pg_advisory_xact_lock(hashtext(name))`, so two parallel binaries/worktrees that
+ensure the **same shared role name** serialize on the server instead of writing the
+same `pg_authid` row simultaneously and aborting the loser with
+`tuple concurrently updated`. It then `GRANT CONNECT`s the role to the fresh DB and
+runs `GRANT USAGE, CREATE ON SCHEMA public` plus the two `ALTER DEFAULT PRIVILEGES
+… TO <app>` (tables + sequences) — each likewise under its advisory lock — so the
+tables the owner's migrations *later* create are reachable by the runtime role.
+Role **names** are caller-supplied (escaped via `quote_ident`); the grant dance is
+the generic part. An **RLS isolation test** sets the principal transaction-locally
+as the app role and asserts it sees only its own rows, while the `BYPASSRLS` owner
+(or the superuser `admin_url()`) reads the raw, unfiltered state. `app_url()`
+panics if `with_app_role` / `create_with_app_role` was never called; `cleanup`
 drops only the per-test DB and the per-test owner — the app role persists (like
 `managed_roles`), since a shared name may be in use by a parallel run. The owner is
-created **idempotently** (same `DO … IF NOT EXISTS … duplicate_object` block as the
-app role), and a `Drop` net tears the DB + owner down even when a test panics before
-`cleanup` — so a crashed run no longer leaks a role that dies the next run on `42710`.
+created the same way (advisory-locked ensure), the shared `CREATE DATABASE` /
+`DROP DATABASE` path is wrapped in a session-level `pg_advisory_lock`, and a `Drop`
+net tears the DB + owner down even when a test panics before `cleanup` — so a
+crashed run no longer leaks a role that dies the next run on `42710`.
 ### Observing the published contract (the 4th channel)
 
 A BR service's published language — its integration events on a *named*,
@@ -387,14 +400,16 @@ here, synthetically:
 | Thing | Why it is the way it is |
 |---|---|
 | `E2eDatabase` owner = `NOSUPERUSER` + a `bypassrls` flag | The owner mirrors the CNPG GitOps owner: an RLS-bypassing agent for migrations/bootstrap, `NOSUPERUSER` so `FORCE ROW LEVEL SECURITY` behaves exactly as in prod. Pass `bypassrls = false` **only** for negative tests asserting a misdeclared owner is caught — it reproduces incident **2026-06-11**, where a no-bypass owner under `FORCE RLS` read zero rows and a deploy cascade failed. |
-| The owner role is created idempotently (same `DO … IF NOT EXISTS … duplicate_object` shape as the app role) | A test that panics before `cleanup` left the owner role behind, and a raw `CREATE ROLE` made the next run die on `42710 role already exists`. The owner is now ensured the same way as the app role — `IF NOT EXISTS … CREATE … ELSE ALTER`, with a `duplicate_object` handler that falls through to `ALTER` so the loser of a concurrent `CREATE ROLE` race under parallel worktrees still recovers. The `ALTER` resets the freshly-generated password, so `owner_url()` always authenticates even when it recovered a leaked role. |
+| `owner_url()` is named `owner_migration_url()` | The owner carries `BYPASSRLS` and is the migration/bootstrap agent only. A service whose e2e `boot()` set `DATABASE_URL = owner_url()` ran the runtime as the RLS-bypassing owner → RLS silently off, and cross-tenant "isolation passes" proved nothing (masked two real production cross-tenant PII leaks, svc-identity 2026-06-15). The runtime DSN is `app_url()`; the longer owner name reads as obviously wrong at a runtime `DATABASE_URL` call site. |
+| Role ensure / grant runs under `pg_advisory_xact_lock(hashtext(name))` | The ensure/grant statements (`ALTER ROLE`, `GRANT`, `ALTER DEFAULT PRIVILEGES`) are unconditional on every steady-state call and the role/ACL names are deliberately **shared and stable** across parallel binaries/worktrees. Two processes writing the same `pg_authid`/ACL row at once aborts the loser with `tuple concurrently updated` (`XX000`) — which the old `duplicate_object` (`42710`-only) guard missed and whose recovery re-collided. Each critical section now runs in a transaction that first takes an advisory lock keyed on the object name, serializing same-named callers on the server; the loop also tolerates `XX000`/`40P01`/`55P03` with bounded backoff. The shared `CREATE/DROP DATABASE` (which cannot be transactional) uses a session-level `pg_advisory_lock`. The `ALTER` still resets the freshly-generated password, so `owner_migration_url()` authenticates even when it recovered a leaked role. |
 | `E2eDatabase` has a `Drop` net that tears down on a dedicated thread | A test panicking before its explicit `cleanup`/`teardown` would otherwise leak the per-test DB + owner. `Drop` is synchronous and teardown is async, so the net spawns a dedicated OS thread with its own current-thread runtime and `join`s it — never touching the test's runtime (which may be current-thread, where `block_in_place`/`Handle::block_on` panics). Explicit `cleanup` is still the primary path and sets the `torn_down` flag so the net is a no-op after it; the net is best-effort (warns, never panics) so a teardown hiccup can't mask the original test failure. |
 | `create*`'s `managed_roles` silently skips unknown roles | Only roles that **already exist** are granted to the owner `WITH ADMIN OPTION` (PG16: a `CREATEROLE` role needs `ADMIN` on a role to `ALTER` it). Roles the service creates itself at startup are deliberately left alone — this is not a typo guard. |
-| `with_app_role` ensures-not-creates, and `cleanup` never drops the app role | The app role is a cluster-global object that a **shared name** (`svc_app`) leaves in use across parallel worktrees — so it is ensured idempotently (`DO … IF NOT EXISTS` with a `duplicate_object` handler that falls through to the `ALTER` path, so the loser of a true concurrent `CREATE ROLE` race still recovers), `ALTER`ed in place if present, and **left standing** on cleanup. Only the per-test DB + the per-test (unique-suffixed) owner are dropped. Same posture as `managed_roles`: a shared role is the cluster's, not one test's to delete. |
+| `with_app_role` ensures-not-creates, and `cleanup` never drops the app role | The app role is a cluster-global object that a **shared name** (`svc_app`) leaves in use across parallel worktrees — so it is ensured idempotently and under the advisory lock above (so a true concurrent ensure serializes rather than racing), `ALTER`ed in place if present, and **left standing** on cleanup. Only the per-test DB + the per-test (unique-suffixed) owner are dropped. Same posture as `managed_roles`: a shared role is the cluster's, not one test's to delete. |
+| Interpolated identifiers go through `quote_ident` / literals through `quote_literal` | The public `create_named` / `create_with_app_role` / `with_app_role` surface takes role and DB **names** as arbitrary `&str`. Names were previously interpolated raw into DDL (only the password was escaped); a `"`-bearing name broke the statement (and the `rolname = '…'` existence check). A single quote helper escapes every interpolated name and literal so the DDL is well-formed whatever the caller passes. |
 | The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
-| `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. |
+| `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. |
 | `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
 | Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_event` returns `None` **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
 | `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
@@ -516,19 +531,25 @@ async fn lists_only_my_rows() {
 ```
 
 **True end-to-end** — provision an `E2eDatabase` + a `SpawnedNats`, spawn the
-real binary with `SpawnedProcess` (it runs its own migrations and connects as the
-owner role), then drive it over HTTP / WS and assert against the DB + NATS:
+real binary with `SpawnedProcess` (it migrates as the owner, then serves as the
+RLS-subject app role), then drive it over HTTP / WS and assert against the DB + NATS:
 
 ```rust,ignore
 use std::time::Duration;
 use br_test_harness::{E2eDatabase, SpawnedNats, SpawnedProcess, WsSubscription, PassportBuilder};
 
-let db   = E2eDatabase::create_named("identity", "identity_owner", true, &["identity_app"]).await;
+let db   = E2eDatabase::create_with_app_role(
+    "identity_owner", "identity", "identity_app", "app_pw", true, &[],
+).await;
 let nats = SpawnedNats::start().await;
 let mut svc = SpawnedProcess::spawn(
     env!("CARGO_BIN_EXE_my-service"),
     &["serve"],
-    &[("DATABASE_URL", &db.owner_url()), ("NATS_URL", &nats.url())],
+    &[
+        ("DATABASE_URL", &db.app_url()),                  // runtime: RLS-subject, never the owner
+        ("DATABASE_URL_OWNER", &db.owner_migration_url()), // migrations: BYPASSRLS owner
+        ("NATS_URL", &nats.url()),
+    ],
 );
 svc.wait_for_http_ok(&format!("{base}/health"), Duration::from_secs(30)).await.unwrap();
 

@@ -36,23 +36,45 @@ pub async fn recreate_stream(
     name: &str,
     subjects: &[&str],
 ) -> stream::Stream {
-    let _ = js.delete_stream(name).await;
-    js.create_stream(stream::Config {
+    let config = stream::Config {
         name: name.to_string(),
         subjects: subjects.iter().map(|s| s.to_string()).collect(),
         ..Default::default()
-    })
-    .await
-    .unwrap_or_else(|e| panic!("create stream {name}: {e}"))
+    };
+    for attempt in 0..6 {
+        let _ = js.delete_stream(name).await;
+        match js.create_stream(config.clone()).await {
+            Ok(stream) => return stream,
+            Err(e) if attempt < 5 => {
+                tokio::time::sleep(backoff(attempt)).await;
+                let _ = e;
+            }
+            Err(e) => panic!("create stream {name}: {e}"),
+        }
+    }
+    unreachable!("recreate_stream loop returns or panics within the bounded attempts")
 }
 
 pub async fn recreate_kv(js: &jetstream::Context, bucket: &str) -> kv::Store {
-    let _ = js.delete_key_value(bucket).await;
-    js.create_key_value(kv::Config {
+    let config = kv::Config {
         bucket: bucket.to_string(),
         history: 8,
         ..Default::default()
-    })
-    .await
-    .unwrap_or_else(|e| panic!("create kv bucket {bucket}: {e}"))
+    };
+    for attempt in 0..6 {
+        let _ = js.delete_key_value(bucket).await;
+        match js.create_key_value(config.clone()).await {
+            Ok(store) => return store,
+            Err(e) if attempt < 5 => {
+                tokio::time::sleep(backoff(attempt)).await;
+                let _ = e;
+            }
+            Err(e) => panic!("create kv bucket {bucket}: {e}"),
+        }
+    }
+    unreachable!("recreate_kv loop returns or panics within the bounded attempts")
+}
+
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(20 * u64::from(attempt + 1))
 }
