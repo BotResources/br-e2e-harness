@@ -12,7 +12,7 @@ name = "conformance-scope"
 path = "src/main.rs"
 
 [dependencies]
-conformance-scope = { path = "../conformance-scope", version = "0.5.1" }
+conformance-scope = { path = "../conformance-scope", version = "0.5.2" }
 
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }

@@ -8,11 +8,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v0.11.0", version = "0.11.0" }
-br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "v0.11.0", version = "0.11.0" }
-br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v0.11.0", version = "0.11.0" }
+br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v0.11.1", version = "0.11.1" }
+br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "v0.11.1", version = "0.11.1" }
+br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v0.11.1", version = "0.11.1" }
 
-br-test-harness = { path = "../br-test-harness", version = "0.5.1", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "0.5.2", default-features = false, features = [
     "nats",
     "spawned-nats",
 ] }
