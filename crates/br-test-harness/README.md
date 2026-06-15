@@ -57,7 +57,7 @@ nothing else is a legitimate window into the running service:
 |---|---|---|---|
 | 1 | **Mutation ack / error** | a mutation returns a *verdict*, never state: an ack on success, or a structured error carrying a **stable code** on rejection | `verdict::{expect_ack, is_ack, expect_rejected, expect_code_shaped, is_code_shaped, mutation_error_code}` over a `GraphqlClient` response |
 | 2 | **Query + affordances** | the authoritative current state *and* the `{ action, allowed, reasonCode }` affordances the service computes for the caller's Passport | `GraphqlClient::query` + the same `verdict` helpers (the affordance-skip guarantee keeps an affordance `reasonCode` from reading as a mutation error) |
-| 3 | **Subscriptions** | the near-unfiltered domain-event stream the frontend folds — every transition, with its code | `SseSubscription::{next_event, expect_event, expect_silence, drain}` |
+| 3 | **Subscriptions** | the near-unfiltered domain-event stream the frontend folds — every transition, with its code | `SseSubscription::{next_event, expect_event, expect_event_on, expect_silence, drain}` |
 | 4 | **Published contract** (KV + integration events) | the service's *published language* — its integration events on a named, GitOps-provisioned JetStream stream, and the KV mirror it writes for downstream consumers | `await_integration_event(js, stream, subject, deadline)` + `recreate_stream` / `recreate_kv` to reset the named bus clean per scenario |
 
 The non-negotiable rule that makes a scenario a *spec* and not a *fixture*: **state
@@ -339,6 +339,15 @@ Three helpers exist specifically to kill the classic e2e flakes:
   reuses `next_event`, so a broken stream still panics — it never swallows an
   error frame. (`next_event` / `expect_event` / `expect_silence` remain, for the
   single-push and silence cases.)
+- **`SseSubscription::expect_event_on(field, timeout) -> Value`** — the channel-3
+  ergonomic. `next_event` / `expect_event` already unwrap the SSE frame to the
+  GraphQL `data` object (failing loud on an `errors` payload); `expect_event_on`
+  pulls a *named* subscription root straight out of it, so a scenario reads
+  `sub.expect_event_on("charterProposalChanged", PUSH).await["id"]` instead of
+  re-indexing `["data"]["charterProposalChanged"]` by hand — and fails loud if
+  the awaited frame doesn't carry that field. It is the SSE counterpart of WS
+  `next_data`, and the helper that lets a service drop its bespoke channel-3
+  push-extraction boilerplate.
 - **`wait_until(timeout, predicate)`** — poll an async condition (a projection
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.

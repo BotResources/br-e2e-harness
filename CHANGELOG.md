@@ -22,6 +22,16 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+- **`SseSubscription::expect_event_on(field, timeout)`** — the channel-3
+  ergonomic that closes #55's SSE reconciliation (item B.1). `next_event` /
+  `expect_event` already unwrap an SSE frame to its GraphQL `data` object and fail
+  loud on an `errors` payload; `expect_event_on` pulls a *named* subscription root
+  straight out of it (failing loud if the awaited frame omits that field), so a
+  service drops its bespoke push-extraction boilerplate and `svc-charter` retires
+  its service-local channel-based `sse.rs`. The harness keeps its stream-based
+  flat API (the form of `open` / `verdict::*`, not a builder); the charter
+  `expect_push` / `next_within` names map onto the harness `expect_event` /
+  `next_event` without aliases. Feature-gated under `sse`.
 - **`E2eDatabase::create_with_app_role(owner, db, app_role, app_pwd, bypassrls,
   managed_roles)`** — a first-class RLS-safe provisioning ctor that provisions the
   owner **and** the RLS-subject runtime app role in one call and hands back a
