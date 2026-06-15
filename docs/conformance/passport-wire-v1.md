@@ -14,7 +14,7 @@ source of truth, not a second drifting one.
 
 The golden vectors below are the **real values** pinned in the Go anchor's
 `conformance-subjects/identity-passport/wire_test.go`; the schemas are the **real Rust
-types** in `br-core-auth` (tag `v0.11.0`). Nothing here is hand-written wire shape.
+types** in `br-core-auth` (tag `v0.11.1`). Nothing here is hand-written wire shape.
 
 ---
 

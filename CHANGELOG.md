@@ -7,6 +7,20 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-06-15
+
+### Changed
+
+- **Re-pinned `br-rust-common` from `v0.11.0` to `v0.11.1`** across every crate
+  that links it (`br-test-harness` → `br-core-auth`; the `conformance-identity`,
+  `conformance-directory`, `conformance-passport`, `conformance-scope` oracles →
+  `br-core-*` / `br-identity-domain` / `br-scope-declaration-contract`). `v0.11.1`
+  is a `br-util-graphql` SDL-name bugfix that changes no wire and no type this
+  harness imports, so the conformance oracles still deserialize the Go-frozen
+  golden vectors identically. The bump keeps a consumer that links **both** the
+  harness (dev-dep) and `br-rust-common` v0.11.1 (prod) on a **single source**,
+  preventing a diamond-skew duplication of `br-core-*` in the graph.
+
 ## [0.5.1] — 2026-06-14
 
 ### Fixed
