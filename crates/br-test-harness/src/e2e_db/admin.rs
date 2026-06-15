@@ -200,9 +200,14 @@ async fn run_under_advisory_lock(
 }
 
 fn is_concurrent_catalog_conflict(e: &sqlx::Error) -> bool {
-    e.as_database_error()
-        .and_then(|db| db.code())
-        .is_some_and(|code| code == "XX000" || code == "40P01" || code == "55P03")
+    let Some(db) = e.as_database_error() else {
+        return false;
+    };
+    match db.code().as_deref() {
+        Some("40P01") | Some("55P03") => true,
+        Some("XX000") => db.message().contains("concurrently"),
+        _ => false,
+    }
 }
 
 pub(super) async fn role_exists(admin: &mut PgConnection, role: &str) -> bool {

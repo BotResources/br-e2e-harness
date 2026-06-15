@@ -42,8 +42,10 @@ single git tag `v{version}` releases the set. Format follows
   and whose recovery path re-collided. Each ensure/grant critical section now runs
   inside a transaction that first takes `pg_advisory_xact_lock(hashtext(name))`
   keyed on the shared object name, serializing same-named callers on the server,
-  and tolerates `XX000` / deadlock (`40P01`) / lock-not-available (`55P03`) with a
-  bounded backoff-retry. The shared `CREATE DATABASE` / `DROP DATABASE` path —
+  and retries with a bounded backoff only on the concurrent-catalog race itself —
+  an `XX000` whose message reports a tuple updated/deleted `concurrently`, plus
+  deadlock (`40P01`) and lock-not-available (`55P03`); any other `XX000` (a real
+  internal error) fails immediately rather than being masked by the retry. The shared `CREATE DATABASE` / `DROP DATABASE` path —
   which cannot run inside a transaction — is wrapped in a session-level
   `pg_advisory_lock` for the same effect. `recreate_stream` / `recreate_kv` retry
   their delete-then-create over a bounded loop to absorb a concurrent recreate on
