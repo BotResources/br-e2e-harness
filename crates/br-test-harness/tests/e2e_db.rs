@@ -1,12 +1,15 @@
+use std::sync::Arc;
+
 use br_test_harness::E2eDatabase;
 use sqlx::{Connection, Executor as _, PgConnection, Row as _};
+use tokio::sync::Barrier;
 
 #[tokio::test]
 #[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
 async fn provisions_an_owner_that_authenticates_with_its_generated_credentials() {
     let db = E2eDatabase::create(true, &[]).await;
 
-    let mut owner = PgConnection::connect(&db.owner_url())
+    let mut owner = PgConnection::connect(&db.owner_migration_url())
         .await
         .expect("the provisioned owner must authenticate with its generated credentials");
 
@@ -26,7 +29,7 @@ async fn provisions_an_owner_that_authenticates_with_its_generated_credentials()
 async fn rls_context_is_transaction_local_and_never_leaks_across_transactions() {
     let db = E2eDatabase::create(true, &[]).await;
 
-    let mut conn = PgConnection::connect(&db.owner_url())
+    let mut conn = PgConnection::connect(&db.owner_migration_url())
         .await
         .expect("owner connection for the RLS-locality proof");
 
@@ -76,7 +79,7 @@ async fn provisions_an_app_role_that_authenticates_and_can_use_the_public_schema
 
     assert_eq!(db.app_role(), Some(app_name.as_str()));
 
-    let mut owner = PgConnection::connect(&db.owner_url())
+    let mut owner = PgConnection::connect(&db.owner_migration_url())
         .await
         .expect("owner connection");
     owner
@@ -157,7 +160,7 @@ async fn create_named_recovers_when_a_prior_crashed_run_leaked_the_owner_role() 
 
     let db = E2eDatabase::create_named(&owner_name, &db_name, true, &[]).await;
 
-    let mut owner = PgConnection::connect(&db.owner_url())
+    let mut owner = PgConnection::connect(&db.owner_migration_url())
         .await
         .expect("after recovering the leaked owner, it authenticates with the fresh credentials");
     let current: String = sqlx::query("SELECT current_user")
@@ -226,7 +229,7 @@ async fn rls_isolates_the_app_role_while_the_bypassrls_owner_sees_raw_rows() {
         "the admin url must be surfaced for posture / raw-state assertions"
     );
 
-    let mut owner = PgConnection::connect(&db.owner_url())
+    let mut owner = PgConnection::connect(&db.owner_migration_url())
         .await
         .expect("owner connection");
     for stmt in [
@@ -278,4 +281,76 @@ async fn rls_isolates_the_app_role_while_the_bypassrls_owner_sees_raw_rows() {
     owner.close().await.ok();
 
     db.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn create_with_app_role_yields_a_non_panicking_rls_subject_app_url() {
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let owner_name = format!("e2e_owner_oneshot_{suffix}");
+    let db_name = format!("e2e_oneshot_{suffix}");
+    let app_name = format!("e2e_app_oneshot_{suffix}");
+
+    let db =
+        E2eDatabase::create_with_app_role(&owner_name, &db_name, &app_name, "app_pw", true, &[])
+            .await;
+
+    assert_eq!(db.app_role(), Some(app_name.as_str()));
+
+    let mut app = PgConnection::connect(&db.app_url())
+        .await
+        .expect("create_with_app_role must hand back a ready, non-panicking app_url");
+    let current: String = sqlx::query("SELECT current_user")
+        .fetch_one(&mut app)
+        .await
+        .expect("query as the app role must succeed")
+        .get(0);
+    assert_eq!(current, app_name);
+
+    let bypasses: bool =
+        sqlx::query("SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user")
+            .fetch_one(&mut app)
+            .await
+            .expect("read the app role's BYPASSRLS attribute")
+            .get(0);
+    assert!(
+        !bypasses,
+        "the default runtime app role must be RLS-subject (NOBYPASSRLS), never an RLS bypasser"
+    );
+    app.close().await.ok();
+
+    db.cleanup().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+#[ignore = "real-infra: needs an admin Postgres via E2E_PG_ADMIN_URL / DATABASE_URL"]
+async fn concurrent_provisioning_of_a_shared_app_role_does_not_race() {
+    let app_name = Arc::new(format!("e2e_app_race_{}", uuid::Uuid::now_v7().simple()));
+    let workers = 8;
+
+    for _ in 0..3 {
+        let barrier = Arc::new(Barrier::new(workers));
+        let mut handles = Vec::new();
+        for _ in 0..workers {
+            let app_name = Arc::clone(&app_name);
+            let barrier = Arc::clone(&barrier);
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                let db = E2eDatabase::create(true, &[])
+                    .await
+                    .with_app_role(&app_name, "app_test_pw")
+                    .await;
+                let app = PgConnection::connect(&db.app_url())
+                    .await
+                    .expect("the shared app role authenticates after a concurrent ensure");
+                app.close().await.ok();
+                db.cleanup().await;
+            }));
+        }
+        for handle in handles {
+            handle.await.expect(
+                "a concurrent provisioning worker panicked (a `tuple concurrently updated` race)",
+            );
+        }
+    }
 }

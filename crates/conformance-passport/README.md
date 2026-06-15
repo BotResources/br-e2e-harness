@@ -136,7 +136,7 @@ resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.5.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.6.0" }
 ```
 
 ## Why — the non-obvious bits

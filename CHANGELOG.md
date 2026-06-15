@@ -7,6 +7,70 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-15
+
+### Changed (breaking)
+
+- **`E2eDatabase::owner_url()` is renamed `owner_migration_url()`.** The owner
+  carries `BYPASSRLS` and is the **migration/bootstrap** agent, never the runtime
+  pool: a service whose e2e `boot()` set `DATABASE_URL = owner_url()` silently ran
+  the runtime as the RLS-bypassing owner, so RLS was **off** and cross-tenant
+  isolation "passes" proved nothing (this masked two real production cross-tenant
+  PII leaks, found 2026-06-15 in svc-identity). The new name reads as obviously
+  wrong at a runtime `DATABASE_URL` call site. Migrate `owner_url()` →
+  `owner_migration_url()`; the runtime DSN is `app_url()`.
+
+### Added
+
+- **`SseSubscription::expect_event_on(field, timeout)`** — the channel-3
+  ergonomic that closes #55's SSE reconciliation (item B.1). `next_event` /
+  `expect_event` already unwrap an SSE frame to its GraphQL `data` object and fail
+  loud on an `errors` payload; `expect_event_on` pulls a *named* subscription root
+  straight out of it (failing loud if the awaited frame omits that field), so a
+  service drops its bespoke push-extraction boilerplate and `svc-charter` retires
+  its service-local channel-based `sse.rs`. The harness keeps its stream-based
+  flat API (the form of `open` / `verdict::*`, not a builder); the charter
+  `expect_push` / `next_within` names map onto the harness `expect_event` /
+  `next_event` without aliases. Feature-gated under `sse`.
+- **`E2eDatabase::create_with_app_role(owner, db, app_role, app_pwd, bypassrls,
+  managed_roles)`** — a first-class RLS-safe provisioning ctor that provisions the
+  owner **and** the RLS-subject runtime app role in one call and hands back a
+  ready, non-panicking `app_url()`. Two-role, RLS-active provisioning is now the
+  ergonomic default rather than an easy-to-miss `.with_app_role(…)` opt-in next to
+  a dangerous owner-DSN default. Converges `svc-identity`'s hand-rolled `boot_rls`,
+  `svc-charter`'s bespoke `PgFixture` and #95's bespoke pool onto one lib path.
+
+### Fixed
+
+- **Shared-name provisioning no longer races under cross-process concurrency.**
+  `ensure_owner_role` / `ensure_app_role` / the schema-grant and connect-grant
+  dances ran unconditional `ALTER ROLE` / `GRANT` / `ALTER DEFAULT PRIVILEGES`
+  on every steady-state call against shared, stable role names — two parallel test
+  binaries or worktrees pointing at one Postgres wrote the same `pg_authid` / ACL
+  row simultaneously and the loser aborted with `tuple concurrently updated`
+  (`XX000`), which the old `duplicate_object` (`42710`-only) guard did not catch
+  and whose recovery path re-collided. Each ensure/grant critical section now runs
+  inside a transaction that first takes `pg_advisory_xact_lock(hashtext(name))`
+  keyed on the shared object name, serializing same-named callers on the server,
+  and retries with a bounded backoff only on the concurrent-catalog race itself —
+  an `XX000` whose message reports a tuple updated/deleted `concurrently`, plus
+  deadlock (`40P01`) and lock-not-available (`55P03`); any other `XX000` (a real
+  internal error) fails immediately rather than being masked by the retry. The shared `CREATE DATABASE` / `DROP DATABASE` path —
+  which cannot run inside a transaction — is wrapped in a session-level
+  `pg_advisory_lock` for the same effect. `recreate_stream` / `recreate_kv` retry
+  their delete-then-create over a bounded loop to absorb a concurrent recreate on
+  a shared NATS server. A new `quote_ident` / `quote_literal` helper escapes every
+  interpolated identifier and literal (the role/db names the public surface takes
+  as arbitrary `&str`).
+
+- **README doc bug (security invariant #1).** The README claimed the provisioning
+  was "collision-safe when parallel worktrees share a role name" — true only for
+  `CREATE`-vs-`CREATE`, never the `ALTER`/`GRANT` steady-state path that actually
+  bit. The README + its "Why" table are corrected to the advisory-lock model.
+
+- A concurrent-provisioning self-test (`Barrier` + N tasks on a shared role name,
+  looped) is added — red on the pre-fix lib, green after.
+
 ## [0.5.2] — 2026-06-15
 
 ### Changed

@@ -1,10 +1,12 @@
 use sqlx::{Connection, Executor, PgConnection};
 
 mod admin;
+mod quote;
 use admin::{
-    drop_db_and_owner, ensure_app_role, ensure_owner_role, grant_app_schema, pg_host_port,
-    role_exists, teardown_blocking,
+    drop_db_and_owner, ensure_app_role, ensure_owner_role, grant_app_schema, grant_connect,
+    grant_managed_role, pg_host_port, role_exists, teardown_blocking,
 };
+use quote::quote_ident;
 
 pub struct E2eDatabase {
     admin_url: String,
@@ -46,6 +48,20 @@ impl E2eDatabase {
         .await
     }
 
+    pub async fn create_with_app_role(
+        owner_name: &str,
+        db_name: &str,
+        app_role: &str,
+        app_password: &str,
+        bypassrls: bool,
+        managed_roles: &[&str],
+    ) -> Self {
+        Self::create_named(owner_name, db_name, bypassrls, managed_roles)
+            .await
+            .with_app_role(app_role, app_password)
+            .await
+    }
+
     async fn provision(
         owner_role: String,
         db_name: String,
@@ -71,6 +87,8 @@ impl E2eDatabase {
             .await
             .expect("failed to connect to PG admin URL — is PostgreSQL running?");
 
+        take_db_lock(&mut admin, &db_name).await;
+
         if drop_first {
             drop_db_and_owner(&mut admin, &db_name, &owner_role, &[]).await;
         }
@@ -78,23 +96,26 @@ impl E2eDatabase {
         ensure_owner_role(&mut admin, &owner_role, &owner_password, bypassrls).await;
 
         admin
-            .execute(format!("CREATE DATABASE \"{db_name}\" OWNER \"{owner_role}\"").as_str())
+            .execute(
+                format!(
+                    "CREATE DATABASE {} OWNER {}",
+                    quote_ident(&db_name),
+                    quote_ident(&owner_role)
+                )
+                .as_str(),
+            )
             .await
             .expect("failed to create e2e database");
 
         let mut granted_roles = Vec::new();
         for role in managed_roles {
             if role_exists(&mut admin, role).await {
-                admin
-                    .execute(
-                        format!("GRANT \"{role}\" TO \"{owner_role}\" WITH ADMIN OPTION").as_str(),
-                    )
-                    .await
-                    .unwrap_or_else(|e| panic!("failed to grant role '{role}' to owner: {e}"));
+                grant_managed_role(&mut admin, role, &owner_role).await;
                 granted_roles.push((*role).to_string());
             }
         }
 
+        release_db_lock(&mut admin, &db_name).await;
         admin.close().await.ok();
 
         Self {
@@ -114,24 +135,10 @@ impl E2eDatabase {
             .await
             .expect("failed to connect to PG admin URL to provision the app role");
         ensure_app_role(&mut admin, name, password).await;
-        admin
-            .execute(
-                format!(
-                    "GRANT CONNECT ON DATABASE \"{}\" TO \"{name}\"",
-                    self.db_name
-                )
-                .as_str(),
-            )
-            .await
-            .unwrap_or_else(|e| {
-                panic!(
-                    "failed to grant connect on '{}' to '{name}': {e}",
-                    self.db_name
-                )
-            });
+        grant_connect(&mut admin, &self.db_name, name).await;
         admin.close().await.ok();
 
-        let owner_url = self.owner_url();
+        let owner_url = self.owner_migration_url();
         let mut owner = PgConnection::connect(&owner_url)
             .await
             .expect("failed to connect as owner to grant the app role public-schema rights");
@@ -145,7 +152,7 @@ impl E2eDatabase {
         self
     }
 
-    pub fn owner_url(&self) -> String {
+    pub fn owner_migration_url(&self) -> String {
         format!(
             "postgresql://{}:{}@{}/{}",
             self.owner_role, self.owner_password, self.host_port, self.db_name
@@ -212,4 +219,24 @@ impl Drop for E2eDatabase {
             std::mem::take(&mut self.granted_roles),
         );
     }
+}
+
+async fn take_db_lock(admin: &mut PgConnection, db_name: &str) {
+    sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
+        .bind(db_name)
+        .execute(&mut *admin)
+        .await
+        .unwrap_or_else(|e| {
+            panic!("failed to take db-provisioning advisory lock for '{db_name}': {e}")
+        });
+}
+
+async fn release_db_lock(admin: &mut PgConnection, db_name: &str) {
+    sqlx::query("SELECT pg_advisory_unlock(hashtext($1))")
+        .bind(db_name)
+        .execute(&mut *admin)
+        .await
+        .unwrap_or_else(|e| {
+            panic!("failed to release db-provisioning advisory lock for '{db_name}': {e}")
+        });
 }

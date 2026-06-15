@@ -1,21 +1,27 @@
 use sqlx::{Connection, Executor, PgConnection};
 
+use super::quote::{quote_ident, quote_literal};
+
 pub(super) async fn drop_db_and_owner(
     admin: &mut PgConnection,
     db_name: &str,
     owner_role: &str,
     granted_roles: &[String],
 ) {
+    let db = quote_ident(db_name);
+    let owner = quote_ident(owner_role);
+
     let terminate = format!(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
-         WHERE datname = '{db_name}' AND pid <> pg_backend_pid()"
+         WHERE datname = {} AND pid <> pg_backend_pid()",
+        quote_literal(db_name)
     );
     if let Err(e) = admin.execute(terminate.as_str()).await {
         eprintln!("warning: failed to terminate backends on '{db_name}': {e}");
     }
 
     if let Err(e) = admin
-        .execute(format!("DROP DATABASE IF EXISTS \"{db_name}\" WITH (FORCE)").as_str())
+        .execute(format!("DROP DATABASE IF EXISTS {db} WITH (FORCE)").as_str())
         .await
     {
         eprintln!("warning: failed to drop e2e database '{db_name}': {e}");
@@ -23,12 +29,12 @@ pub(super) async fn drop_db_and_owner(
 
     for role in granted_roles {
         let _ = admin
-            .execute(format!("REVOKE \"{role}\" FROM \"{owner_role}\"").as_str())
+            .execute(format!("REVOKE {} FROM {owner}", quote_ident(role)).as_str())
             .await;
     }
 
     if let Err(e) = admin
-        .execute(format!("DROP ROLE IF EXISTS \"{owner_role}\"").as_str())
+        .execute(format!("DROP ROLE IF EXISTS {owner}").as_str())
         .await
     {
         eprintln!("warning: failed to drop e2e owner role '{owner_role}': {e}");
@@ -83,64 +89,124 @@ pub(super) async fn ensure_owner_role(
     password: &str,
     bypassrls: bool,
 ) {
-    let password = password.replace('\'', "''");
     let bypass_clause = if bypassrls {
         "BYPASSRLS"
     } else {
         "NOBYPASSRLS"
     };
-    let attributes = format!("LOGIN NOSUPERUSER CREATEROLE {bypass_clause} PASSWORD '{password}'");
-    let sql = format!(
-        "DO $$ BEGIN \
-           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{name}') THEN \
-             CREATE ROLE \"{name}\" WITH {attributes}; \
-           ELSE \
-             ALTER ROLE \"{name}\" WITH {attributes}; \
-           END IF; \
-         EXCEPTION WHEN duplicate_object THEN \
-           ALTER ROLE \"{name}\" WITH {attributes}; \
-         END $$;"
+    let attributes = format!(
+        "LOGIN NOSUPERUSER CREATEROLE {bypass_clause} PASSWORD {}",
+        quote_literal(password)
     );
-    admin
-        .execute(sql.as_str())
-        .await
-        .unwrap_or_else(|e| panic!("failed to ensure e2e owner role '{name}': {e}"));
+    ensure_role_under_lock(admin, name, &attributes).await;
 }
 
 pub(super) async fn ensure_app_role(admin: &mut PgConnection, name: &str, password: &str) {
-    let password = password.replace('\'', "''");
-    let sql = format!(
+    let attributes = format!("LOGIN NOBYPASSRLS PASSWORD {}", quote_literal(password));
+    ensure_role_under_lock(admin, name, &attributes).await;
+}
+
+async fn ensure_role_under_lock(admin: &mut PgConnection, name: &str, attributes: &str) {
+    let ident = quote_ident(name);
+    let body = format!(
         "DO $$ BEGIN \
-           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{name}') THEN \
-             CREATE ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
+           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = {literal}) THEN \
+             CREATE ROLE {ident} WITH {attributes}; \
            ELSE \
-             ALTER ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
+             ALTER ROLE {ident} WITH {attributes}; \
            END IF; \
          EXCEPTION WHEN duplicate_object THEN \
-           ALTER ROLE \"{name}\" WITH LOGIN NOBYPASSRLS PASSWORD '{password}'; \
-         END $$;"
+           ALTER ROLE {ident} WITH {attributes}; \
+         END $$;",
+        literal = quote_literal(name)
     );
-    admin
-        .execute(sql.as_str())
+    run_under_advisory_lock(admin, name, &body)
         .await
-        .unwrap_or_else(|e| panic!("failed to ensure e2e app role '{name}': {e}"));
+        .unwrap_or_else(|e| panic!("failed to ensure e2e role '{name}': {e}"));
 }
 
 pub(super) async fn grant_app_schema(owner: &mut PgConnection, owner_role: &str, app_role: &str) {
-    for stmt in [
-        format!("GRANT USAGE, CREATE ON SCHEMA public TO \"{app_role}\""),
+    let app = quote_ident(app_role);
+    let owner_ident = quote_ident(owner_role);
+    let body = [
+        format!("GRANT USAGE, CREATE ON SCHEMA public TO {app}"),
         format!(
-            "ALTER DEFAULT PRIVILEGES FOR ROLE \"{owner_role}\" IN SCHEMA public \
-             GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{app_role}\""
+            "ALTER DEFAULT PRIVILEGES FOR ROLE {owner_ident} IN SCHEMA public \
+             GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {app}"
         ),
         format!(
-            "ALTER DEFAULT PRIVILEGES FOR ROLE \"{owner_role}\" IN SCHEMA public \
-             GRANT USAGE, SELECT ON SEQUENCES TO \"{app_role}\""
+            "ALTER DEFAULT PRIVILEGES FOR ROLE {owner_ident} IN SCHEMA public \
+             GRANT USAGE, SELECT ON SEQUENCES TO {app}"
         ),
-    ] {
-        owner.execute(stmt.as_str()).await.unwrap_or_else(|e| {
-            panic!("failed to grant public schema to app role '{app_role}': {e}")
-        });
+    ]
+    .join("; ");
+    run_under_advisory_lock(owner, app_role, &body)
+        .await
+        .unwrap_or_else(|e| panic!("failed to grant public schema to app role '{app_role}': {e}"));
+}
+
+pub(super) async fn grant_connect(admin: &mut PgConnection, db_name: &str, app_role: &str) {
+    let body = format!(
+        "GRANT CONNECT ON DATABASE {} TO {}",
+        quote_ident(db_name),
+        quote_ident(app_role)
+    );
+    run_under_advisory_lock(admin, app_role, &body)
+        .await
+        .unwrap_or_else(|e| panic!("failed to grant connect on '{db_name}' to '{app_role}': {e}"));
+}
+
+pub(super) async fn grant_managed_role(admin: &mut PgConnection, role: &str, owner_role: &str) {
+    let body = format!(
+        "GRANT {} TO {} WITH ADMIN OPTION",
+        quote_ident(role),
+        quote_ident(owner_role)
+    );
+    run_under_advisory_lock(admin, role, &body)
+        .await
+        .unwrap_or_else(|e| panic!("failed to grant role '{role}' to owner '{owner_role}': {e}"));
+}
+
+async fn run_under_advisory_lock(
+    conn: &mut PgConnection,
+    lock_key: &str,
+    body: &str,
+) -> Result<(), sqlx::Error> {
+    let mut last_err = None;
+    for attempt in 0..8 {
+        let mut tx = conn.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind(lock_key)
+            .execute(&mut *tx)
+            .await?;
+        match tx.execute(body).await {
+            Ok(_) => {
+                tx.commit().await?;
+                return Ok(());
+            }
+            Err(e) => {
+                tx.rollback().await.ok();
+                if is_concurrent_catalog_conflict(&e) {
+                    last_err = Some(e);
+                    let backoff = std::time::Duration::from_millis(20 * (attempt + 1));
+                    tokio::time::sleep(backoff).await;
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err(last_err.expect("retry loop only continues after recording an error"))
+}
+
+fn is_concurrent_catalog_conflict(e: &sqlx::Error) -> bool {
+    let Some(db) = e.as_database_error() else {
+        return false;
+    };
+    match db.code().as_deref() {
+        Some("40P01") | Some("55P03") => true,
+        Some("XX000") => db.message().contains("concurrently"),
+        _ => false,
     }
 }
 

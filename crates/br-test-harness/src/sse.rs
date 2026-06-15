@@ -67,6 +67,11 @@ impl SseSubscription {
             .unwrap_or_else(|| panic!("expected subscription event ({what}), got none"))
     }
 
+    pub async fn expect_event_on(&mut self, field: &str, timeout: Duration) -> Value {
+        let event = self.expect_event(field, timeout).await;
+        event_field(&event, field)
+    }
+
     pub async fn expect_silence(&mut self, what: &str, quiet: Duration) {
         if let Some(event) = self.next_event(quiet).await {
             panic!("expected no subscription event ({what}), got: {event}");
@@ -107,5 +112,57 @@ impl SseSubscription {
         }
         let data = payload["data"].clone();
         (data != Value::Null).then_some(data)
+    }
+}
+
+fn event_field(event: &Value, field: &str) -> Value {
+    let payload = &event[field];
+    if payload.is_null() {
+        panic!("expected subscription event to carry field '{field}', got: {event}");
+    }
+    payload.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_block_unwraps_data_on_a_next_frame() {
+        let block = "event: next\ndata: {\"data\":{\"charterProposalChanged\":{\"id\":\"p1\"}}}";
+        let data = SseSubscription::parse_block(block).expect("next frame yields data");
+        assert_eq!(data["charterProposalChanged"]["id"], "p1");
+    }
+
+    #[test]
+    fn parse_block_ignores_non_next_frames() {
+        assert!(SseSubscription::parse_block("event: complete\ndata: {}").is_none());
+        assert!(SseSubscription::parse_block(": keep-alive comment").is_none());
+    }
+
+    #[test]
+    fn parse_block_skips_a_null_data_payload() {
+        assert!(SseSubscription::parse_block("event: next\ndata: {\"data\":null}").is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "subscription stream returned errors")]
+    fn parse_block_fails_loud_on_an_errors_payload() {
+        SseSubscription::parse_block("event: next\ndata: {\"errors\":[{\"message\":\"boom\"}]}");
+    }
+
+    #[test]
+    fn event_field_pulls_the_named_subscription_root() {
+        let event = json!({ "charterProposalChanged": { "id": "p1", "revision": 1 } });
+        let pulled = event_field(&event, "charterProposalChanged");
+        assert_eq!(pulled["id"], "p1");
+        assert_eq!(pulled["revision"], 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "carry field 'missing'")]
+    fn event_field_fails_loud_when_the_named_root_is_absent() {
+        event_field(&json!({ "charterTenetChanged": {} }), "missing");
     }
 }
