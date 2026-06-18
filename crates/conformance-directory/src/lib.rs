@@ -15,7 +15,7 @@ pub use anchor::{DirectorySnapshotWire, KvEntry, build_and_emit, emit_snapshot};
 pub use build::{build_anchor, ensure_go_available, subject_dir};
 pub use consumer::{consumer_reads_groups, consumer_reads_users};
 pub use error::{ConformanceError, Result};
-pub use harness::{DEFAULT_DIRECTORY_BUCKET, DirectoryHarness};
+pub use harness::DirectoryHarness;
 pub use kv_read::{read_groups, read_meta, read_users};
 pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
 pub use pg::ConsumerDb;

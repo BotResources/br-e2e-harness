@@ -1,32 +1,27 @@
-use async_nats::jetstream::{self, kv};
-use br_test_harness::{SpawnedNats, nats::connect};
+use async_nats::jetstream::kv;
+use br_test_harness::FabricTestNats;
+use br_util_nats_fabric::{Fabric, KV_PUBLISHED_LANGUAGE};
 
 use crate::error::{ConformanceError, Result};
 
-pub const DEFAULT_DIRECTORY_BUCKET: &str = "identity_directory";
-
 pub struct DirectoryHarness {
-    nats: SpawnedNats,
+    nats: FabricTestNats,
     store: kv::Store,
 }
 
 impl DirectoryHarness {
     pub async fn start() -> Result<Self> {
-        let nats = SpawnedNats::start().await;
-        let client = connect(&nats.url())
+        let nats = FabricTestNats::start()
             .await
-            .map_err(|e| ConformanceError::Jetstream(format!("connect: {e}")))?;
-        let js = jetstream::new(client);
-        let store = js
-            .create_key_value(kv::Config {
-                bucket: DEFAULT_DIRECTORY_BUCKET.to_string(),
-                history: 1,
-                ..Default::default()
-            })
+            .with_published_language()
+            .await;
+        let store = nats
+            .jetstream()
+            .get_key_value(KV_PUBLISHED_LANGUAGE)
             .await
             .map_err(|e| {
                 ConformanceError::Jetstream(format!(
-                    "create bucket '{DEFAULT_DIRECTORY_BUCKET}': {e}"
+                    "open published-language bucket '{KV_PUBLISHED_LANGUAGE}': {e}"
                 ))
             })?;
         Ok(Self { nats, store })
@@ -34,6 +29,10 @@ impl DirectoryHarness {
 
     pub fn nats_url(&self) -> String {
         self.nats.url()
+    }
+
+    pub fn fabric(&self) -> &Fabric {
+        self.nats.fabric()
     }
 
     pub fn store(&self) -> &kv::Store {

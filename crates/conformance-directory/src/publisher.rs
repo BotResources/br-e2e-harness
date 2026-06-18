@@ -24,7 +24,9 @@ async fn publisher_floor_inner(
     snapshot: &DirectorySnapshotWire,
 ) -> Result<CheckOutcome> {
     let mut source = AnchorSource::from_snapshot(snapshot)?;
-    let publisher = DirectoryPublisher::new(harness.store().clone());
+    let publisher = DirectoryPublisher::open(harness.fabric())
+        .await
+        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
 
     publisher
         .reconcile(&source)
@@ -114,7 +116,9 @@ async fn publisher_floor_inner(
 
 async fn before_after_keys(harness: &DirectoryHarness, source: &AnchorSource) -> Result<usize> {
     let before = read_users(harness.store()).await?;
-    let publisher = DirectoryPublisher::new(harness.store().clone());
+    let publisher = DirectoryPublisher::open(harness.fabric())
+        .await
+        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
     publisher
         .reconcile(source)
         .await
@@ -158,7 +162,9 @@ async fn publisher_groups_optional_inner(
     snapshot: &DirectorySnapshotWire,
 ) -> Result<CheckOutcome> {
     let source = AnchorSource::from_snapshot(snapshot)?.without_groups();
-    let publisher = DirectoryPublisher::new(harness.store().clone());
+    let publisher = DirectoryPublisher::open(harness.fabric())
+        .await
+        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
     publisher
         .reconcile(&source)
         .await
