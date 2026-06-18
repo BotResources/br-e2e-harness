@@ -15,7 +15,7 @@ br-util-directory = { git = "https://github.com/BotResources/br-rust-common", pa
 ] }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.1", version = "1.0.1" }
 
-br-test-harness = { path = "../br-test-harness", version = "0.6.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
     "nats-fabric",
     "e2e-db",
 ] }

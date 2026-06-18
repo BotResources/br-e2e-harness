@@ -12,7 +12,7 @@ br-core-directory = { git = "https://github.com/BotResources/br-rust-common", pa
 br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v1.0.1", version = "1.0.1" }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.1", version = "1.0.1" }
 
-br-test-harness = { path = "../br-test-harness", version = "0.6.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
     "nats-fabric",
 ] }
 

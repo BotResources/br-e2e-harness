@@ -7,6 +7,8 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.0.0
+
 ### Added
 
 - **`conformance-directory` — extension, copy-filter and `UsersOnly` Cx
@@ -170,7 +172,7 @@ single git tag `v{version}` releases the set. Format follows
   go green and have not been exercised here (lib-as-oracle / Go-as-anchor: the
   Go side freezes the wire independently of the lib).
 
-## [0.6.0] — 2026-06-15
+## 0.6.0
 
 ### Changed (breaking)
 
@@ -234,7 +236,7 @@ single git tag `v{version}` releases the set. Format follows
 - A concurrent-provisioning self-test (`Barrier` + N tasks on a shared role name,
   looped) is added — red on the pre-fix lib, green after.
 
-## [0.5.2] — 2026-06-15
+## 0.5.2
 
 ### Changed
 
@@ -248,7 +250,7 @@ single git tag `v{version}` releases the set. Format follows
   harness (dev-dep) and `br-rust-common` v0.11.1 (prod) on a **single source**,
   preventing a diamond-skew duplication of `br-core-*` in the graph.
 
-## [0.5.1] — 2026-06-14
+## 0.5.1
 
 ### Fixed
 
@@ -264,7 +266,7 @@ single git tag `v{version}` releases the set. Format follows
   mechanism. Real-PG tests cover re-run-after-leak recovery and the Drop-net teardown; an
   offline self-test proves the net survives an unreachable admin without panicking.
 
-## [0.5.0] — 2026-06-14
+## 0.5.0
 
 ### Added
 
@@ -506,7 +508,7 @@ single git tag `v{version}` releases the set. Format follows
     deserialise → the battery goes red. The wire is frozen for `br-rust-common`
     `v0.11.0`; documented in `docs/conformance/directory-wire-v1.md`.
 
-## [0.4.0] — 2026-06-14
+## 0.4.0
 
 ### Fixed
 
@@ -589,7 +591,7 @@ single git tag `v{version}` releases the set. Format follows
   - The `infra-e2e` CI job (already provisioned with `go` + `nats-server` for G3) now
     additionally runs the G2 battery.
 
-## [0.3.0] — 2026-06-13
+## 0.3.0
 
 ### Added
 
@@ -628,7 +630,7 @@ single git tag `v{version}` releases the set. Format follows
   the breaking position under Cargo semver, so consumers move by bumping the git
   tag). No in-tree consumer referenced the constants.
 
-## [0.2.0] — 2026-06-13
+## 0.2.0
 
 ### Changed
 

@@ -12,7 +12,7 @@ br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package
     "test-support",
 ] }
 
-br-test-harness = { path = "../br-test-harness", version = "0.6.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
     "nats",
     "spawned-nats",
 ] }
