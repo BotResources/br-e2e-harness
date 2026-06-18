@@ -7,7 +7,7 @@ use br_util_nats_fabric::{FabricError, INTEGRATION_CMD, INTEGRATION_EVT};
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn start_provisions_the_two_fixed_streams_and_a_byte_identical_durable() {
+async fn start_provisions_the_two_fixed_streams_and_a_filter_identical_durable() {
     let harness = FabricTestNats::start().await;
     let js = harness.jetstream();
     assert!(js.get_stream(INTEGRATION_CMD).await.is_ok());

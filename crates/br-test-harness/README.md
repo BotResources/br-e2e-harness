@@ -343,8 +343,13 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   the lib's own `fabric().verify_*_durable(&coords, &durable(name))`.
 - **`.fabric()` / `.url()` / `.jetstream()` / `.client()`** — the live handles.
 - **`.durable(logical)` → `"{logical}_{run_id}"`, `.key_prefix()` →
-  `KvPrefix("{run_id}/")`, `.correlation()`** — the per-run namespace, so parallel
-  runs never collide on a durable name or a KV key.
+  `KvPrefix("{run_id}/")`** — the per-run namespace, derived from the stable
+  `run_id` minted at `start()`, so parallel runs never collide on a durable name
+  or a KV key.
+- **`.correlation()`** — mints a **fresh** UUIDv7 on **every call** (one
+  correlation id per flux/message), so it is **not** a stable per-run value like
+  `run_id` / `key_prefix`. Call it once per logical exchange and reuse the
+  returned id across that exchange; do not expect two calls to match.
 
 **Negative-path helpers are first-class** — they prove the lib fails loud, never
 auto-provisions:
@@ -358,8 +363,8 @@ auto-provisions:
   `published_language_absent()` proves the bucket is not silently created.
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
-suffix + KV prefix + correlation), so independent scenarios coexist on one server
-without cross-talk. The boundary it does **not** cross: the two **fixed** streams
+suffix + KV prefix, both derived from the stable `run_id`), so independent
+scenarios coexist on one server without cross-talk. The boundary it does **not** cross: the two **fixed** streams
 (`INTEGRATION_CMD` / `INTEGRATION_EVT`) and the **shared** `PUBLISHED_LANGUAGE`
 bucket are global, frozen names — two real *competing consumers* on the same fixed
 stream race for the same messages. A scenario that asserts a specific consumer

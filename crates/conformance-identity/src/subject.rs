@@ -6,15 +6,13 @@ use reqwest::StatusCode;
 
 pub struct SubjectConfig {
     pub nats_url: String,
-    pub stream_name: String,
     pub enabled: bool,
 }
 
 impl SubjectConfig {
-    pub fn new(nats_url: &str, stream_name: &str) -> Self {
+    pub fn new(nats_url: &str) -> Self {
         Self {
             nats_url: nats_url.to_string(),
-            stream_name: stream_name.to_string(),
             enabled: true,
         }
     }
@@ -40,7 +38,6 @@ impl Subject {
         let envs = [
             ("NATS_URL", config.nats_url.as_str()),
             ("HTTP_ADDR", addr.as_str()),
-            ("STREAM_NAME", config.stream_name.as_str()),
             ("SCOPE_ACCEPTANCE_ENABLED", enabled.as_str()),
         ];
 
