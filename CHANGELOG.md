@@ -9,6 +9,24 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+- **`conformance-directory` — extension, copy-filter and `UsersOnly` Cx
+  scenarios (#77, #78).** Four new directory checks drive the real
+  `br-util-directory` consumer kit (`DirectoryProjector::with_config`) against
+  real NATS KV + real Postgres: **C3** proves an extracted extension survives the
+  projection into `known_users.extensions` losslessly (`extract_user_extensions`);
+  **C4** proves a user passing `filter_users` is projected, then **orphan-deleted**
+  on republish when it fails the filter (the copy filter is re-evaluated, a flip
+  retracts); **C5** proves a `ConsumptionScope::UsersOnly` consumer against a
+  schema that **lacks** the group tables reconciles + watches cleanly and emits no
+  group DML — the missing `known_groups` / `known_user_group` turn any stray group
+  write into a hard error, so the scope genuinely narrows the projection. **W6**
+  (offline) proves an extensions map shadowing a reserved core key is rejected at
+  `PublishedUser` construction with `DirectoryError::ReservedExtensionKey`
+  (fail-closed), never a silent overwrite. New public helpers
+  (`extension_survives_projection`, `filter_flip_orphan_deletes`,
+  `users_only_narrows_projection`, `reserved_key_rejected`) and a
+  `ConsumerDb::apply_users_only_schema` / `group_tables_exist` schema variant; the
+  C3/C4/C5 real-infra checks are `#[ignore]`-gated per the existing convention.
 - **`FabricTestNats` — a typed, drift-proof NATS Fabric provisioner** (new
   `nats-fabric` feature). It generalises the hand-rolled `NatsEnv` that every
   Fabric service used to copy into `tests/common/mod.rs`: `start()` spawns a
