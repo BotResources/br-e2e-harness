@@ -22,4 +22,10 @@ pub enum ConformanceError {
     InvalidInput(String),
 }
 
+impl From<br_test_harness::BearerSeedError> for ConformanceError {
+    fn from(e: br_test_harness::BearerSeedError) -> Self {
+        ConformanceError::Seed(e.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, ConformanceError>;

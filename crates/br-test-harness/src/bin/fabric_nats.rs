@@ -89,6 +89,10 @@ async fn provision(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(
         harness = harness.with_published_language().await;
         println!("kv PUBLISHED_LANGUAGE");
     }
+    if rendered.bearer_tokens {
+        harness = harness.with_bearer_tokens().await;
+        println!("kv bearer_tokens");
+    }
     for command in &rendered.commands {
         harness
             .provision_command_durable(&command.coords, &command.durable)
@@ -138,6 +142,9 @@ fn print_subjects(manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
     let rendered = Manifest::parse(manifest)?.render(run_id)?;
     if rendered.published_language {
         println!("kv PUBLISHED_LANGUAGE");
+    }
+    if rendered.bearer_tokens {
+        println!("kv bearer_tokens");
     }
     for command in &rendered.commands {
         println!("cmd {} -> {}", command.durable, command.subject);

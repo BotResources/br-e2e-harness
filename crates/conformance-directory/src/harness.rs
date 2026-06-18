@@ -1,30 +1,22 @@
-use async_nats::jetstream::kv;
 use br_test_harness::FabricTestNats;
-use br_util_nats_fabric::{Fabric, KV_PUBLISHED_LANGUAGE};
+use br_util_nats_fabric::Fabric;
 
-use crate::error::{ConformanceError, Result};
+use crate::error::Result;
+use crate::provision::provision;
 
 pub struct DirectoryHarness {
     nats: FabricTestNats,
-    store: kv::Store,
 }
 
 impl DirectoryHarness {
     pub async fn start() -> Result<Self> {
-        let nats = FabricTestNats::start()
-            .await
-            .with_published_language()
-            .await;
-        let store = nats
-            .jetstream()
-            .get_key_value(KV_PUBLISHED_LANGUAGE)
-            .await
-            .map_err(|e| {
-                ConformanceError::Jetstream(format!(
-                    "open published-language bucket '{KV_PUBLISHED_LANGUAGE}': {e}"
-                ))
-            })?;
-        Ok(Self { nats, store })
+        let nats = FabricTestNats::start().await;
+        provision(&nats.url(), "published_language.toml").await?;
+        Ok(Self { nats })
+    }
+
+    pub fn nats(&self) -> &FabricTestNats {
+        &self.nats
     }
 
     pub fn nats_url(&self) -> String {
@@ -33,10 +25,6 @@ impl DirectoryHarness {
 
     pub fn fabric(&self) -> &Fabric {
         self.nats.fabric()
-    }
-
-    pub fn store(&self) -> &kv::Store {
-        &self.store
     }
 
     pub async fn shutdown(self) {

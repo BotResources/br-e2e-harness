@@ -7,6 +7,7 @@ pub mod harness;
 pub mod kv_read;
 pub mod outcome;
 pub mod pg;
+pub mod provision;
 pub mod publish_fixture;
 pub mod publisher;
 pub mod source;

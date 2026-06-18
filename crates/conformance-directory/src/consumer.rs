@@ -78,11 +78,9 @@ async fn consumer_reads_users_inner(
     }
 
     let projector_after = DirectoryProjector::new(harness.fabric().clone(), db.pool().clone());
-    harness
-        .store()
-        .delete(&br_core_directory::user_kv_key(*expected_id))
-        .await
-        .map_err(|e| ConformanceError::Jetstream(format!("retract user: {e}")))?;
+    let mut retracted = source.clone();
+    retracted.drop_user(expected_id);
+    publish_snapshot(harness.fabric(), &retracted).await?;
     let manifest = projector_after
         .reconcile()
         .await

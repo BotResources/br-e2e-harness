@@ -4,7 +4,7 @@ mod resolved;
 use crate::endpoint::PassportEndpoint;
 use crate::outcome::CheckOutcome;
 use crate::scenario::Scenario;
-use crate::seed::BearerSeeder;
+use br_test_harness::BearerSeeder;
 
 use anonymous::run_anonymous_scenario;
 use resolved::{run_distinct_tokens, run_valid_bearer};

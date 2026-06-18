@@ -546,13 +546,11 @@ dependencies = [
 name = "conformance-directory"
 version = "1.0.0"
 dependencies = [
- "async-nats",
  "async-trait",
  "br-core-directory",
  "br-test-harness",
  "br-util-directory",
  "br-util-nats-fabric",
- "futures-util",
  "serde",
  "serde_json",
  "sqlx",
@@ -599,11 +597,9 @@ dependencies = [
 name = "conformance-passport"
 version = "1.0.0"
 dependencies = [
- "async-nats",
  "br-core-auth",
  "br-test-harness",
  "reqwest",
- "serde_json",
  "thiserror",
  "tokio",
  "uuid",

@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::endpoint::Resolution;
 use crate::outcome::{CheckId, CheckOutcome};
-use crate::seed::SeededToken;
+use br_test_harness::SeededToken;
 
 use super::CheckContext;
 

@@ -1,15 +1,13 @@
 use std::path::PathBuf;
 
-use async_nats::jetstream::{self, kv};
-use br_test_harness::{SpawnedNats, nats::connect};
+use br_test_harness::{BearerSeeder, FabricTestNats};
 
 use crate::build::build_subject;
-use crate::error::{ConformanceError, Result};
-use crate::seed::{BEARER_BUCKET, BearerSeeder};
+use crate::error::Result;
+use crate::provision::provision;
 
 pub struct PassportHarness {
-    nats: SpawnedNats,
-    store: kv::Store,
+    nats: FabricTestNats,
     binary: PathBuf,
 }
 
@@ -20,26 +18,10 @@ impl PassportHarness {
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
-        let nats = SpawnedNats::start().await;
-        let client = connect(&nats.url())
-            .await
-            .map_err(|e| ConformanceError::Jetstream(format!("connect: {e}")))?;
-        let js = jetstream::new(client);
-        let store = js
-            .create_key_value(kv::Config {
-                bucket: BEARER_BUCKET.to_string(),
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| {
-                ConformanceError::Jetstream(format!("create bucket '{BEARER_BUCKET}': {e}"))
-            })?;
-
-        Ok(Self {
-            nats,
-            store,
-            binary,
-        })
+        let nats = FabricTestNats::start().await;
+        provision(&nats.url(), "bearer_tokens.toml").await?;
+        let nats = nats.with_bearer_tokens().await;
+        Ok(Self { nats, binary })
     }
 
     pub fn nats_url(&self) -> String {
@@ -51,7 +33,7 @@ impl PassportHarness {
     }
 
     pub fn seeder(&self) -> BearerSeeder {
-        BearerSeeder::new(self.store.clone())
+        self.nats.bearer_seeder()
     }
 
     pub async fn shutdown(self) {

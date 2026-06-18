@@ -36,6 +36,13 @@ single git tag `v{version}` releases the set. Format follows
   `jetstream()` / `client()` handles stay public for now (phase-2 seal demotes
   them). The two hand-rolled lib gaps (command-side `await`, reader `keys()`) are
   noted for `br-util-nats-fabric` nice-to-haves.
+- **`fabric-nats` manifest gains a `[bearer_tokens] enabled` flag (#74, phase 2b).**
+  Additive, alongside `[published_language]`: when set, `provision` calls
+  `with_bearer_tokens()` to get-or-create the `bearer_tokens` KV bucket and prints
+  `kv bearer_tokens`. This lets a passport suite — which uses only the bearer bucket,
+  not the Fabric streams — provision through the same CLI handshake as every other
+  suite, with no in-binary special-casing. Exit codes and all other behavior are
+  unchanged.
 - **`conformance-directory` — extension, copy-filter and `UsersOnly` Cx
   scenarios (#77, #78).** Four new directory checks drive the real
   `br-util-directory` consumer kit (`DirectoryProjector::with_config`) against
@@ -112,6 +119,23 @@ single git tag `v{version}` releases the set. Format follows
   via `FabricTestNats::connect`. `grep -rn async_nats` over the three crates is
   empty. The directory/passport suites still use the public raw handles
   (untouched here; the handle demotion is the phase-2c seal).
+- **`conformance-directory` and `conformance-passport` provision via the
+  `fabric-nats` CLI and drop all `async-nats` (#74, phase 2b).** Both suites now
+  follow the phase-2a pattern: they spawn `fabric-nats provision --manifest
+  <crate>/tests/fixtures/*.toml` against the harness URL and drive the run through
+  the frozen typed `FabricTestNats` surface only. `conformance-directory`'s
+  `read_users` / `read_groups` / `read_meta` re-home onto `pl_list` / `pl_get_meta`
+  (no more raw `kv::Store` key-scan), `DirectoryHarness` drops its held `kv::Store`
+  and CLI-provisions the `PUBLISHED_LANGUAGE` bucket (`[published_language]`
+  manifest), and the C1 user-retract step orphan-deletes through a
+  `DirectoryPublisher` reconcile instead of a raw `store().delete()` — same
+  observable KV effect, via the typed publisher. `conformance-passport` deletes its
+  local `BearerSeeder` (the harness owns it since phase 1), CLI-provisions the
+  `bearer_tokens` bucket (`[bearer_tokens]` manifest), and seeds/revokes through
+  `FabricTestNats::with_bearer_tokens()` + `bearer_seeder()`. Both crates drop
+  `async-nats` (directory also `futures-util`, passport also `serde_json`);
+  `grep -rn async_nats` over both is empty. The remaining public raw handles are
+  untouched — their demotion is the phase-2c seal.
 - **The dead-grammar guard is enforced on the real test path.** `build_anchor` /
   `build_subject` in `conformance-nats-fabric`, `conformance-identity` and
   `conformance-scope` now run `make -C <anchor-dir> guard` before `go build` and

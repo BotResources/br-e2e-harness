@@ -445,7 +445,8 @@ fabric-nats print-subjects        --manifest <path.toml> [--run-id <id>]
 ```
 
 - `provision` attaches via `connect(url)`, get-or-creates the durables from coords
-  + the PL bucket, prints the rendered subjects + durable names; idempotent.
+  + the PL and `bearer_tokens` buckets, prints the rendered subjects + durable names;
+  idempotent.
 - `verify` binds only (`verify_*_durable`), creates nothing.
 - `print-subjects` renders coords → subjects with **no** NATS contact.
 - `--run-id` suffixes durables (`{durable}_{id}`) for the shared-NATS
@@ -472,7 +473,15 @@ version = 1
 
 [published_language]
 enabled = true
+
+[bearer_tokens]
+enabled = true
 ```
+
+`[published_language]` get-or-creates the `PUBLISHED_LANGUAGE` bucket; `[bearer_tokens]`
+get-or-creates the `bearer_tokens` bucket. Both are wipe-free, so a passport suite
+provisions its `bearer_tokens` bucket through the CLI exactly like every other suite —
+no in-binary special-casing.
 
 Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** NATS
 connect fail · **4** verify mismatch (`FilterMismatch`/`NoStream`).

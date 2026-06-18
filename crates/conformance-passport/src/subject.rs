@@ -3,7 +3,7 @@ use std::path::Path;
 
 use br_test_harness::SpawnedProcess;
 
-use crate::seed::BEARER_BUCKET;
+use br_test_harness::BEARER_BUCKET;
 
 pub struct SubjectConfig {
     pub nats_url: String,

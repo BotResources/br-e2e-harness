@@ -21,6 +21,8 @@ pub struct Manifest {
     pub event_durable: Vec<EventDurableSpec>,
     #[serde(default)]
     pub published_language: PublishedLanguageSpec,
+    #[serde(default)]
+    pub bearer_tokens: BearerTokensSpec,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +52,13 @@ pub struct PublishedLanguageSpec {
     pub enabled: bool,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BearerTokensSpec {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 #[derive(Debug)]
 pub struct RenderedCommand {
     pub durable: String,
@@ -69,6 +78,7 @@ pub struct Rendered {
     pub commands: Vec<RenderedCommand>,
     pub events: Vec<RenderedEvent>,
     pub published_language: bool,
+    pub bearer_tokens: bool,
 }
 
 impl Manifest {
@@ -120,6 +130,7 @@ impl Manifest {
             commands,
             events,
             published_language: self.published_language.enabled,
+            bearer_tokens: self.bearer_tokens.enabled,
         })
     }
 }
@@ -152,6 +163,9 @@ version = 1
 
 [published_language]
 enabled = true
+
+[bearer_tokens]
+enabled = true
 "#;
 
     fn parse(raw: &str) -> Manifest {
@@ -170,6 +184,7 @@ enabled = true
             "integration.evt.identity.user.created.v1"
         );
         assert!(rendered.published_language);
+        assert!(rendered.bearer_tokens);
     }
 
     #[test]
@@ -219,5 +234,6 @@ version = 1
         assert!(rendered.commands.is_empty());
         assert!(rendered.events.is_empty());
         assert!(!rendered.published_language);
+        assert!(!rendered.bearer_tokens);
     }
 }
