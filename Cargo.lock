@@ -249,8 +249,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-auth"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "base64",
  "br-core-kernel",
@@ -264,8 +264,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-directory"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "serde",
  "serde_json",
@@ -275,8 +275,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-events"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "br-core-kernel",
  "chrono",
@@ -287,8 +287,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-integration"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "br-core-events",
  "chrono",
@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-kernel"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "serde",
  "uuid",
@@ -308,8 +308,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-scope"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "serde",
  "thiserror",
@@ -317,8 +317,8 @@ dependencies = [
 
 [[package]]
 name = "br-identity-domain"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "br-core-scope",
  "serde",
@@ -327,8 +327,8 @@ dependencies = [
 
 [[package]]
 name = "br-scope-declaration-contract"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "br-core-integration",
 ]
@@ -361,8 +361,8 @@ dependencies = [
 
 [[package]]
 name = "br-util-directory"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "async-trait",
  "br-core-directory",
@@ -377,8 +377,8 @@ dependencies = [
 
 [[package]]
 name = "br-util-nats-fabric"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -395,8 +395,8 @@ dependencies = [
 
 [[package]]
 name = "br-util-postgres"
-version = "1.0.0"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+version = "1.0.1"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.1#ad24632fbdf3d9ef74253bd9fe71ba18e22f0ef8"
 dependencies = [
  "sqlx",
  "thiserror",

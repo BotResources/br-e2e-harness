@@ -51,25 +51,12 @@ if the **dead `identity.cmd.` / `identity.evt.` grammar** ever appears in it.
   deletes the orphaned.
 - `bootstrap` is **parallel-safe** under a concurrently running `watch`: it
   projects the published seed and retracts a sink orphan with the watcher live.
+- A live slash-keyed put is **delivered by `watch` within the deadline** —
+  `prefix_watch_delivers_slash_keyed_directory_puts` asserts this on real infra
+  (fixed in `br-util-nats-fabric` v1.0.1: the watch subject now matches the
+  slash-delimited key scheme correctly).
 - A malformed KV value **fails closed and names the offending key** in the
   `FabricError::Decode` error.
-
-### Discovered v1.0.0 gap — prefix-watch does not deliver slash-keyed puts
-
-Black-box real-infra testing surfaced a genuine gap in `br-util-nats-fabric`
-v1.0.0 that the lib's mocked-map unit tests never reach: incremental `watch`
-over the **frozen slash-delimited directory key scheme**
-(`identity/users/<uuid>`) **delivers nothing on a real `nats-server`**.
-`KvPrefix::watch_subject()` renders `identity/users/>`, but NATS subject
-wildcards (`>` / `*`) match on **`.`-delimited tokens**; a slash key is a single
-token, so `>` after `users/` is read literally and matches no live put. The
-catch-up path (`bootstrap`, which scans `kv.keys()`) is unaffected — only the
-incremental `watch` is blind. `prefix_watch_does_not_deliver_slash_keyed_directory_puts`
-**asserts the gap as currently-true**; when the lib fixes it (dot-delimited keys
-or a corrected watch subject) that test flips and points at the work to do.
-
-This is reported as a blocker; this crate does **not** work around it (the
-frozen lib is not touched and no doc here claims watch works).
 
 ## Running
 

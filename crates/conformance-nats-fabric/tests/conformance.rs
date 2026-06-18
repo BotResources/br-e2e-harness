@@ -123,8 +123,8 @@ async fn published_language_bootstrap_then_watch_is_parallel_safe() {
 }
 
 #[tokio::test]
-#[ignore = "requires a real nats-server; documents a discovered v1.0.0 lib gap (see README + blocker)"]
-async fn prefix_watch_does_not_deliver_slash_keyed_directory_puts() {
+#[ignore = "requires a real nats-server"]
+async fn prefix_watch_delivers_slash_keyed_directory_puts() {
     let harness = FabricTestNats::start()
         .await
         .with_published_language()
@@ -133,9 +133,9 @@ async fn prefix_watch_does_not_deliver_slash_keyed_directory_puts() {
         .await
         .expect("the gap probe runs");
     assert!(
-        !delivered,
-        "GAP CLOSED: prefix-watch now delivers slash-keyed directory puts on real infra; \
-         retire this test and convert the bootstrap+watch test to assert live delivery"
+        delivered,
+        "prefix-watch must deliver a live slash-keyed put within the deadline; \
+         br-util-nats-fabric v1.0.1 fixes the watch subject so the wildcard fires on real infra"
     );
     harness.shutdown().await;
 }

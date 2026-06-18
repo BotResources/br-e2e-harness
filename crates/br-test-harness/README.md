@@ -524,7 +524,7 @@ br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag 
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
 (its `test-support` feature, which ships `PassportBuilder`) pinned to
-`br-rust-common` `tag = "v1.0.0"`. A slim build that omits the
+`br-rust-common` `tag = "v1.0.1"`. A slim build that omits the
 passport-bearing features drops the dependency. If your service already pins
 `br-rust-common`, keep both on the **same ref** so Cargo resolves a single
 source (two refs of one git URL are two distinct sources and duplicate
