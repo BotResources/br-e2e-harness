@@ -81,6 +81,11 @@ single git tag `v{version}` releases the set. Format follows
   `load_snapshot` reads back the new `known_users.extensions` jsonb column into
   `KnownUser { extensions: PersistedExtensions }`. Verified against real NATS +
   real Postgres (P1/P2/C1/C2 + the W1–W5 wire battery all green).
+- **`conformance-scope::AttachTarget` drops its `stream_name` field.** With the
+  fixed-stream grammar the attach-mode declare consumer binds the fixed
+  `COMMAND_STREAM_NAME` (`INTEGRATION_CMD`) directly, so the handshake stream is
+  no longer caller-supplied; this reconciles the `runner` surface with the
+  `conformance-scope-cli` call sites that already stopped passing it.
 
 ### Known limitation
 

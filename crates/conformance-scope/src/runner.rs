@@ -8,6 +8,7 @@ use crate::capture::DeclareCapture;
 use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
+use crate::harness::COMMAND_STREAM_NAME;
 use crate::outcome::ConformanceReport;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario};
@@ -17,7 +18,6 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct AttachTarget {
     pub nats_url: String,
     pub readyz_url: String,
-    pub stream_name: String,
 }
 
 pub async fn run_attach(
@@ -33,13 +33,12 @@ pub async fn run_attach(
         .map_err(|e| ConformanceError::Jetstream(format!("connect '{}': {e}", target.nats_url)))?;
     let js = jetstream::new(client);
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
-    let capture = DeclareCapture::start(&js, &target.stream_name)
+    let capture = DeclareCapture::start(&js, COMMAND_STREAM_NAME)
         .await
         .map_err(|e| {
             ConformanceError::Jetstream(format!(
-                "binding the declare consumer to stream '{}' failed — in attach mode the \
-                 service owns the handshake stream and it must already exist: {e}",
-                target.stream_name
+                "binding the declare consumer to stream '{COMMAND_STREAM_NAME}' failed — in attach \
+                 mode the service owns the fixed handshake stream and it must already exist: {e}"
             ))
         })?;
 

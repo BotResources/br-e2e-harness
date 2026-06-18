@@ -57,8 +57,13 @@ async fn spawn_run_is_conformant_against_the_reference_subject() {
 async fn attach_run_flags_wrong_scopes_with_a_diff() {
     let harness = ScopeHarness::start().await.expect("harness");
     let nats_url = harness.nats_url();
-    let config = SubjectConfig::new(&nats_url, SERVICE_KEY)
-        .scope_keys(SCOPES)
+    let config = SubjectConfig::new(
+        &nats_url,
+        harness.stream_name(),
+        harness.event_stream_name(),
+        SERVICE_KEY,
+    )
+    .scope_keys(SCOPES)
         .label_key("label.notifier")
         .description_key("desc.notifier")
         .wait_timeout("500ms");
