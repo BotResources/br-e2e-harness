@@ -60,8 +60,32 @@ single git tag `v{version}` releases the set. Format follows
   under a running `watch`, and a malformed value **fails closed naming the
   offending key**. Real-infra tests are `#[ignore]`-gated per the harness
   convention.
+- **The three new real-infra batteries are wired into CI.** The `infra-e2e` job
+  now runs `conformance-nats-fabric`, `conformance-passport` and
+  `conformance-directory` with `-- --ignored` (directory at `--test-threads=1`,
+  it provisions a throwaway role + database per Cx check), alongside the existing
+  `br-test-harness` / `conformance-scope` / `conformance-scope-cli` /
+  `conformance-identity` steps. The README "CI covers this" claims on those three
+  crates are now enforced, not documentary.
 
 ### Changed
+
+- **The dead-grammar guard is enforced on the real test path.** `build_anchor` /
+  `build_subject` in `conformance-nats-fabric`, `conformance-identity` and
+  `conformance-scope` now run `make -C <anchor-dir> guard` before `go build` and
+  fail loud (surfacing stdout+stderr) on a hit, so the `make guard` grep for the
+  dead pre-v1 `identity.cmd.`/`identity.evt.` grammar actually runs whenever the
+  anchor is built — previously it was bypassed by the direct `go build` call.
+- **C5 (`users_only_narrows_projection`) now proves *live* narrowing.** It runs
+  `DirectoryProjector::watch()` as a concurrent task, publishes a fresh user
+  (absent from the initial snapshot) into the Published-Language bucket while the
+  watch runs, then asserts that user's row appears in `known_users` within a
+  bounded deadline **and** the group tables still do not exist — turning a
+  watch-timeout-as-success placeholder into a real live-PUT proof. Because the
+  directory keys are slash-delimited, this also exercises `br-rust-common`
+  v1.0.1's `watch_all` + client-side prefix filter on real NATS, making C5 a
+  regression gate for that fix. New `publish_added_user` helper in
+  `publish_fixture`.
 
 - **The workspace pins `br-rust-common` `v1.0.1`** (was `v1.0.0`), across
   `br-test-harness` and every `conformance-*` crate. v1.0.1 fixes the

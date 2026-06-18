@@ -76,6 +76,12 @@ jobs:
         run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
       - name: scope-acceptance conformance battery
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
+      - name: nats-fabric conformance battery
+        run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
+      - name: passport conformance battery
+        run: cargo test -p conformance-passport --test conformance --locked -- --ignored
+      - name: directory conformance battery
+        run: cargo test -p conformance-directory --test conformance --locked -- --ignored --test-threads=1
 
   msrv:
     name: MSRV 1.88 build

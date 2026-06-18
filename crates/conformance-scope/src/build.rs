@@ -22,9 +22,32 @@ pub async fn ensure_go_available() -> Result<()> {
     }
 }
 
+pub async fn run_dead_grammar_guard(dir: &Path) -> Result<()> {
+    let dir_str = dir.to_string_lossy().into_owned();
+    let output = run_once(
+        "make",
+        &["-C", &dir_str, "guard"],
+        &[],
+        Duration::from_secs(60),
+    )
+    .await
+    .map_err(ConformanceError::Build)?;
+    if !output.status.success() {
+        return Err(ConformanceError::Build(format!(
+            "dead-grammar guard failed for {} (status {}):\n{}\n{}",
+            dir.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    Ok(())
+}
+
 pub async fn build_subject() -> Result<PathBuf> {
     ensure_go_available().await?;
     let dir = subject_dir();
+    run_dead_grammar_guard(&dir).await?;
     let dir_str = dir.to_string_lossy().into_owned();
     let binary =
         std::env::temp_dir().join(format!("scope-service-{}", uuid::Uuid::now_v7().simple()));

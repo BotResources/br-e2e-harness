@@ -75,7 +75,7 @@ consume nothing.
 | **C2** | with groups in `_meta`, `is_member` / `group_name` resolve from the projected `known_groups` / `known_user_group`; with a users-only `_meta` they **auto-degrade** to empty. |
 | **C3** | a published user carrying an extension the consumer's `extract_user_extensions` selects is projected into `known_users.extensions` and read back **intact** — the sink is lossless and never force-drops extensions. |
 | **C4** | a user passing `filter_users` is projected; republishing it so it **fails** the filter makes the next `reconcile` **orphan-delete** its row (the copy filter is re-evaluated, a flip retracts). |
-| **C5** | a `ConsumptionScope::UsersOnly` consumer against a schema that **lacks** the group tables reconciles + watches cleanly and projects users, emitting **no** group DML — proven by the missing `known_groups` / `known_user_group` (any group read/write would error), so the scope genuinely **narrows** the projection rather than hiding output. |
+| **C5** | a `ConsumptionScope::UsersOnly` consumer against a schema that **lacks** the group tables reconciles, then **watches** a live PUT: a fresh user published into the bucket while `watch()` runs is projected into `known_users` (polled to a deadline), and the group tables still do **not** exist — so the scope narrows a *live* change with **no** group DML (any group write would error on the missing tables). Because directory keys are slash-delimited, the live PUT also exercises `br-rust-common` v1.0.1's `watch_all` + client-side prefix filter on real NATS. |
 
 ## Public helper surface (the reusable battery)
 
@@ -128,6 +128,11 @@ cargo test -p conformance-directory --test conformance -- --ignored --test-threa
 `E2E_PG_ADMIN_URL` (or `DATABASE_URL`) must point at a Postgres where the role can
 `CREATE ROLE` / `CREATE DATABASE` — the harness provisions a throwaway owner role
 and database per Cx test and drops them on cleanup.
+
+CI runs the full `--ignored` battery (`--test-threads=1`) in the `infra-e2e` job,
+which provides the Postgres service container, `nats-server` on `PATH`, a `go`
+toolchain, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
+PR, not just documented.
 
 ## Install
 

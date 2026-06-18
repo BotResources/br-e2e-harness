@@ -64,8 +64,12 @@ The real-infra tests in `tests/conformance.rs` are `#[ignore]`-gated and require
 a `nats-server` on `PATH` and a `go` toolchain:
 
 ```sh
-cargo test -p conformance-nats-fabric -- --ignored
+cargo test -p conformance-nats-fabric --test conformance -- --ignored
 ```
+
+CI runs this battery in the `infra-e2e` job (which installs `nats-server` on
+`PATH` and provides a `go` toolchain), so the real-infra gate is enforced on
+every PR, not just documented.
 
 The non-infra unit tests (byte-for-byte renderer agreement, filter shape) run by
 default:
@@ -80,6 +84,6 @@ cargo test -p conformance-nats-fabric
 |---|---|
 | Anchor renders subjects by hand, no `br-rust-common` dep | The Go side must freeze the wire **independently** of the lib; a shared dependency would let both drift together and blind the detector. |
 | Runner re-derives through the lib types | The lib is the **oracle**: byte-for-byte subject equality and `PublishedUser` deser are the drift detectors. |
-| `make guard` greps for `identity.cmd.`/`identity.evt.` | The dead pre-v1 grammar must never reappear in the live-wire anchor; the dead-grammar fail-loud probe lives only in the Rust runner. |
-| Real-infra tests `#[ignore]`-gated | Matches the harness convention: CI runs them with a NATS service container; the default `cargo test` stays infra-free. |
+| `make guard` greps for `identity.cmd.`/`identity.evt.` | The dead pre-v1 grammar must never reappear in the live-wire anchor; `build_anchor` runs `make -C <dir> guard` before `go build` and fails loud on a hit, so the source-level guard runs on the real test path (in addition to the runtime fail-loud probe that proves the fabric rejects the dead subject). |
+| Real-infra tests `#[ignore]`-gated | Matches the harness convention: CI installs `nats-server` on `PATH` in the `infra-e2e` job and runs the battery with `--ignored`; the default `cargo test` stays infra-free. |
 | Each PL run is key-namespaced by `FabricTestNats::key_prefix()` | The shared `PUBLISHED_LANGUAGE` bucket is reused across parallel runs; the run-id prefix keeps reconcile/orphan scopes from colliding. |
