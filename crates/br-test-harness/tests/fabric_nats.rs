@@ -58,6 +58,44 @@ async fn published_language_is_get_or_create_and_is_never_wiped() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn double_provisioning_a_shared_nats_is_idempotent_and_never_wipes() {
+    let owner = FabricTestNats::start()
+        .await
+        .with_published_language()
+        .await
+        .with_bearer_tokens()
+        .await;
+    let url = owner.url();
+
+    let seeder = owner.bearer_seeder();
+    let seeded = seeder
+        .seed("double-provision", "race")
+        .await
+        .expect("seed a bearer token before the second provision pass");
+
+    let second = FabricTestNats::connect(&url)
+        .await
+        .with_published_language()
+        .await
+        .with_bearer_tokens()
+        .await;
+
+    assert!(second.fixed_streams_present().await);
+    assert!(second.published_language_present().await);
+
+    let survived = second
+        .bearer_seeder()
+        .seed("double-provision-2", "race2")
+        .await
+        .expect("seed against the re-provisioned bearer bucket");
+    assert_ne!(survived.raw, seeded.raw);
+
+    second.shutdown().await;
+    owner.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn a_missing_fixed_stream_makes_the_lib_bind_fail_loud() {
     let bare = BareFabricNats::with_only_event_stream().await;
     let coords = declare_command_coords().expect("declare command coords");

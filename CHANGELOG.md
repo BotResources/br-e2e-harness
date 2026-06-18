@@ -257,6 +257,16 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Fixed
 
+- **`br-test-harness` Fabric get-or-create is idempotent — shared-NATS
+  provisioning is race-safe, absorbs already-exists (#74).** The fixed-stream, PL
+  and bearer get-or-create helpers did `get` → `create` → panic on any create
+  error: a TOCTOU on a shared NATS where two processes both observed "absent" made
+  the create-loser panic with the JetStream `stream name in use` / bucket-exists
+  error, breaking the parallel-run guarantee. Create now matches the typed
+  already-exists code (`ErrorCode::STREAM_NAME_EXIST`, 10058) and treats it as
+  success — re-`get`ting the KV handle — and `published-language` reuses the
+  bearer/bucket path. Still wipe-free; proven by the new real-infra
+  `double_provisioning_a_shared_nats_is_idempotent_and_never_wipes` test.
 - **`conformance-identity::SubjectConfig` drops its inert `stream_name` field
   and the `STREAM_NAME` env injection.** The frozen Go `identity-acceptor`
   hardcodes `commandStream = "INTEGRATION_CMD"` and never reads `STREAM_NAME`, so
