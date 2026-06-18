@@ -1,6 +1,6 @@
 BINARY := scope-service
 
-.PHONY: build vet test fmt check clean
+.PHONY: build vet test fmt check guard clean
 
 build:
 	go build -o $(BINARY) .
@@ -14,7 +14,10 @@ test: vet
 fmt:
 	gofmt -w .
 
-check: fmt vet test
+guard:
+	@grep -rn --exclude=Makefile "identity.cmd.\|identity.evt." . && (echo DEAD GRAMMAR && exit 1) || true
+
+check: fmt vet test guard
 
 clean:
 	rm -f $(BINARY)

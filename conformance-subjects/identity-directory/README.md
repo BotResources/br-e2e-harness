@@ -45,8 +45,9 @@ project-specific:
 
 - `_meta` declaring both published entities (`["users", "groups"]`).
 - a user **with** the neutral extension `x_custom` (proving an extra key
-  round-trips flat alongside the core) and a **core-only** user with `null`
-  names (proving the names are emitted, never omitted).
+  round-trips flat alongside the core) and a **core-only** user with absent
+  names (proving the names are omitted when `None`, per v1.0.0's
+  `skip_serializing_if`).
 - a group **with** the neutral extension and a **core-only** group with an empty
   `member_ids` array.
 
@@ -58,14 +59,15 @@ tenancy field: tenancy is a project extension, not the conformance socle (epic
 
 ```json
 identity/_meta                 → { "version": 1, "entities": ["users", "groups"] }
-identity/users/{uuid}          → { "email": "…", "first_name": "…"|null, "last_name": "…"|null, <extensions flat> }
+identity/users/{uuid}          → { "email": "…", "first_name"?: "…", "last_name"?: "…", <extensions flat> }
 identity/groups/{uuid}         → { "name": "…", "member_ids": ["<uuid>", …], <extensions flat> }
 ```
 
-Core keys are snake_case, no `rename_all`, no `skip` — `first_name`/`last_name`
-are emitted as `null` when absent (matching the Rust `Option<String>` with no
-`skip_serializing_if`). Project extensions ride **flat** at the top level
-(matching the Rust `#[serde(flatten)]`), never nested under an `extensions` key.
+Core keys are snake_case, no `rename_all` — `first_name`/`last_name` are
+**omitted** when absent (matching the v1.0.0 Rust `Option<String>` with
+`skip_serializing_if = "Option::is_none"`; the deserializer still accepts an
+explicit `null`). Project extensions ride **flat** at the top level (matching the
+Rust `#[serde(flatten)]`), never nested under an `extensions` key.
 
 ## Build & run
 
@@ -82,7 +84,7 @@ make test       # go vet + go test (the golden-shape + KV-key + flatten tests)
 ```
 
 The offline golden tests (KV-key prefixes, the user/group/meta golden shapes,
-the flat-extension and null-names invariants) run with plain `go test` — no
+the flat-extension and omitted-names invariants) run with plain `go test` — no
 infra. Pairing the Go-frozen wire against the live `br-core-directory` types is
 the Rust conformance runner's job (WU9): it builds this binary, runs it once,
 and deserialises every `value` through the lib.
@@ -93,7 +95,7 @@ and deserialises every `value` through the lib.
 |---|---|
 | Emits to stdout, opens no socket | The directory PL is a KV projection, not a live handshake; WU8 freezes the *bytes*, so a print-the-canonical-wire program is the faithful anchor. A live projection is the consumer-kit (Cx) conformance, a separate concern. |
 | `{key, value}` transport envelope around each entry | Lets the runner pair a KV key with its stored value in one document; only the `value` is the frozen wire — the envelope is harness transport, never deserialised through the lib. |
-| `first_name`/`last_name` emitted as `null`, not omitted | Byte-matches the Rust `Option<String>` core fields, which have no `skip_serializing_if` — a core key is always present on the wire. |
+| `first_name`/`last_name` omitted when absent | Byte-matches the v1.0.0 Rust `Option<String>` core fields, which carry `skip_serializing_if = "Option::is_none"`. The deserializer still accepts an explicit `null`, so an absent name is omitted on emit but tolerated on read. |
 | Neutral extension `x_custom` rides flat alongside core | Byte-matches the Rust `#[serde(flatten)] extensions` — an extra key sits at the top level and lands in the lib's `extensions` map. A neutral key (not `organization_id`) keeps the socle tenancy-agnostic. |
 | `member_ids` always a JSON array (empty when no members) | Byte-matches `Vec<Uuid>`; membership is derivable from `member_ids`, so an empty group is `[]`, never absent. |
 | No `organization_id` / orgs / tenancy | Tenancy is a project **extension**, not the conformance core (epic #54). The anchor freezes only the core + the generic extension mechanism. |

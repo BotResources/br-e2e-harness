@@ -9,9 +9,8 @@ import (
 )
 
 type config struct {
-	natsURL    string
-	httpAddr   string
-	streamName string
+	natsURL  string
+	httpAddr string
 
 	serviceKey     string
 	scopeKeys      []string
@@ -27,7 +26,6 @@ func loadConfig() (config, error) {
 	c := config{
 		natsURL:        getenv("NATS_URL", "nats://127.0.0.1:4222"),
 		httpAddr:       getenv("HTTP_ADDR", ":8080"),
-		streamName:     getenv("STREAM_NAME", "IDENTITY"),
 		serviceKey:     os.Getenv("SERVICE_KEY"),
 		labelKey:       getenv("LABEL_KEY", ""),
 		descriptionKey: getenv("DESCRIPTION_KEY", ""),

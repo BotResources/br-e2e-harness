@@ -30,14 +30,14 @@ func (a *acceptor) run(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	cons, err := a.js.CreateConsumer(ctx, a.cfg.streamName, jetstream.ConsumerConfig{
-		FilterSubjects:    []string{subjectDeclare},
-		DeliverPolicy:     jetstream.DeliverNewPolicy,
-		AckPolicy:         jetstream.AckNonePolicy,
-		InactiveThreshold: 5 * time.Minute,
+	cons, err := a.js.CreateOrUpdateConsumer(ctx, commandStream, jetstream.ConsumerConfig{
+		Durable:        durableName,
+		FilterSubjects: []string{subjectDeclare},
+		DeliverPolicy:  jetstream.DeliverAllPolicy,
+		AckPolicy:      jetstream.AckExplicitPolicy,
 	})
 	if err != nil {
-		return fmt.Errorf("create declare consumer (stream %q must exist — the subject never provisions it): %w", a.cfg.streamName, err)
+		return fmt.Errorf("create declare consumer (stream %q must exist — the subject never provisions it): %w", commandStream, err)
 	}
 
 	commands := make(chan jetstream.Msg, 64)
@@ -53,7 +53,7 @@ func (a *acceptor) run(ctx context.Context) error {
 	defer consCtx.Stop()
 
 	a.readiness.setReady()
-	log.Printf("acceptor consuming %s on stream %s; readiness UP", subjectDeclare, a.cfg.streamName)
+	log.Printf("acceptor consuming %s on stream %s via durable %s; readiness UP", subjectDeclare, commandStream, durableName)
 
 	for {
 		select {
@@ -66,6 +66,12 @@ func (a *acceptor) run(ctx context.Context) error {
 }
 
 func (a *acceptor) handleDeclare(ctx context.Context, msg jetstream.Msg) {
+	defer func() {
+		if err := msg.Ack(); err != nil {
+			log.Printf("ack declare failed: %v", err)
+		}
+	}()
+
 	var command integrationCommand
 	if err := json.Unmarshal(msg.Data(), &command); err != nil {
 		log.Printf("undecodable declare ignored: %v", err)

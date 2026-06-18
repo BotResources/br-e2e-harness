@@ -21,11 +21,13 @@ On boot, when enabled:
 
 1. Builds a `DeclareServiceScopes` from env, wraps it in an `IntegrationCommand`
    with a fresh `correlation_id` (UUID), and publishes it (JetStream) to
-   `identity.cmd.service_scope.declare.v1`.
-2. Awaits a confirmation on `identity.evt.service_scope.{accepted,rejected}.v1`
-   via an **ephemeral** pull consumer (`DeliverPolicy=New`, `AckPolicy=None`,
-   filtered to the two event subjects), matching on
-   `metadata.correlation_id == ours`.
+   `integration.cmd.identity.service_scope.declare.v1` (captured by the fixed
+   `INTEGRATION_CMD` stream).
+2. Awaits a confirmation on
+   `integration.evt.identity.service_scope.{accepted,rejected}.v1` via an
+   **ephemeral** pull consumer on the fixed `INTEGRATION_EVT` stream
+   (`DeliverPolicy=New`, `AckPolicy=None`, filtered to the two event subjects),
+   matching on `metadata.correlation_id == ours`.
 3. **Re-publishes the same `correlation_id`** every `WAIT_TIMEOUT` until a
    confirmation for it arrives.
 4. `/readyz` is **503** until an `accepted` arrives (then **200**); on a
@@ -35,10 +37,12 @@ On boot, when enabled:
 Disabled mode (`SCOPE_DECLARATION_ENABLED=false`): publishes nothing, `/readyz`
 is **200** immediately.
 
-**The subject does NOT create the JetStream stream** (the platform never
-auto-provisions). The stream named by `STREAM_NAME` must already exist and must
-capture the declare subject and both event subjects (e.g. subjects `identity.>`).
-If it is missing, the awaiter fails and `/readyz` stays 503.
+**The subject does NOT create the JetStream streams** (the platform never
+auto-provisions). The fixed `INTEGRATION_CMD` and `INTEGRATION_EVT` streams must
+already exist: `INTEGRATION_CMD` must capture the declare subject
+(`integration.cmd.>`) and `INTEGRATION_EVT` both event subjects
+(`integration.evt.>`). If either is missing, the awaiter fails and `/readyz`
+stays 503.
 
 ## Configuration (env only)
 
@@ -46,7 +50,6 @@ If it is missing, the awaiter fails and `/readyz` stays 503.
 |---|---|---|---|
 | `NATS_URL` | no | `nats://127.0.0.1:4222` | JetStream-enabled NATS URL |
 | `HTTP_ADDR` | no | `:8080` | bind addr for `/readyz` + `/livez` |
-| `STREAM_NAME` | no | `IDENTITY` | stream to publish the command to / await events on (must already exist) |
 | `SERVICE_KEY` | **yes** | — | the declaring service key (`manifest.key`), e.g. `notifier` |
 | `SCOPE_KEYS` | no | _(empty)_ | comma-separated `service:capability` keys; empty ⇒ empty scope set |
 | `LABEL_KEY` | no | _(empty)_ | `label_key` applied to the manifest and every scope |
@@ -66,10 +69,9 @@ instances.
 # build
 go build -o scope-service .          # or: make build
 
-# run against a local JetStream NATS with a pre-created IDENTITY stream
+# run against a local JetStream NATS with pre-created INTEGRATION_CMD / INTEGRATION_EVT streams
 NATS_URL=nats://127.0.0.1:4222 \
 HTTP_ADDR=127.0.0.1:8080 \
-STREAM_NAME=IDENTITY \
 SERVICE_KEY=notifier \
 SCOPE_KEYS=notifier:read,notifier:admin \
 LABEL_KEY=label.notifier \
@@ -91,15 +93,20 @@ test the build was verified with:
 # 1. start NATS with JetStream
 nats-server -js -sd /tmp/scope-js -p 4242 &
 
-# 2. create the stream (subject never provisions it)
-nats -s nats://127.0.0.1:4242 stream add IDENTITY \
-  --subjects "identity.>" --storage file --replicas 1 --retention limits \
+# 2. create the fixed streams (subject never provisions them)
+nats -s nats://127.0.0.1:4242 stream add INTEGRATION_CMD \
+  --subjects "integration.cmd.>" --storage file --replicas 1 --retention limits \
+  --discard old --max-msgs=-1 --max-bytes=-1 --max-age=0 --max-msg-size=-1 \
+  --dupe-window=2m --no-allow-rollup --deny-delete --deny-purge \
+  --max-msgs-per-subject=-1 --max-consumers=-1
+nats -s nats://127.0.0.1:4242 stream add INTEGRATION_EVT \
+  --subjects "integration.evt.>" --storage file --replicas 1 --retention limits \
   --discard old --max-msgs=-1 --max-bytes=-1 --max-age=0 --max-msg-size=-1 \
   --dupe-window=2m --no-allow-rollup --deny-delete --deny-purge \
   --max-msgs-per-subject=-1 --max-consumers=-1
 
 # 3. run the subject (no acceptor)
-NATS_URL=nats://127.0.0.1:4242 HTTP_ADDR=127.0.0.1:8090 STREAM_NAME=IDENTITY \
+NATS_URL=nats://127.0.0.1:4242 HTTP_ADDR=127.0.0.1:8090 \
 SERVICE_KEY=notifier SCOPE_KEYS=notifier:read,notifier:admin \
 LABEL_KEY=label.notifier DESCRIPTION_KEY=desc.notifier WAIT_TIMEOUT=1s \
 ./scope-service &
@@ -109,12 +116,12 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8090/readyz   # 503
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8090/livez    # 200
 
 # 5. read back the published declare command and check the subject + shape
-nats -s nats://127.0.0.1:4242 stream get IDENTITY \
-  --last-for=identity.cmd.service_scope.declare.v1
+nats -s nats://127.0.0.1:4242 stream get INTEGRATION_CMD \
+  --last-for=integration.cmd.identity.service_scope.declare.v1
 
 # 6. accept it: publish an event echoing the command's correlation_id
 #    (grab CID from step 5's metadata.correlation_id), then /readyz → 200
-nats -s nats://127.0.0.1:4242 pub identity.evt.service_scope.accepted.v1 \
+nats -s nats://127.0.0.1:4242 pub integration.evt.identity.service_scope.accepted.v1 \
   '{"event_id":"00000000-0000-7000-8000-0000000000aa","event_type":"service_scope.accepted","version":1,"occurred_at":"2026-01-01T00:00:00Z","metadata":{"actor_id":"00000000-0000-0000-0000-0000000000ab","correlation_id":"<CID>"},"payload":{"service":"notifier"}}'
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8090/readyz   # 200
 ```

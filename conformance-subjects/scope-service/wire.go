@@ -2,14 +2,12 @@ package main
 
 import "github.com/google/uuid"
 
-// Wire shapes for the scope-declaration handshake v1.
-// Frozen against docs/conformance/scope-wire-v1.md (golden JSON from the real
-// br-rust-common types). Audit this file against that doc, nothing else.
-
 const (
-	subjectDeclare  = "identity.cmd.service_scope.declare.v1"
-	subjectAccepted = "identity.evt.service_scope.accepted.v1"
-	subjectRejected = "identity.evt.service_scope.rejected.v1"
+	subjectDeclare  = "integration.cmd.identity.service_scope.declare.v1"
+	subjectAccepted = "integration.evt.identity.service_scope.accepted.v1"
+	subjectRejected = "integration.evt.identity.service_scope.rejected.v1"
+
+	eventStream = "INTEGRATION_EVT"
 
 	commandType = "service_scope.declare"
 	wireVersion = 1
@@ -53,16 +51,10 @@ type integrationCommand struct {
 	Payload     declareServiceScopes `json:"payload"`
 }
 
-// confirmationProbe mirrors the declarer-side CorrelationProbe: only metadata is
-// needed to match. The confirmation's outcome is decided by the NATS subject it
-// arrived on, not by its body, so we keep the payload as raw bytes for logging.
 type confirmationProbe struct {
 	Metadata messageMetadata `json:"metadata"`
 }
 
-// declaringActorNamespace and declaringActorID reproduce
-// br-util-scope-declaration::declaring_actor — a deterministic v5 actor id per
-// service key. The acceptor never validates it; we emit it for fidelity.
 var declaringActorNamespace = uuid.MustParse("6f3a1c8e-4b27-4d59-9e10-a3f277c58d41")
 
 func declaringActorID(serviceKey string) string {
