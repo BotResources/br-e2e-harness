@@ -1,7 +1,7 @@
 use conformance_scope::{
-    AcceptorBehavior, AttachTarget, DEFAULT_STREAM_NAME, ExpectedDeclaration,
-    SAMPLE_FALLBACK_SCOPE, Scenario, SpawnTarget, attach_default, parse_platform_only,
-    parse_scenarios, parse_scope_keys, run_attach, run_spawn, spawn_default,
+    AcceptorBehavior, AttachTarget, ExpectedDeclaration, SAMPLE_FALLBACK_SCOPE, Scenario,
+    SpawnTarget, attach_default, parse_platform_only, parse_scenarios, parse_scope_keys,
+    run_attach, run_spawn, spawn_default,
 };
 
 use crate::cli::RunArgs;
@@ -69,13 +69,8 @@ fn attach_target(args: &RunArgs) -> Result<AttachTarget> {
         .readyz
         .clone()
         .ok_or_else(|| CliError::new("--readyz <URL> is required in attach mode"))?;
-    let stream = args
-        .stream
-        .clone()
-        .unwrap_or_else(|| DEFAULT_STREAM_NAME.to_string());
     Ok(AttachTarget {
         nats_url: nats,
         readyz_url: readyz,
-        stream_name: stream,
     })
 }

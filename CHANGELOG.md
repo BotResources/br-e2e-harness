@@ -65,6 +65,12 @@ single git tag `v{version}` releases the set. Format follows
   env value cannot express; the two-stream `FabricTestNats` provisioning is now
   matched by a two-stream subject contract (no more two-stream harness wired to a
   one-stream subject).
+- **`conformance-scope-cli` drops the `--stream` flag and the manifest
+  `attach.stream` field.** Fabric streams are fixed constants in `v1.0.0`
+  (`INTEGRATION_CMD` / `INTEGRATION_EVT`), so the handshake stream is no longer
+  caller-choosable: the CLI binds the declare consumer to the fixed
+  `INTEGRATION_CMD` command stream. `AttachTarget` no longer carries
+  `stream_name`.
 
 ### Known limitation
 
