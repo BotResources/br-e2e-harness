@@ -21,11 +21,14 @@ func groupKVKey(groupID uuid.UUID) string {
 }
 
 func publishedUserCore(email string, firstName *string, lastName *string) map[string]any {
-	return map[string]any{
-		"email":      email,
-		"first_name": firstName,
-		"last_name":  lastName,
+	wire := map[string]any{"email": email}
+	if firstName != nil {
+		wire["first_name"] = *firstName
 	}
+	if lastName != nil {
+		wire["last_name"] = *lastName
+	}
+	return wire
 }
 
 func publishedUserWithExtension(email string, firstName *string, lastName *string, extension any) map[string]any {

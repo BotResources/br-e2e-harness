@@ -60,7 +60,7 @@ func TestPublishedUserCoreKeysAreExactlyTheContract(t *testing.T) {
 	}
 }
 
-func TestPublishedUserCoreEmitsNullNamesNotOmitted(t *testing.T) {
+func TestPublishedUserCoreOmitsAbsentNames(t *testing.T) {
 	got, err := json.Marshal(publishedUserCore("solo@example.com", nil, nil))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -69,14 +69,11 @@ func TestPublishedUserCoreEmitsNullNamesNotOmitted(t *testing.T) {
 	if err := json.Unmarshal(got, &asMap); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if _, present := asMap["first_name"]; !present {
-		t.Fatalf("first_name must be present (null), not omitted: %s", got)
+	if _, present := asMap["first_name"]; present {
+		t.Fatalf("first_name must be omitted when absent (v1.0.0 skip_serializing_if): %s", got)
 	}
-	if asMap["first_name"] != nil {
-		t.Fatalf("first_name = %v, want null", asMap["first_name"])
-	}
-	if _, present := asMap["last_name"]; !present {
-		t.Fatalf("last_name must be present (null), not omitted: %s", got)
+	if _, present := asMap["last_name"]; present {
+		t.Fatalf("last_name must be omitted when absent (v1.0.0 skip_serializing_if): %s", got)
 	}
 }
 

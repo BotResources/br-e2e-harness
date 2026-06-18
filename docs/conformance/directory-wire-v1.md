@@ -90,19 +90,19 @@ Users-only (groups auto-degraded):
 ## 3. `PublishedUser` — the `identity/users/{uuid}` value
 
 `br-core-directory::PublishedUser`. **Core** fields are snake_case, **no
-`rename_all`, no `skip`**; project extensions ride **flat** via
-`#[serde(flatten)]`:
+`rename_all`**; project extensions ride **flat** via `#[serde(flatten)]`:
 
 | Field | JSON type | Notes |
 |---|---|---|
 | `email` | string | required core |
-| `first_name` | string \| **null** | `Option<String>`, **no `skip_serializing_if`** ⇒ emitted as `null` when absent, never omitted |
-| `last_name` | string \| **null** | same |
+| `first_name` | string \| *(omitted)* | `Option<String>` with `skip_serializing_if = "Option::is_none"` ⇒ **omitted** when absent |
+| `last_name` | string \| *(omitted)* | same |
 | *(extensions)* | any | `#[serde(flatten)]` — every non-core key sits **flat at the top level** and lands in the lib's `extensions: BTreeMap<String, Value>`. **Never** nested under an `extensions` key. |
 
-On deserialize, an **absent** `first_name`/`last_name` defaults to `None` (the
-lib accepts a value that omitted them); on serialize the lib always emits the key
-as `null`. The frozen anchor emits them.
+On deserialize, an absent **or** explicitly-`null` `first_name`/`last_name`
+both yield `None` (`take_optional_string` treats `None | Some(Value::Null)`
+alike); on serialize the v1.0.0 lib **omits** the key when `None`. The frozen
+anchor matches the serializer and omits them.
 
 Golden (core + the neutral extension `x_custom`):
 
@@ -115,13 +115,11 @@ Golden (core + the neutral extension `x_custom`):
 }
 ```
 
-Core-only (names emitted as `null`):
+Core-only (names omitted when absent):
 
 ```json
 {
-  "email": "grace@example.com",
-  "first_name": null,
-  "last_name": null
+  "email": "grace@example.com"
 }
 ```
 
@@ -218,11 +216,11 @@ the frozen wire for that key. The `{key, value}` envelope is **harness transport
 lib — only each entry's `value` is. The snapshot:
 
 - `_meta` = `{"version":1,"entities":["users","groups"]}`
-- a user with `x_custom` + a core-only user with `null` names
+- a user with `x_custom` + a core-only user with omitted (absent) names
 - a group with `x_custom` + a core-only group with `member_ids: []`
 
 The Go golden test (`wire_test.go`) pins the KV-key prefixes and every value's
-shape (core keys exact, names-null-not-omitted, extension-rides-flat,
+shape (core keys exact, names-omitted-when-absent, extension-rides-flat,
 member_ids-always-array, the meta golden + the users-only auto-degrade) — the
 offline mirror of the existing scope/passport anchors.
 

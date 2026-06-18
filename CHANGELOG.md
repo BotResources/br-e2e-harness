@@ -84,17 +84,18 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Known limitation
 
-- **The `conformance-scope` spawn battery is migrated on the Rust side but not
-  yet executable green against `v1.0.0`, and its `#[ignore]`-gated real-infra
-  tests have not been run.** The Go anchor (`conformance-subjects/scope-service`)
-  is still frozen on the **pre-v1 wire** — `wire.go` hardcodes
-  `identity.cmd.service_scope.declare.v1` / `identity.evt.*` and `config.go`
-  reads a single `STREAM_NAME` (default `IDENTITY`) — so it cannot publish the
-  declare on `INTEGRATION_CMD` while awaiting confirmations on `INTEGRATION_EVT`.
-  Closing this requires re-freezing the Go anchor to the `integration.*` grammar
-  and the two-stream split, a deliberate operator decision on the external wire
-  (lib-as-oracle / Go-as-anchor: the Go side freezes the wire independently of
-  the lib). Until then the spawn-mode tests remain unexecuted against v1.0.0.
+- **The `conformance-scope` spawn battery is migrated on the Rust side and the
+  Go anchor is re-frozen on the `v1.0.0` wire, but its `#[ignore]`-gated
+  real-infra tests have not been run in this integration** (no NATS server was
+  available). The Go anchor (`conformance-subjects/scope-service`) now freezes
+  the `integration.*` grammar — `wire.go` carries
+  `integration.cmd.identity.service_scope.declare.v1` /
+  `integration.evt.identity.service_scope.{accepted,rejected}.v1` and the
+  two-stream split (publish the declare onto `INTEGRATION_CMD`, await
+  confirmations on `INTEGRATION_EVT`) — so the wire matches the lib oracle. The
+  remaining gap is purely execution: the spawn-mode tests need a running NATS to
+  go green and have not been exercised here (lib-as-oracle / Go-as-anchor: the
+  Go side freezes the wire independently of the lib).
 
 ## [0.6.0] — 2026-06-15
 

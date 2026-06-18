@@ -10,7 +10,7 @@ handshake exactly as the platform requires.
 > It builds and spawns a real binary, stands up a real `nats-server`, and plays
 > the Identity side of the handshake on an isolated, throwaway test network.
 
-> 🚧 **Current status — migrated on the Rust side, not yet executable end-to-end.**
+> 🚧 **Current status — migrated on both sides, not yet executed end-to-end.**
 > The Rust runner and `FabricTestNats` are on the **v1.0.0 `integration.*`
 > grammar**: the harness provisions the two fixed streams `INTEGRATION_CMD`
 > (`integration.cmd.>`, where the declare lands) and `INTEGRATION_EVT`
@@ -18,19 +18,15 @@ handshake exactly as the platform requires.
 > confirmations via the real `Fabric`, and `SubjectConfig` now carries **both**
 > stream names (injected to the subject as `COMMAND_STREAM_NAME` /
 > `EVENT_STREAM_NAME`). The **Go anchor** (`conformance-subjects/scope-service`)
-> is still frozen on the **pre-v1 wire**: `wire.go` hardcodes
-> `identity.cmd.service_scope.declare.v1` / `identity.evt.*` and `config.go`
-> reads a single `STREAM_NAME` (default `IDENTITY`), so it publishes the declare
-> and awaits its confirmations on **one** stream. Under v1.0.0 the declare goes
-> to `INTEGRATION_CMD` while confirmations arrive on `INTEGRATION_EVT`, which a
-> single stream cannot express. **Consequence:** the spawn battery cannot run
-> green yet and the `#[ignore]`-gated real-infra tests in `tests/conformance.rs`
-> have **not** been executed against v1.0.0. Closing this requires rewriting the
-> Go anchor to the `integration.*` grammar and the two-stream split — a
-> deliberate re-freeze of the external wire, which is an **operator decision**
-> (lib-as-oracle / Go-as-anchor: the Go side freezes the wire independently of
-> the lib). The Rust half is done so a future reader never sees a two-stream
-> harness wired to a one-stream subject; the Go half is the remaining slice.
+> is re-frozen on the same v1.0.0 wire: `wire.go` carries
+> `integration.cmd.identity.service_scope.declare.v1` /
+> `integration.evt.identity.service_scope.{accepted,rejected}.v1` and the
+> two-stream split (publish the declare onto `INTEGRATION_CMD`, await
+> confirmations on `INTEGRATION_EVT`). **Consequence:** the remaining gap is
+> purely execution — the `#[ignore]`-gated real-infra tests in
+> `tests/conformance.rs` need a running NATS to go green and have **not** been
+> exercised against v1.0.0 here (lib-as-oracle / Go-as-anchor: the Go side
+> freezes the wire independently of the lib).
 
 ## What it proves — and why this is a backward-compat anchor
 

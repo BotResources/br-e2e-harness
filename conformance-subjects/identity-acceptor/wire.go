@@ -5,6 +5,9 @@ const (
 	subjectAccepted = "integration.evt.identity.service_scope.accepted.v1"
 	subjectRejected = "integration.evt.identity.service_scope.rejected.v1"
 
+	commandStream = "INTEGRATION_CMD"
+	durableName   = "identity-acceptor-service-scope"
+
 	acceptedType = "service_scope.accepted"
 	rejectedType = "service_scope.rejected"
 	wireVersion  = 1
