@@ -547,6 +547,7 @@ dependencies = [
  "br-core-directory",
  "br-test-harness",
  "br-util-directory",
+ "br-util-nats-fabric",
  "futures-util",
  "serde",
  "serde_json",

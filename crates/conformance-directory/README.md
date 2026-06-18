@@ -54,7 +54,8 @@ anchor shape) so plain `cargo test` is green with **zero** toolchain.
 
 ### Px — publisher conformance (real NATS KV)
 
-Drives `br_util_directory::DirectoryPublisher` against a `SpawnedNats` KV bucket.
+Drives `br_util_directory::DirectoryPublisher` (opened on the harness `Fabric`)
+against the fixed `PUBLISHED_LANGUAGE` KV bucket provisioned by `FabricTestNats`.
 
 | Id | Asserts |
 |---|---|
@@ -85,7 +86,8 @@ consuming service's e2e can call them directly:
   oracle deser, each erroring with the offending KV key and the lib type it failed
   to deserialise into.
 - `publisher_floor(&snapshot)` / `publisher_groups_optional(&snapshot)` — the Px
-  battery against a throwaway `DirectoryHarness` (a `SpawnedNats` + a KV bucket).
+  battery against a throwaway `DirectoryHarness` (a `FabricTestNats` with its
+  `PUBLISHED_LANGUAGE` bucket).
 - `consumer_reads_users(&snapshot)` / `consumer_reads_groups(&snapshot)` — the Cx
   battery against a `DirectoryHarness` + a `ConsumerDb` (an `E2eDatabase` + a
   migrated pool).

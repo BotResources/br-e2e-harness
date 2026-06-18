@@ -71,6 +71,16 @@ single git tag `v{version}` releases the set. Format follows
   caller-choosable: the CLI binds the declare consumer to the fixed
   `INTEGRATION_CMD` command stream. `AttachTarget` no longer carries
   `stream_name`.
+- **`conformance-directory` migrates onto the v1.0.0 directory API + the Fabric
+  KV.** The kit no longer takes a raw `kv::Store`: `DirectoryPublisher::open(&fabric)`
+  and `DirectoryProjector::new(fabric, pool)` are now opened on the harness
+  `Fabric`. `DirectoryHarness` drops its ad-hoc `identity_directory` bucket
+  (`DEFAULT_DIRECTORY_BUCKET` is removed from the public surface) and instead spins
+  a `FabricTestNats::with_published_language()`, so the publisher/projector exercise
+  the **fixed `PUBLISHED_LANGUAGE` bucket** the lib actually targets. The Cx
+  `load_snapshot` reads back the new `known_users.extensions` jsonb column into
+  `KnownUser { extensions: PersistedExtensions }`. Verified against real NATS +
+  real Postgres (P1/P2/C1/C2 + the W1–W5 wire battery all green).
 
 ### Known limitation
 
