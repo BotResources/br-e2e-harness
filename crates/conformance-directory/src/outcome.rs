@@ -11,6 +11,10 @@ pub enum CheckId {
     PublisherGroupsOptional,
     ConsumerReadsUsers,
     ConsumerReadsGroups,
+    ConsumerExtensionSurvives,
+    ConsumerFilterFlipOrphans,
+    WireReservedKeyRejected,
+    ConsumerUsersOnlyNarrows,
 }
 
 impl CheckId {
@@ -25,6 +29,10 @@ impl CheckId {
             CheckId::PublisherGroupsOptional => "p2",
             CheckId::ConsumerReadsUsers => "c1",
             CheckId::ConsumerReadsGroups => "c2",
+            CheckId::ConsumerExtensionSurvives => "c3",
+            CheckId::ConsumerFilterFlipOrphans => "c4",
+            CheckId::WireReservedKeyRejected => "w6",
+            CheckId::ConsumerUsersOnlyNarrows => "c5",
         }
     }
 
@@ -39,6 +47,10 @@ impl CheckId {
             "p2" => Some(CheckId::PublisherGroupsOptional),
             "c1" => Some(CheckId::ConsumerReadsUsers),
             "c2" => Some(CheckId::ConsumerReadsGroups),
+            "c3" => Some(CheckId::ConsumerExtensionSurvives),
+            "c4" => Some(CheckId::ConsumerFilterFlipOrphans),
+            "w6" => Some(CheckId::WireReservedKeyRejected),
+            "c5" => Some(CheckId::ConsumerUsersOnlyNarrows),
             _ => None,
         }
     }

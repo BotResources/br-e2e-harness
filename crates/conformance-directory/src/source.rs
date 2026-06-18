@@ -55,6 +55,17 @@ impl AnchorSource {
     pub fn drop_user(&mut self, user_id: &Uuid) {
         self.users.remove(user_id);
     }
+
+    pub fn upsert_user(&mut self, user_id: Uuid, user: PublishedUser) {
+        self.users.insert(user_id, user);
+    }
+
+    pub fn first_user(&self) -> Option<(Uuid, PublishedUser)> {
+        self.users
+            .iter()
+            .next()
+            .map(|(id, user)| (*id, user.clone()))
+    }
 }
 
 #[async_trait::async_trait]
