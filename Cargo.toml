@@ -4,6 +4,7 @@ members = [
     "crates/br-test-harness",
     "crates/conformance-directory",
     "crates/conformance-identity",
+    "crates/conformance-nats-fabric",
     "crates/conformance-passport",
     "crates/conformance-scope",
     "crates/conformance-scope-cli",

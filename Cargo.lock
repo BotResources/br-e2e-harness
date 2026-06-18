@@ -579,6 +579,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "conformance-nats-fabric"
+version = "0.6.0"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "br-core-directory",
+ "br-core-integration",
+ "br-test-harness",
+ "br-util-nats-fabric",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "conformance-passport"
 version = "0.6.0"
 dependencies = [

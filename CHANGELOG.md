@@ -25,6 +25,33 @@ single git tag `v{version}` releases the set. Format follows
   `BareFabricNats::{without_fixed_streams, with_only_command_stream,
   with_only_event_stream}` start a server missing a fixed stream / the bucket to
   prove the lib bind fails loud and never auto-provisions.
+- **`conformance-nats-fabric` — black-box conformance for the NATS Fabric** (#76):
+  a new crate driving `br-util-nats-fabric` v1.0.0 against real NATS via
+  `FabricTestNats`, anchored by a new **independent Go subject renderer** in
+  `conformance-subjects/nats-fabric` (lib-as-oracle / Go-as-anchor; a `make
+  guard` fails the anchor build if the dead `identity.cmd.`/`identity.evt.`
+  grammar reappears). It proves: a **widened durable** is rejected with
+  `FabricError::FilterMismatch`; a **missing fixed stream** makes the bind fail
+  loud (no auto-provision); the anchor's rendered subjects match the lib's
+  `command_subject`/`event_subject` **byte-for-byte**; the **dead `identity.*`
+  grammar fails loud** (publish lands on no fixed stream, no `INTEGRATION_*`
+  stream captures it); and for the published-language KV — `retract`
+  orphan-deletes, `reconcile` converges drift, `bootstrap` is parallel-safe
+  under a running `watch`, and a malformed value **fails closed naming the
+  offending key**. Real-infra tests are `#[ignore]`-gated per the harness
+  convention.
+
+### Known limitation (discovered)
+
+- **`br-util-nats-fabric` v1.0.0 prefix-`watch` does not deliver slash-keyed
+  directory puts on real infra.** `conformance-nats-fabric` surfaced — and pins
+  as a currently-true assertion — that incremental `watch` over the frozen
+  `identity/users/<uuid>` key scheme delivers nothing on a real `nats-server`:
+  `KvPrefix::watch_subject()` renders `identity/users/>`, but NATS `>` matches on
+  `.`-delimited tokens and a slash key is a single token, so the wildcard never
+  fires. `bootstrap` (a `kv.keys()` scan) is unaffected. This affects the real
+  `br-util-directory` consumer identically and is reported as a lib blocker; the
+  crate does not work around it and claims no working `watch`.
 
 ### Changed
 

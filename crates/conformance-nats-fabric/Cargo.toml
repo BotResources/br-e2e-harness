@@ -1,0 +1,29 @@
+[package]
+name = "conformance-nats-fabric"
+version.workspace = true
+description = "Black-box conformance runner for the BotResources NATS Fabric v1 subject grammar and published-language KV — TEST FIXTURE ONLY"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "v1.0.0", version = "1.0.0" }
+br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v1.0.0", version = "1.0.0" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.0", version = "1.0.0" }
+
+br-test-harness = { path = "../br-test-harness", version = "0.6.0", default-features = false, features = [
+    "nats-fabric",
+] }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-nats = "0.48"
+async-trait = "0.1"
+uuid = { version = "1", features = ["v7"] }
+futures-util = "0.3"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
