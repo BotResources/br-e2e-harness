@@ -4,6 +4,8 @@ use async_nats::jetstream;
 use br_test_harness::{nats::connect, wait_until};
 use uuid::Uuid;
 
+use br_util_nats_fabric::{Fabric, INTEGRATION_EVT};
+
 use crate::capture::ConfirmationCapture;
 use crate::checks::{CheckContext, run_scenario};
 use crate::declarer::Declarer;
@@ -17,7 +19,6 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct AttachTarget {
     pub nats_url: String,
     pub readyz_url: String,
-    pub stream_name: String,
 }
 
 pub async fn run_attach(
@@ -38,16 +39,16 @@ pub async fn run_attach(
         )));
     }
 
-    let capture = ConfirmationCapture::start(&js, &target.stream_name)
+    let capture = ConfirmationCapture::start(&js, INTEGRATION_EVT)
         .await
         .map_err(|e| {
             ConformanceError::Jetstream(format!(
-                "binding the confirmation consumer to stream '{}' failed — in attach mode the \
-                 acceptor owns the handshake stream and it must already exist: {e}",
-                target.stream_name
+                "binding the confirmation consumer to the fixed '{INTEGRATION_EVT}' stream \
+                 failed — in attach mode the acceptor owns the fabric streams and they must \
+                 already exist: {e}"
             ))
         })?;
-    let declarer = Declarer::new(js.clone());
+    let declarer = Declarer::new(Fabric::new(js.clone()));
 
     let namespace = Uuid::now_v7().simple().to_string();
     let ctx = CheckContext {

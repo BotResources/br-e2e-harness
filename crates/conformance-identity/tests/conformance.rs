@@ -20,7 +20,7 @@ impl Fixture {
     async fn start() -> Self {
         let harness = IdentityHarness::start().await.expect("harness");
         let capture = harness.capture_confirmations().await.expect("capture");
-        let config = SubjectConfig::new(&harness.nats_url(), harness.stream_name());
+        let config = SubjectConfig::new(&harness.nats_url(), harness.command_stream_name());
         let subject = Subject::spawn(harness.binary(), &config);
         let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
         let ready = wait_until(SHORT, || async { readyz.is_ready().await }).await;

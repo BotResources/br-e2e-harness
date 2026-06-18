@@ -1,9 +1,9 @@
 package main
 
 const (
-	subjectDeclare  = "identity.cmd.service_scope.declare.v1"
-	subjectAccepted = "identity.evt.service_scope.accepted.v1"
-	subjectRejected = "identity.evt.service_scope.rejected.v1"
+	subjectDeclare  = "integration.cmd.identity.service_scope.declare.v1"
+	subjectAccepted = "integration.evt.identity.service_scope.accepted.v1"
+	subjectRejected = "integration.evt.identity.service_scope.rejected.v1"
 
 	acceptedType = "service_scope.accepted"
 	rejectedType = "service_scope.rejected"

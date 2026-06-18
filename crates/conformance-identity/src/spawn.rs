@@ -24,7 +24,7 @@ pub async fn run_spawn(
     let harness = IdentityHarness::start_with_binary(target.binary.clone()).await?;
     let capture = harness.capture_confirmations().await?;
     let declarer = harness.declarer();
-    let config = SubjectConfig::new(&harness.nats_url(), harness.stream_name());
+    let config = SubjectConfig::new(&harness.nats_url(), harness.command_stream_name());
     let subject = Subject::spawn(harness.binary(), &config);
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
 

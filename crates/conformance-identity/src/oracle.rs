@@ -23,7 +23,7 @@ pub fn outcome_to_verdict(outcome: DeclarationOutcome) -> Result<Verdict> {
         DeclarationOutcome::Accepted { service, .. } => Ok(Verdict::Accepted {
             service: service.as_str().to_string(),
         }),
-        DeclarationOutcome::Rejected { reason } => Ok(Verdict::Rejected { reason }),
+        DeclarationOutcome::Rejected { reason, .. } => Ok(Verdict::Rejected { reason }),
         _ => Err(ConformanceError::OracleOutcomeUnknown),
     }
 }

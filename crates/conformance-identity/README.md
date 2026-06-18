@@ -72,11 +72,14 @@ context by driving a prior accepted declaration, then drives the contested one.
 - `IdentityHarness` — `start()` builds the Go subject (`build_subject`) and is the
   self-test entry point; `start_with_binary(binary)` runs the **same** battery
   against any acceptor binary, so a consuming Identity service drives it against its
-  own. It spawns a dedicated `SpawnedNats` and creates the handshake JetStream stream
-  up front (the platform never auto-provisions, so the runner must).
-  `declarer()` / `capture_confirmations()`.
+  own. It stands up a `br_test_harness::FabricTestNats`, which provisions the two
+  **fixed** Project-NATS-Fabric streams — `INTEGRATION_CMD` (`integration.cmd.>`) and
+  `INTEGRATION_EVT` (`integration.evt.>`) — up front (the platform never
+  auto-provisions, so the harness must). `command_stream_name()` /
+  `event_stream_name()` / `declarer()` / `capture_confirmations()`.
 - `Declarer` — builds a real `IntegrationCommand<DeclareServiceScopes>` and publishes
-  it (ack-confirmed) via `br_core_integration::NatsIntegrationPublisher`.
+  it (ack-confirmed) via `br_util_nats_fabric::Fabric::publish_command` with the typed
+  `br_scope_declaration_contract::declare_command_coords()` — no freestyle subject.
 - `ConfirmationCapture` — a subscribe-**first** ephemeral consumer
   (`DeliverPolicy::New`, `AckPolicy::None`) over both event subjects;
   `verdict_for(correlation_id)` decodes the reply by `from_slice` into the real
@@ -89,8 +92,9 @@ context by driving a prior accepted declaration, then drives the contested one.
 - `Subject` / `SubjectConfig` — spawn the built binary with its env wiring
   (`NATS_URL`, `HTTP_ADDR`, `STREAM_NAME`, `SCOPE_ACCEPTANCE_ENABLED`) and poll
   `/readyz` / `/livez`.
-- `create_handshake_stream`, and the three subject derivers, from
-  `br-scope-declaration-contract`.
+- The three subject derivers (`declare_subject` / `accepted_event_subject` /
+  `rejected_event_subject`) render the fixed six-segment grammar from the typed
+  `br-scope-declaration-contract` coords through `br_util_nats_fabric`.
 
 ## The single-implementation check API
 
@@ -107,14 +111,14 @@ programmatic runners call it.
 ## Two programmatic runners — spawn and attach
 
 - `run_spawn(SpawnTarget { binary }, scenarios, timeout)` — the core deliverable.
-  Stands up a throwaway `SpawnedNats`, creates the handshake stream, launches the
-  acceptor binary, waits for `/readyz=200`, and runs the full `a1..a7`. Needs
-  `nats-server` on `PATH`.
-- `run_attach(AttachTarget { nats_url, readyz_url, stream_name }, scenarios, timeout)`
+  Stands up a `FabricTestNats` (the two fixed fabric streams), launches the acceptor
+  binary against `INTEGRATION_CMD`, waits for `/readyz=200`, and runs the full
+  `a1..a7`. Needs `nats-server` on `PATH`.
+- `run_attach(AttachTarget { nats_url, readyz_url }, scenarios, timeout)`
   — connects to an already-running Identity service's NATS and polls its `/readyz`
   directly; never spawns `nats-server` and never builds Go. It does **not** create the
-  stream — the live service owns it; the confirmation consumer binds to the
-  pre-existing stream and fails loud if it is absent. **Caveat:** driving declarations
+  streams — the live service owns the fixed `INTEGRATION_EVT`; the confirmation
+  consumer binds to it and fails loud if it is absent. **Caveat:** driving declarations
   **mutates a live registry**; the runner uses **unique per-run service/scope keys**
   (a fresh UUIDv7 namespace) to bound pollution, so A1–A7 are safe to run repeatedly
   against the same live service.
