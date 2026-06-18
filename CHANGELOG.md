@@ -87,6 +87,24 @@ single git tag `v{version}` releases the set. Format follows
   no longer caller-supplied; this reconciles the `runner` surface with the
   `conformance-scope-cli` call sites that already stopped passing it.
 
+### Fixed
+
+- **`conformance-identity::SubjectConfig` drops its inert `stream_name` field
+  and the `STREAM_NAME` env injection.** The frozen Go `identity-acceptor`
+  hardcodes `commandStream = "INTEGRATION_CMD"` and never reads `STREAM_NAME`, so
+  the injection was dead wiring; `SubjectConfig::new` now takes `(nats_url)` only.
+  Verified by the full A1–A7 identity conformance battery (green against real
+  NATS + the Go anchor).
+- **`FabricTestNats::correlation()` doc no longer reads as a stable per-run
+  value.** It mints a **fresh** UUIDv7 on every call (one per flux/message),
+  unlike the `run_id`-derived `durable()` / `key_prefix()`; the README now states
+  this so a caller cannot expect two calls to match (doc=code).
+- **Renamed the durable-provisioning test
+  `start_provisions_..._a_byte_identical_durable` →
+  `..._a_filter_identical_durable`.** It asserts only `filter_subjects` via
+  `verify_command_durable`, not the whole `pull::Config` (`ack_wait` differs), so
+  "byte-identical" over-promised.
+
 ### Known limitation
 
 - **The `conformance-scope` spawn battery is migrated on the Rust side and the

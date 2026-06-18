@@ -90,8 +90,9 @@ context by driving a prior accepted declaration, then drives the contested one.
 - `Scenario` (A1–A7) with `sequence(namespace)` — the declaration sequences,
   namespaced so each run uses unique service/scope keys.
 - `Subject` / `SubjectConfig` — spawn the built binary with its env wiring
-  (`NATS_URL`, `HTTP_ADDR`, `STREAM_NAME`, `SCOPE_ACCEPTANCE_ENABLED`) and poll
-  `/readyz` / `/livez`.
+  (`NATS_URL`, `HTTP_ADDR`, `SCOPE_ACCEPTANCE_ENABLED`) and poll
+  `/readyz` / `/livez`. The acceptor hardcodes the command stream
+  (`INTEGRATION_CMD`) and reads no `STREAM_NAME`, so the harness injects none.
 - The three subject derivers (`declare_subject` / `accepted_event_subject` /
   `rejected_event_subject`) render the fixed six-segment grammar from the typed
   `br-scope-declaration-contract` coords through `br_util_nats_fabric`.
