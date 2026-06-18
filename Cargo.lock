@@ -588,7 +588,6 @@ dependencies = [
  "br-core-integration",
  "br-test-harness",
  "br-util-nats-fabric",
- "futures-util",
  "serde",
  "serde_json",
  "thiserror",

@@ -22,7 +22,6 @@ serde_json = { workspace = true }
 async-nats = "0.48"
 async-trait = "0.1"
 uuid = { version = "1", features = ["v7"] }
-futures-util = "0.3"
 thiserror = { workspace = true }
 
 [dev-dependencies]
