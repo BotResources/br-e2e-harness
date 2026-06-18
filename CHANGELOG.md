@@ -11,6 +11,31 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+- **`br-test-harness` — `FabricTestNats` connect-mode + the typed
+  observation/publish/capture surface + the `fabric-nats` bin (#74, phase 1).**
+  The Fabric provisioner gains `connect(url)` (attach to an already-running NATS,
+  alongside `start()` which spawns its own) backed by a `NatsBacking { Owned |
+  Attached }` so `shutdown()` only tears down a server the harness started — it
+  never kills a shared NATS. **All provisioning is get-or-create** (fixed streams,
+  PL bucket, bearer bucket), the structural fix for the #73 shared-bucket-wipe
+  class. A typed surface so a test body never needs a raw handle: `fabric_owned()`,
+  `capture_events` / `capture_commands` (background-drain, correlation-keyed:
+  `count`/`first`/`for_correlation`/`correlation_ids`/`stop`, on one
+  harness-internal consumer), `await_event` (wraps the lib `CorrelatedAwaiter`) +
+  `await_command` (the command-stream counterpart), `pl_publisher` / `pl_reader`
+  (delegate to the lib), `pl_list` / `pl_get_meta` (hand-rolled key-scans —
+  `PublishedLanguageReader` has no list), `pl_put_raw` (the adversarial raw hatch),
+  `with_bearer_tokens` + `bearer_seeder` (`BearerSeeder` moved in from
+  `conformance-passport`, typed on `BearerTokenEntry`), and the negative methods
+  `assert_missing_stream` / `publish_dead_subject` / `raw_message_absent`. A new
+  `fabric-nats` bin (`required-features = ["nats-fabric"]`) is a thin shell over
+  the same provisioner — `provision` / `verify` / `print-subjects` over a TOML
+  manifest that speaks coords + durable names + a bucket flag, **never a raw
+  subject** (exit codes 0/2/3/4). `CapturedMessage`, `FabricKvError`,
+  `BearerSeedError` and `ManifestError` are harness-owned; the lib's
+  `jetstream()` / `client()` handles stay public for now (phase-2 seal demotes
+  them). The two hand-rolled lib gaps (command-side `await`, reader `keys()`) are
+  noted for `br-util-nats-fabric` nice-to-haves.
 - **`conformance-directory` — extension, copy-filter and `UsersOnly` Cx
   scenarios (#77, #78).** Four new directory checks drive the real
   `br-util-directory` consumer kit (`DirectoryProjector::with_config`) against

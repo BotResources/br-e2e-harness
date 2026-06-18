@@ -1,5 +1,8 @@
 use async_nats::jetstream;
-use br_util_nats_fabric::{INTEGRATION_CMD, INTEGRATION_EVT, KV_PUBLISHED_LANGUAGE};
+use br_core_integration::EventCoords;
+use br_util_nats_fabric::{
+    Fabric, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, KV_PUBLISHED_LANGUAGE, PublishErrorKind,
+};
 
 use crate::nats::connect;
 use crate::spawned_nats::SpawnedNats;
@@ -50,6 +53,10 @@ impl BareFabricNats {
         self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_err()
     }
 
+    pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
+        assert_missing_stream(&self.js, coords, durable).await
+    }
+
     pub async fn shutdown(self) {
         self.nats.shutdown().await;
     }
@@ -64,4 +71,41 @@ impl BareFabricNats {
             .await
             .unwrap_or_else(|e| panic!("create stream {name}: {e}"));
     }
+}
+
+pub async fn assert_missing_stream(
+    js: &jetstream::Context,
+    coords: &EventCoords,
+    durable: &str,
+) -> FabricError {
+    let fabric = Fabric::new(js.clone());
+    fabric
+        .verify_event_durable(coords, durable)
+        .await
+        .expect_err("binding against a missing fixed stream must fail loud, not auto-provision")
+}
+
+pub async fn publish_dead_subject(
+    js: &jetstream::Context,
+    subject: &str,
+    bytes: &[u8],
+) -> PublishErrorKind {
+    let publish = js.publish(subject.to_string(), bytes.to_vec().into()).await;
+    let err = match publish {
+        Ok(ack) => ack
+            .await
+            .expect_err("a publish to the dead grammar must not be acked by any fixed stream"),
+        Err(err) => err,
+    };
+    err.kind().into()
+}
+
+pub async fn raw_message_absent(js: &jetstream::Context, stream: &str, subject: &str) -> bool {
+    let Ok(stream) = js.get_stream(stream).await else {
+        return true;
+    };
+    stream
+        .get_last_raw_message_by_subject(subject)
+        .await
+        .is_err()
 }

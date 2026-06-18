@@ -332,16 +332,54 @@ the lib's own `command_subject` / `event_subject`, so a durable's
 `filter_subjects` is **byte-identical** to what the lib binds — if the lib's
 subject grammar drifts, the durable bind stops matching and the test fails.
 
-- **`FabricTestNats::start()`** — spawn, connect, provision both fixed streams,
-  mint a UUIDv7 `run_id`.
+- **`FabricTestNats::start()`** — spawn its own `nats-server`, connect, provision
+  both fixed streams (**get-or-create**), mint a UUIDv7 `run_id`.
+- **`FabricTestNats::connect(url)`** — attach to an **already-running** NATS and
+  provision the same topology on it (the cross-process / shared-CI-NATS case).
+  `shutdown()` tears down a *spawned* server but is a **no-op when attached** —
+  the harness never kills a NATS it did not start. Every provisioner is
+  get-or-create, so attaching to a shared NATS that already carries the fixed
+  streams / bucket never errors and never wipes them.
 - **`.with_published_language()`** — **get-or-create** the
   `PUBLISHED_LANGUAGE` KV bucket and **never** delete it (the #73 never-wipe fix:
   a published-language bucket is reconcile-no-wipe state, not a per-scenario
   throwaway).
 - **`.with_command_durable(&coords, name)` / `.with_event_durable(&coords, name)`**
-  — a durable whose single filter is the rendered coord subject; assert it with
-  the lib's own `fabric().verify_*_durable(&coords, &durable(name))`.
-- **`.fabric()` / `.url()` / `.jetstream()` / `.client()`** — the live handles.
+  — a durable whose single filter is the rendered coord subject, namespaced
+  `{name}_{run_id}`; assert it with the lib's own
+  `fabric().verify_*_durable(&coords, &durable(name))`. (`provision_*_durable`
+  take a **literal** durable name, bypassing the run namespace — the CLI path,
+  where the name is deterministic across processes.)
+- **`.fabric()` / `.fabric_owned()` / `.url()` / `.jetstream()` / `.client()`** —
+  the live handles. `fabric_owned()` clones the inner `Fabric` so a test never
+  re-wraps `Fabric::new(jetstream().clone())` by hand.
+
+**Typed observation / publish / capture** — a scenario body never needs a raw
+handle:
+
+- **`.capture_events(&[&coords])` / `.capture_commands(&[&coords])`** — a
+  background-drain, correlation-keyed capture (`count()`, `first()`,
+  `for_correlation(id)`, `correlation_ids()`, `stop()`). Both stand on **one**
+  harness-internal ephemeral consumer (deliver-all, ack-none) — the only place
+  the `async-nats` consumer setup lives. `capture_events` binds `INTEGRATION_EVT`,
+  `capture_commands` binds `INTEGRATION_CMD`.
+- **`.await_event(&coords) -> FabricAwaiter`** — wraps the lib's
+  `CorrelatedAwaiter`; `await_correlation(id, deadline) -> Option<CapturedMessage>`.
+  **`.await_command(&coords) -> CommandAwaiter`** is the command-stream counterpart
+  (a harness-internal subscriber — see the lib-gap note below). `CapturedMessage
+  { subject, metadata, payload }` is harness-owned, so no lib bytes type leaks
+  into a test.
+- **KV:** `.pl_publisher::<V>()` / `.pl_reader::<V>()` delegate to the lib's
+  `::open(fabric)`. `.pl_list::<V>(id_from_key)` enumerates a typed map keyed by
+  the id a `fn(&str)->Option<Uuid>` extracts from each key, and `.pl_get_meta()`
+  reads the `identity/_meta` `DirectoryMeta` — both hand-rolled key-scans (the lib
+  reader has no list, see below). `.pl_put_raw(&key, bytes)` is the one
+  raw-bytes hatch, **adversarial-only** (poison-injection to prove fail-closed
+  decode).
+- **Bearer (passport):** `.with_bearer_tokens()` get-or-creates the
+  `bearer_tokens` bucket (namespaced, wipe-free), then `.bearer_seeder() ->
+  BearerSeeder` seeds/revokes `BearerTokenEntry`-typed tokens. `bearer_tokens` is
+  **not** a Fabric bucket — it stays off the Fabric topology by design.
 - **`.durable(logical)` → `"{logical}_{run_id}"`, `.key_prefix()` →
   `KvPrefix("{run_id}/")`** — the per-run namespace, derived from the stable
   `run_id` minted at `start()`, so parallel runs never collide on a durable name
@@ -357,6 +395,13 @@ auto-provisions:
 - **`.with_widened_durable(stream, name, "integration.evt.>")`** returns a
   `WidenedDurable` marker; feeding its `durable` to `verify_event_durable` yields
   `FabricError::FilterMismatch`.
+- **`.assert_missing_stream(&coords, durable) -> FabricError`** binds against an
+  absent fixed stream and returns the `Consume(NoStream)` it fails with;
+  **`.publish_dead_subject(subject, bytes) -> PublishErrorKind`** is the one method
+  that legitimately takes a **raw subject** — it exists to prove a publish to the
+  dead grammar lands on no fixed stream (`NoStream`); **`.raw_message_absent(stream,
+  subject) -> bool`** proves no fixed stream captured it. These replace the
+  consumers that used to reach for `BareFabricNats::jetstream()`.
 - **`BareFabricNats::without_fixed_streams()` / `with_only_command_stream()` /
   `with_only_event_stream()`** start a server **missing** a fixed stream so a lib
   bind against the absent stream fails with `FabricError::Consume`, and
@@ -364,14 +409,73 @@ auto-provisions:
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
 suffix + KV prefix, both derived from the stable `run_id`), so independent
-scenarios coexist on one server without cross-talk. The boundary it does **not** cross: the two **fixed** streams
-(`INTEGRATION_CMD` / `INTEGRATION_EVT`) and the **shared** `PUBLISHED_LANGUAGE`
-bucket are global, frozen names — two real *competing consumers* on the same fixed
-stream race for the same messages. A scenario that asserts a specific consumer
-**receives** a command (rather than only that a durable binds) must run
-`#[serial]`-style: each `FabricTestNats` spawns **its own** NATS server, so the
-isolation is per-process by construction — do **not** point two `FabricTestNats`
-at one URL and expect competing-consumer isolation.
+scenarios coexist on one server — `start()` (own server) **or** `connect(url)`
+(a shared CI/local NATS) — without cross-talk, and **never** wipe the shared
+fixed streams or `PUBLISHED_LANGUAGE` bucket (all provisioning is get-or-create).
+The boundary it does **not** cross: the two **fixed** streams (`INTEGRATION_CMD`
+/ `INTEGRATION_EVT`) and the **shared** `PUBLISHED_LANGUAGE` bucket are global,
+frozen names — two real *competing consumers* on the same fixed stream race for
+the same messages, which no namespacing fixes. A scenario that asserts a specific
+consumer **receives** a command (rather than only that a durable binds) must run
+`#[serial]`-style — point each at its own `start()` server, or serialize the
+group sharing one `connect(url)`.
+
+**The two hand-rolled lib gaps (`br-util-nats-fabric` nice-to-haves):**
+
+- **Command-side await.** The lib's `Fabric::await_event(s)` binds
+  `INTEGRATION_EVT` only, so `capture_commands` / `await_command` keep a
+  harness-internal `INTEGRATION_CMD` consumer (capture) and subject subscriber
+  (await) rather than delegating. A lib generalisation of `await` to the command
+  stream would let the harness drop them.
+- **PL list / enumerate.** `PublishedLanguageReader` exposes only `get(key)` — no
+  `keys()`/`entries()` — so `pl_list` / `pl_get_meta` hand-roll the bucket
+  key-scan. A lib `keys()` / `entries()` on the reader would replace them.
+
+### The `fabric-nats` CLI (`nats-fabric`)
+
+A thin shell over the **same** provisioner, for the polyglot / cross-process
+cases — a non-Rust service's e2e, a docker/Tilt local stack, manual debugging.
+Rust tests use the typed API above; the CLI never re-implements provisioning.
+**Test/dev only — production infra stays declared via GitOps/NACK.**
+
+```
+fabric-nats provision --nats <url> --manifest <path.toml> [--run-id <id>]
+fabric-nats verify    --nats <url> --manifest <path.toml> [--run-id <id>]
+fabric-nats print-subjects        --manifest <path.toml> [--run-id <id>]
+```
+
+- `provision` attaches via `connect(url)`, get-or-creates the durables from coords
+  + the PL bucket, prints the rendered subjects + durable names; idempotent.
+- `verify` binds only (`verify_*_durable`), creates nothing.
+- `print-subjects` renders coords → subjects with **no** NATS contact.
+- `--run-id` suffixes durables (`{durable}_{id}`) for the shared-NATS
+  cross-process case; default is the literal manifest name.
+
+The manifest is **TOML, coords + durable names + a bucket flag only — never a raw
+`subject=` key** (which would re-open the freestyle-subject foot-gun; `subject` is
+a rejected unknown field):
+
+```toml
+[[command_durable]]
+durable = "declare_worker"
+receiver = "identity"
+aggregate = "service_scope"
+verb = "declare"
+version = 1
+
+[[event_durable]]
+durable = "user_projector"
+producer = "identity"
+aggregate = "user"
+fact = "created"
+version = 1
+
+[published_language]
+enabled = true
+```
+
+Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** NATS
+connect fail · **4** verify mismatch (`FilterMismatch`/`NoStream`).
 
 ### The de-flake primitives
 
@@ -472,7 +576,9 @@ here, synthetically:
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `FabricTestNats` binds durables from typed coords, never a subject string | The hand-rolled `NatsEnv` it generalises wrote the declare subject as a `const &str`, so a drift in the lib's subject grammar slipped past the harness. Binding through `command_subject(&coords)` / `event_subject(&coords)` makes the durable's `filter_subjects` byte-identical to what the lib's `Fabric` binds at runtime — drift now breaks the bind, which is the point. |
 | `FabricTestNats::with_published_language()` is get-or-create, never wiped | The `PUBLISHED_LANGUAGE` bucket is **reconcile-no-wipe** state (the #73 fix): a directory consumer folds it and a wipe would replay-from-empty. It is created if absent and otherwise left exactly as found — unlike `recreate_*`, which delete-then-create per-scenario throwaway streams. |
-| `FabricTestNats` namespaces durables/keys but spawns its own server per instance | Durable suffix + KV prefix + correlation isolate *non-competing* scenarios on one server. But the two **fixed** streams and the shared `PUBLISHED_LANGUAGE` bucket are frozen global names — two real competing consumers on one fixed stream race for the same messages, which no namespacing can fix. So each `FabricTestNats` owns its own `SpawnedNats`: a competing-consumer scenario is isolated by process, and the helper deliberately offers no "share one URL" mode that would silently reintroduce the race. |
+| `FabricTestNats` namespaces durables/keys; isolation is per-`SpawnedNats` **or** per-`connect(url)` serial group | Durable suffix + KV prefix + correlation isolate *non-competing* scenarios on one server. But the two **fixed** streams and the shared `PUBLISHED_LANGUAGE` bucket are frozen global names — two real competing consumers on one fixed stream race for the same messages, which no namespacing can fix. So a competing-consumer scenario is isolated by **process** — its own `start()` server — or, on a shared `connect(url)` NATS, by a `#[serial]` group. |
+| `FabricTestNats::start()` *vs* `connect(url)`, and `shutdown()` only kills an `Owned` backing | `start()` owns a `SpawnedNats` (per-process isolation); `connect(url)` attaches to a shared CI/local NATS (the cross-process case the `fabric-nats` CLI drives). All provisioning is **get-or-create** so attaching to a NATS that already carries the fixed streams/bucket neither errors nor wipes — the structural #73 never-wipe fix. `shutdown()` tears down an `Owned` server but is a **no-op when `Attached`**: the harness never kills a NATS it did not start. |
+| `pl_put_raw` is the only raw-bytes KV write, and `publish_dead_subject` the only raw subject | The typed surface (`pl_publisher`/`pl_reader`, coord-driven durables) is drift-proof by construction. Two adversarial holes are kept deliberately and named loud: `pl_put_raw` injects a poison value to prove fail-closed decode, `publish_dead_subject` publishes to a hand-written subject to prove the dead grammar lands on no fixed stream. Both exist *to test the failure*, never as a convenient bypass. |
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. |
 | `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
@@ -495,7 +601,7 @@ transitive deps out of its binary:
 |---|---|---|
 | `nats` | `TestNats`, `await_integration_event`, `recreate_stream`, `recreate_kv` | `async-nats`, `futures-util` |
 | `spawned-nats` | `SpawnedNats` | `tempfile` |
-| `nats-fabric` | `FabricTestNats`, `BareFabricNats`, `RunNamespace`, `WidenedDurable` | `br-util-nats-fabric`, `br-core-integration`, `br-scope-declaration-contract` (+ `nats`, `spawned-nats`) |
+| `nats-fabric` | `FabricTestNats` (+ connect-mode, capture/await, KV, bearer, negative), `BareFabricNats`, `RunNamespace`, `WidenedDurable`, the `fabric-nats` bin | `br-util-nats-fabric`, `br-core-integration`, `br-core-directory`, `br-scope-declaration-contract`, `clap`, `toml` (+ `nats`, `spawned-nats`, `passport`) |
 | `e2e-db` | `E2eDatabase` | `sqlx` |
 | `server` | `TestServer` | `axum`, `reqwest` |
 | `passport` | `PassportBuilder` | `br-core-auth` |
