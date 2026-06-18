@@ -30,6 +30,11 @@ single git tag `v{version}` releases the set. Format follows
 
 - **The workspace pins `br-rust-common` `v1.0.0`** (was `v0.11.1`), across
   `br-test-harness` and every `conformance-*` crate.
+- **`conformance-passport` reads `Passport` through its typed getters** —
+  `actor_id()`, `auth_method()`, `claims()` — instead of destructuring the
+  `Passport::Human` / `Passport::Service` variants. The checks now bind to the
+  stable accessor surface rather than the variant field layout, and the
+  `passport-wire-v1.md` schema reference is stamped at `v1.0.0`.
 
 ## [0.6.0] — 2026-06-15
 
