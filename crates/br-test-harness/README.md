@@ -17,10 +17,15 @@ harness is, today, the single largest entry tax on a new service. This crate pay
 it once.
 
 Unlike a service's local copy, this harness binds to **no project's private
-crate**. It depends on exactly one platform crate — `br-core-auth`, for the
-`Passport` / `X-Passport` codec — and otherwise hands back **raw** `sqlx`,
-`async_nats`, and `reqwest` handles. Any BR service, whatever its own KV or
-persistence abstraction, can inject them.
+crate**. It hands back **raw** `sqlx` and `reqwest` handles for the persistence and
+HTTP channels, so any BR service can inject them whatever its own abstraction. The
+**NATS Fabric** channel is the exception: `br-test-harness` is the **sole crate in
+this workspace that depends on `async-nats`**, and it never leaks a raw JetStream /
+client handle out. Every Fabric consumer — including all six conformance batteries —
+**provisions** through the `fabric-nats` CLI and **observes** through the typed
+`FabricTestNats` surface (capture / await / KV / bearer / negative-path), never a
+bare handle. A conformance crate carrying no `async-nats` dependency *cannot* reach
+for one; that the workspace compiles with the handles unexposed is the proof.
 
 ## What it gives you
 
@@ -350,9 +355,16 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   `fabric().verify_*_durable(&coords, &durable(name))`. (`provision_*_durable`
   take a **literal** durable name, bypassing the run namespace — the CLI path,
   where the name is deterministic across processes.)
-- **`.fabric()` / `.fabric_owned()` / `.url()` / `.jetstream()` / `.client()`** —
-  the live handles. `fabric_owned()` clones the inner `Fabric` so a test never
-  re-wraps `Fabric::new(jetstream().clone())` by hand.
+- **`.fabric()` / `.fabric_owned()` / `.url()`** — the live **typed** handles.
+  `fabric_owned()` clones the inner `Fabric` so a test never re-wraps a raw
+  JetStream context by hand. The raw `async-nats` JetStream / client handles are
+  **not** exposed — `br-test-harness` is the only crate that touches them, and the
+  typed surface below is the sole window onto the Fabric.
+- **`.fixed_streams_present()`** asserts the two fixed streams provisioned;
+  **`.published_language_present()`** / **`.pl_get_raw(&key)`** observe the PL bucket
+  and a single raw value (the attach-without-wipe assertion) without a bare KV store;
+  **`.publish_event_envelope(&coords, bytes)`** publishes an envelope onto the
+  coord's subject for a round-trip, replacing a raw `client().publish(...)`.
 
 **Typed observation / publish / capture** — a scenario body never needs a raw
 handle:
@@ -400,12 +412,18 @@ auto-provisions:
   **`.publish_dead_subject(subject, bytes) -> PublishErrorKind`** is the one method
   that legitimately takes a **raw subject** — it exists to prove a publish to the
   dead grammar lands on no fixed stream (`NoStream`); **`.raw_message_absent(stream,
-  subject) -> bool`** proves no fixed stream captured it. These replace the
-  consumers that used to reach for `BareFabricNats::jetstream()`.
+  subject) -> bool`** proves no fixed stream captured it. These are the typed
+  surface that *replaced* the consumers which used to reach for a raw JetStream
+  handle — which no longer exists on either Fabric type.
 - **`BareFabricNats::without_fixed_streams()` / `with_only_command_stream()` /
   `with_only_event_stream()`** start a server **missing** a fixed stream so a lib
-  bind against the absent stream fails with `FabricError::Consume`, and
-  `published_language_absent()` proves the bucket is not silently created.
+  bind against the absent stream fails with `FabricError::Consume`:
+  `.assert_missing_stream(&event_coords, durable)` /
+  `.assert_missing_command_stream(&command_coords, durable)` return that error
+  through the lib's own `verify_*_durable`, `.command_stream_absent()` proves the
+  command stream is genuinely absent, and `.published_language_absent()` proves the
+  PL bucket is not silently created. `BareFabricNats` exposes **no** raw JetStream
+  handle either.
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
 suffix + KV prefix, both derived from the stable `run_id`), so independent

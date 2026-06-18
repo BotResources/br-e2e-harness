@@ -132,12 +132,37 @@ impl FabricTestNats {
         self.fabric.clone()
     }
 
-    pub fn jetstream(&self) -> &jetstream::Context {
-        &self.js
+    pub async fn publish_event_envelope(&self, coords: &EventCoords, bytes: &[u8]) {
+        let subject = event_subject(coords);
+        self.client
+            .publish(subject, bytes.to_vec().into())
+            .await
+            .expect("publish event envelope onto the fabric");
+        self.client
+            .flush()
+            .await
+            .expect("flush event envelope onto the fabric");
     }
 
-    pub fn client(&self) -> &async_nats::Client {
-        &self.client
+    pub async fn fixed_streams_present(&self) -> bool {
+        self.js.get_stream(INTEGRATION_CMD).await.is_ok()
+            && self.js.get_stream(INTEGRATION_EVT).await.is_ok()
+    }
+
+    pub async fn pl_get_raw(&self, key: &KvKey) -> Option<Vec<u8>> {
+        self.published_language_store()
+            .await
+            .get(key.as_str())
+            .await
+            .unwrap_or_else(|e| panic!("pl_get_raw '{}': {e}", key.as_str()))
+            .map(|bytes| bytes.to_vec())
+    }
+
+    pub async fn published_language_present(&self) -> bool {
+        self.js
+            .get_key_value(br_util_nats_fabric::KV_PUBLISHED_LANGUAGE)
+            .await
+            .is_ok()
     }
 
     pub fn url(&self) -> String {

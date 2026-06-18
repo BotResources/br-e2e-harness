@@ -3,15 +3,13 @@
 use br_scope_declaration_contract::{accepted_event_coords, declare_command_coords};
 use br_test_harness::fabric_nats::BareFabricNats;
 use br_test_harness::{FabricTestNats, WidenedDurable};
-use br_util_nats_fabric::{FabricError, INTEGRATION_CMD, INTEGRATION_EVT};
+use br_util_nats_fabric::{FabricError, INTEGRATION_EVT};
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn start_provisions_the_two_fixed_streams_and_a_filter_identical_durable() {
     let harness = FabricTestNats::start().await;
-    let js = harness.jetstream();
-    assert!(js.get_stream(INTEGRATION_CMD).await.is_ok());
-    assert!(js.get_stream(INTEGRATION_EVT).await.is_ok());
+    assert!(harness.fixed_streams_present().await);
 
     let coords = declare_command_coords().expect("declare command coords");
     let harness = harness
@@ -62,15 +60,11 @@ async fn published_language_is_get_or_create_and_is_never_wiped() {
 #[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn a_missing_fixed_stream_makes_the_lib_bind_fail_loud() {
     let bare = BareFabricNats::with_only_event_stream().await;
-    let fabric = br_util_nats_fabric::Fabric::new(bare.jetstream().clone());
     let coords = declare_command_coords().expect("declare command coords");
 
-    let err = fabric
-        .verify_command_durable(&coords, "absent")
-        .await
-        .expect_err("binding against an absent fixed stream must fail loud, never auto-provision");
+    let err = bare.assert_missing_command_stream(&coords, "absent").await;
     assert!(matches!(err, FabricError::Consume { .. }));
-    assert!(bare.jetstream().get_stream(INTEGRATION_CMD).await.is_err());
+    assert!(bare.command_stream_absent().await);
 
     bare.shutdown().await;
 }

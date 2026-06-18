@@ -1,5 +1,5 @@
 use async_nats::jetstream;
-use br_core_integration::EventCoords;
+use br_core_integration::{CommandCoords, EventCoords};
 use br_util_nats_fabric::{
     Fabric, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, KV_PUBLISHED_LANGUAGE, PublishErrorKind,
 };
@@ -41,10 +41,6 @@ impl BareFabricNats {
         this
     }
 
-    pub fn jetstream(&self) -> &jetstream::Context {
-        &self.js
-    }
-
     pub fn url(&self) -> String {
         self.nats.url()
     }
@@ -53,8 +49,24 @@ impl BareFabricNats {
         self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_err()
     }
 
+    pub async fn command_stream_absent(&self) -> bool {
+        self.js.get_stream(INTEGRATION_CMD).await.is_err()
+    }
+
     pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
         assert_missing_stream(&self.js, coords, durable).await
+    }
+
+    pub async fn assert_missing_command_stream(
+        &self,
+        coords: &CommandCoords,
+        durable: &str,
+    ) -> FabricError {
+        let fabric = Fabric::new(self.js.clone());
+        fabric
+            .verify_command_durable(coords, durable)
+            .await
+            .expect_err("binding a command durable against a missing fixed stream must fail loud")
     }
 
     pub async fn shutdown(self) {

@@ -102,6 +102,25 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
+- **The seal: `async-nats` is confined to `br-test-harness`; the raw JetStream /
+  client handles are removed from the typed surface (#74 complete, phase 2c).**
+  `FabricTestNats::jetstream()` / `client()` and `BareFabricNats::jetstream()` are
+  gone — no Fabric type hands back a raw `async-nats` handle. The last in-harness
+  consumers (the harness's own `fabric_nats` / `fabric_smoke` self-tests) route
+  through new typed observers instead: `fixed_streams_present`,
+  `published_language_present`, `pl_get_raw`, `publish_event_envelope`, and on
+  `BareFabricNats` `command_stream_absent` / `assert_missing_command_stream`. With
+  this, **`br-test-harness` is the sole crate in the workspace that depends on
+  `async-nats`**: every conformance battery provisions via the `fabric-nats` CLI
+  and observes via the typed surface, so none can reach a bare handle — and the
+  workspace compiling with the handles unexposed *is* the completeness proof. This
+  closes #74: connect-mode + get-or-create provisioning, the typed
+  capture/await/KV/bearer/negative surface, the `fabric-nats` bin
+  (provision/verify/print-subjects over a coords-only TOML manifest including the
+  bearer flag), and the six conformance suites standing as the CLI's testbed. The
+  two hand-rolled lib stand-ins remain noted for `br-util-nats-fabric`
+  nice-to-haves: the command-stream `await` and the PL reader `keys()`/`entries()`
+  enumeration that `pl_list` / `pl_get_meta` hand-roll today.
 - **`conformance-scope`, `conformance-identity` and `conformance-nats-fabric`
   provision their NATS topology by spawning the `fabric-nats` CLI, and drop all
   `async-nats` (#74, phase 2a).** Each suite is now the CLI's real-life testbed:

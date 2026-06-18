@@ -35,9 +35,7 @@ async fn capture_await_pl_bearer_round_trip() {
         "payload": { "name": "ada" }
     });
     let bytes = serde_json::to_vec(&env).unwrap();
-    let subject = br_util_nats_fabric::event_subject(&coords);
-    nats.client().publish(subject, bytes.into()).await.unwrap();
-    nats.client().flush().await.unwrap();
+    nats.publish_event_envelope(&coords, &bytes).await;
 
     let hit = awaiter.await_correlation(cid, Duration::from_secs(3)).await;
     assert!(hit.is_some(), "awaiter saw the correlated event");
@@ -78,22 +76,16 @@ async fn connect_mode_attaches_without_wiping() {
         .await
         .with_published_language()
         .await;
-    let store = attached
-        .jetstream()
-        .get_key_value("PUBLISHED_LANGUAGE")
-        .await
-        .unwrap();
     assert!(
-        store.get("identity/users/keep").await.unwrap().is_some(),
+        attached
+            .pl_get_raw(&KvKey::new("identity/users/keep").unwrap())
+            .await
+            .is_some(),
         "attach did not wipe"
     );
     attached.shutdown().await;
     assert!(
-        owner
-            .jetstream()
-            .get_key_value("PUBLISHED_LANGUAGE")
-            .await
-            .is_ok(),
+        owner.published_language_present().await,
         "attached shutdown is a no-op on the owner's server"
     );
     owner.shutdown().await;
