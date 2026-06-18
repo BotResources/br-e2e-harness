@@ -30,6 +30,19 @@ single git tag `v{version}` releases the set. Format follows
 
 - **The workspace pins `br-rust-common` `v1.0.0`** (was `v0.11.1`), across
   `br-test-harness` and every `conformance-*` crate.
+- **`conformance-identity` is migrated onto the Project NATS Fabric.** The
+  declarer now publishes through `br_util_nats_fabric::Fabric::publish_command`
+  with the typed `declare_command_coords()` (the removed
+  `NatsIntegrationPublisher` / `IntegrationPublisherExt` and the freestyle subject
+  builder are gone). `IdentityHarness` provisions the two **fixed** Fabric streams
+  via `FabricTestNats` instead of a per-run `IDENTITY` stream, the confirmation
+  capture binds to `INTEGRATION_EVT`, and the subject derivers render the fixed
+  six-segment grammar (`integration.{cmd,evt}.identity.service_scope.…`) from the
+  contract coords. The frozen Go anchor (`identity-acceptor`) moves to the same
+  fixed grammar so it remains an independent oracle of the v1.0.0 wire. The
+  removed-`SubjectError` and per-run-`stream_name` surface drops accordingly
+  (`AttachTarget` no longer carries `stream_name`; `DEFAULT_STREAM_NAME` →
+  `COMMAND_STREAM_NAME` / `EVENT_STREAM_NAME`).
 
 ## [0.6.0] — 2026-06-15
 

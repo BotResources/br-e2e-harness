@@ -1,4 +1,4 @@
-use br_core_integration::SubjectError;
+use br_util_nats_fabric::CoordError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -7,8 +7,8 @@ pub enum ConformanceError {
     GoUnavailable(String),
     #[error("building the identity-acceptor subject failed: {0}")]
     Build(String),
-    #[error("deriving a contract subject failed: {0}")]
-    Subject(#[from] SubjectError),
+    #[error("deriving the contract coordinates failed: {0}")]
+    Coord(#[from] CoordError),
     #[error("nats jetstream error: {0}")]
     Jetstream(String),
     #[error("publishing a declare command failed: {0}")]

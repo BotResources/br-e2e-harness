@@ -18,7 +18,7 @@ func loadConfig() (config, error) {
 	c := config{
 		natsURL:    getenv("NATS_URL", "nats://127.0.0.1:4222"),
 		httpAddr:   getenv("HTTP_ADDR", ":8080"),
-		streamName: getenv("STREAM_NAME", "IDENTITY"),
+		streamName: getenv("STREAM_NAME", "INTEGRATION_CMD"),
 	}
 
 	enabled, err := parseBool("SCOPE_ACCEPTANCE_ENABLED", true)

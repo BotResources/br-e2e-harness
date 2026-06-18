@@ -12,10 +12,12 @@ br-core-integration = { git = "https://github.com/BotResources/br-rust-common", 
 br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "v1.0.0", version = "1.0.0" }
 br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", package = "br-identity-domain", tag = "v1.0.0", version = "1.0.0" }
 br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v1.0.0", version = "1.0.0" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.0", version = "1.0.0" }
 
 br-test-harness = { path = "../br-test-harness", version = "0.6.0", default-features = false, features = [
     "nats",
     "spawned-nats",
+    "nats-fabric",
 ] }
 
 tokio = { workspace = true }

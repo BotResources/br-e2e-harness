@@ -1,16 +1,16 @@
-use br_core_integration::SubjectError;
-use br_scope_declaration_contract::{accepted_subject, command_subject, rejected_subject};
+use br_scope_declaration_contract::{
+    accepted_event_coords, declare_command_coords, rejected_event_coords,
+};
+use br_util_nats_fabric::{CoordError, command_subject, event_subject};
 
-pub const STREAM_SUBJECTS: &str = "identity.>";
-
-pub fn declare_subject() -> Result<String, SubjectError> {
-    command_subject()
+pub fn declare_subject() -> Result<String, CoordError> {
+    Ok(command_subject(&declare_command_coords()?))
 }
 
-pub fn accepted_event_subject() -> Result<String, SubjectError> {
-    accepted_subject()
+pub fn accepted_event_subject() -> Result<String, CoordError> {
+    Ok(event_subject(&accepted_event_coords()?))
 }
 
-pub fn rejected_event_subject() -> Result<String, SubjectError> {
-    rejected_subject()
+pub fn rejected_event_subject() -> Result<String, CoordError> {
+    Ok(event_subject(&rejected_event_coords()?))
 }
