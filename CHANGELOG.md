@@ -29,7 +29,16 @@ single git tag `v{version}` releases the set. Format follows
 ### Changed
 
 - **The workspace pins `br-rust-common` `v1.0.0`** (was `v0.11.1`), across
-  `br-test-harness` and every `conformance-*` crate.
+  `br-test-harness` and every `conformance-*` crate. This pin is a coordinated
+  migration: under v1.0.0 two sibling crates do **not** yet compile —
+  `conformance-scope` (the `NatsIntegrationPublisher` / `IntegrationPublisherExt`
+  / `SubjectError` and `accepted_subject` / `command_subject` /
+  `rejected_subject` surface is removed in v1.0.0) and `conformance-directory`
+  (`DirectoryPublisher::new` removed, `KnownUser` gained an `extensions` field).
+  Each is its own migration slice. Consequently this branch must land on the
+  `feat/harness-v1.0.0` integration branch — not directly on `main` — and the
+  workspace build stays red until all three slices (`conformance-identity`,
+  `conformance-scope`, `conformance-directory`) have converged there.
 - **`conformance-identity` is migrated onto the Project NATS Fabric.** The
   declarer now publishes through `br_util_nats_fabric::Fabric::publish_command`
   with the typed `declare_command_coords()` (the removed
