@@ -21,9 +21,6 @@ func newDeclarer(js jetstream.JetStream, cfg config, r *readiness) *declarer {
 	return &declarer{js: js, cfg: cfg, readiness: r}
 }
 
-// run performs the boot-time scope-declaration handshake. It blocks until a
-// terminal outcome (Accepted / Rejected) or ctx cancellation. Disabled mode
-// sets readiness UP and returns immediately, publishing nothing.
 func (d *declarer) run(ctx context.Context) error {
 	if !d.cfg.enabled {
 		log.Printf("scope-declaration disabled; readiness UP, publishing nothing")
@@ -40,7 +37,7 @@ func (d *declarer) run(ctx context.Context) error {
 
 	cons, err := d.createAwaiter(ctx)
 	if err != nil {
-		return fmt.Errorf("create awaiter (stream %q must exist — the subject never provisions it): %w", d.cfg.streamName, err)
+		return fmt.Errorf("create awaiter (stream %q must exist — the subject never provisions it): %w", eventStream, err)
 	}
 
 	matches := make(chan jetstream.Msg, 16)
@@ -91,7 +88,7 @@ func (d *declarer) buildCommand(correlationID string) integrationCommand {
 }
 
 func (d *declarer) createAwaiter(ctx context.Context) (jetstream.Consumer, error) {
-	return d.js.CreateConsumer(ctx, d.cfg.streamName, jetstream.ConsumerConfig{
+	return d.js.CreateConsumer(ctx, eventStream, jetstream.ConsumerConfig{
 		FilterSubjects:    []string{subjectAccepted, subjectRejected},
 		DeliverPolicy:     jetstream.DeliverNewPolicy,
 		AckPolicy:         jetstream.AckNonePolicy,
@@ -107,7 +104,6 @@ func (d *declarer) publish(ctx context.Context, body []byte, correlationID strin
 	log.Printf("published declare command correlation_id=%s subject=%s", correlationID, subjectDeclare)
 }
 
-// handleConfirmation returns true when a terminal outcome was reached.
 func (d *declarer) handleConfirmation(msg jetstream.Msg, correlationID string) bool {
 	var probe confirmationProbe
 	if err := json.Unmarshal(msg.Data(), &probe); err != nil {

@@ -57,12 +57,16 @@ async fn spawn_run_is_conformant_against_the_reference_subject() {
 async fn attach_run_flags_wrong_scopes_with_a_diff() {
     let harness = ScopeHarness::start().await.expect("harness");
     let nats_url = harness.nats_url();
-    let stream = harness.stream_name().to_string();
-    let config = SubjectConfig::new(&nats_url, &stream, SERVICE_KEY)
-        .scope_keys(SCOPES)
-        .label_key("label.notifier")
-        .description_key("desc.notifier")
-        .wait_timeout("500ms");
+    let config = SubjectConfig::new(
+        &nats_url,
+        harness.stream_name(),
+        harness.event_stream_name(),
+        SERVICE_KEY,
+    )
+    .scope_keys(SCOPES)
+    .label_key("label.notifier")
+    .description_key("desc.notifier")
+    .wait_timeout("500ms");
     let subject = Subject::spawn(harness.binary(), &config);
     let readyz_url = format!("{}/readyz", subject.base_url());
 
@@ -76,8 +80,6 @@ async fn attach_run_flags_wrong_scopes_with_a_diff() {
                 &nats_url,
                 "--readyz",
                 &readyz_url,
-                "--stream",
-                &stream,
                 "--service-key",
                 SERVICE_KEY,
                 "--scopes",

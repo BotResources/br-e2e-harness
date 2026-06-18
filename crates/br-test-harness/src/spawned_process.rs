@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 #[cfg(feature = "http-client")]
@@ -157,6 +158,47 @@ where
             }
         }
     })
+}
+
+pub fn workspace_bin(name: &str) -> PathBuf {
+    let mut dir = std::env::current_exe().expect("test executable path");
+    dir.pop();
+    if dir.ends_with("deps") {
+        dir.pop();
+    }
+    let bin = dir.join(name);
+    assert!(
+        bin.exists(),
+        "{name} must be built by the workspace at {}",
+        bin.display()
+    );
+    bin
+}
+
+pub async fn spawn_fabric_provision(nats_url: &str, manifest_path: &Path) -> Result<(), String> {
+    let bin = workspace_bin("fabric-nats");
+    let output = run_once(
+        &bin.to_string_lossy(),
+        &[
+            "provision",
+            "--nats",
+            nats_url,
+            "--manifest",
+            &manifest_path.to_string_lossy(),
+        ],
+        &[],
+        Duration::from_secs(30),
+    )
+    .await
+    .map_err(|e| format!("spawning fabric-nats provision: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "fabric-nats provision failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
 }
 
 pub async fn run_once(

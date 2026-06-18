@@ -1,22 +1,18 @@
-use async_nats::jetstream;
-use br_core_integration::{
-    Actor, EventMetadata, IntegrationCommand, IntegrationPublisherExt, NatsIntegrationPublisher,
-    ServiceAccountId,
-};
+use br_core_integration::{Actor, EventMetadata, IntegrationCommand, ServiceAccountId};
 use br_core_scope::DeclareServiceScopes;
-use br_scope_declaration_contract::{VERSION, command_type};
+use br_scope_declaration_contract::{VERSION, command_type, declare_command_coords};
+use br_util_nats_fabric::Fabric;
 use uuid::Uuid;
 
 use crate::error::{ConformanceError, Result};
-use crate::subjects::declare_subject;
 
 pub struct Declarer {
-    js: jetstream::Context,
+    fabric: Fabric,
 }
 
 impl Declarer {
-    pub fn new(js: jetstream::Context) -> Self {
-        Self { js }
+    pub fn new(fabric: Fabric) -> Self {
+        Self { fabric }
     }
 
     pub async fn declare(&self, command: DeclareServiceScopes) -> Result<Uuid> {
@@ -36,11 +32,11 @@ impl Declarer {
             declaring_metadata(correlation_id),
             payload,
         );
-        let subject = declare_subject()?;
-        NatsIntegrationPublisher::new(self.js.clone())
-            .publish_command(&subject, &command)
+        let coords = declare_command_coords()?;
+        self.fabric
+            .publish_command(&coords, &command)
             .await
-            .map_err(|e| ConformanceError::Publish(format!("publish to '{subject}': {e}")))?;
+            .map_err(|e| ConformanceError::Publish(format!("publish declare command: {e}")))?;
         Ok(correlation_id)
     }
 }

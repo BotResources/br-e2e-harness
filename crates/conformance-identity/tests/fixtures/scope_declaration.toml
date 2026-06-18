@@ -1,0 +1,6 @@
+[[command_durable]]
+durable = "identity-acceptor-service-scope"
+receiver = "identity"
+aggregate = "service_scope"
+verb = "declare"
+version = 1

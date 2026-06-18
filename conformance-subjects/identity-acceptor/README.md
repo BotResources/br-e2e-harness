@@ -22,9 +22,9 @@ That document is authoritative; this README only describes how to run the binary
 
 On boot, when enabled:
 
-1. Binds an **ephemeral** pull consumer (`DeliverPolicy=New`, `AckPolicy=None`,
-   filtered to `identity.cmd.service_scope.declare.v1`) on `STREAM_NAME`, then sets
-   `/readyz` **200**.
+1. Binds a **durable** pull consumer (`DeliverPolicy=All`, `AckPolicy=Explicit`,
+   filtered to `integration.cmd.identity.service_scope.declare.v1`) on the fixed
+   `INTEGRATION_CMD` stream, then sets `/readyz` **200**.
 2. For each declare command, decodes it and **judges** it against an in-memory
    `scope_key → owning_service` registry that **persists across declarations**,
    applying the same rules and precedence as the real
@@ -37,18 +37,20 @@ On boot, when enabled:
      `scope_owned_by_another_service`;
    - a re-declaration by the same owner is an **idempotent accept**.
 3. On accept: registers all scopes and publishes
-   `identity.evt.service_scope.accepted.v1` (`{"service":"<key>"}`), **echoing the
-   command's `correlation_id`**. On reject: registers nothing and publishes
-   `identity.evt.service_scope.rejected.v1` (`{"service":"<key>","reason":{…}}`),
-   echoing the `correlation_id`.
+   `integration.evt.identity.service_scope.accepted.v1` (`{"service":"<key>"}`),
+   **echoing the command's `correlation_id`**. On reject: registers nothing and
+   publishes `integration.evt.identity.service_scope.rejected.v1`
+   (`{"service":"<key>","reason":{…}}`), echoing the `correlation_id`.
 
 Disabled mode (`SCOPE_ACCEPTANCE_ENABLED=false`): consumes nothing, `/readyz` is
 **200** immediately. `/livez` is always **200**.
 
-**The subject does NOT create the JetStream stream** (the platform never
-auto-provisions). The stream named by `STREAM_NAME` must already exist and must
-capture the declare subject and both event subjects (e.g. subjects `identity.>`).
-If it is missing, the consumer fails and `/readyz` stays 503.
+**The subject does NOT create the JetStream streams** (the platform never
+auto-provisions). The fixed `INTEGRATION_CMD` and `INTEGRATION_EVT` streams must
+already exist: `INTEGRATION_CMD` must capture the declare subject
+(`integration.cmd.>`) and `INTEGRATION_EVT` both event subjects
+(`integration.evt.>`). If `INTEGRATION_CMD` is missing, the consumer fails and
+`/readyz` stays 503.
 
 There is **no seeding via env** — the registry is black-box state. The runner seeds
 an ownership context by driving a prior accepted declaration.
@@ -59,7 +61,6 @@ an ownership context by driving a prior accepted declaration.
 |---|---|---|---|
 | `NATS_URL` | no | `nats://127.0.0.1:4222` | JetStream-enabled NATS URL |
 | `HTTP_ADDR` | no | `:8080` | bind addr for `/readyz` + `/livez` |
-| `STREAM_NAME` | no | `IDENTITY` | stream to consume the command from / publish events to (must already exist) |
 | `SCOPE_ACCEPTANCE_ENABLED` | no | `true` | `false` ⇒ disabled mode (consume nothing, ready immediately) |
 
 ## Build & run
@@ -68,10 +69,9 @@ an ownership context by driving a prior accepted declaration.
 # build
 go build -o identity-acceptor .      # or: make build
 
-# run against a local JetStream NATS with a pre-created IDENTITY stream
+# run against a local JetStream NATS with pre-created INTEGRATION_CMD / INTEGRATION_EVT streams
 NATS_URL=nats://127.0.0.1:4222 \
 HTTP_ADDR=127.0.0.1:8080 \
-STREAM_NAME=IDENTITY \
 ./identity-acceptor
 ```
 

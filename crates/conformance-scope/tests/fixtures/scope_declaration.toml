@@ -1,0 +1,20 @@
+[[command_durable]]
+durable = "scope_declare_consumer"
+receiver = "identity"
+aggregate = "service_scope"
+verb = "declare"
+version = 1
+
+[[event_durable]]
+durable = "scope_accepted_consumer"
+producer = "identity"
+aggregate = "service_scope"
+fact = "accepted"
+version = 1
+
+[[event_durable]]
+durable = "scope_rejected_consumer"
+producer = "identity"
+aggregate = "service_scope"
+fact = "rejected"
+version = 1

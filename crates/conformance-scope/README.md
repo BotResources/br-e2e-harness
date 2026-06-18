@@ -10,6 +10,24 @@ handshake exactly as the platform requires.
 > It builds and spawns a real binary, stands up a real `nats-server`, and plays
 > the Identity side of the handshake on an isolated, throwaway test network.
 
+> **Wire — v1.0.0 `integration.*` grammar, migrated on both sides.**
+> The Rust runner and `FabricTestNats` provision the two fixed streams
+> `INTEGRATION_CMD` (`integration.cmd.>`, where the declare lands) and
+> `INTEGRATION_EVT` (`integration.evt.>`, where both confirmations land), the
+> acceptor publishes confirmations via the real `Fabric`, and `SubjectConfig`
+> carries **both** stream names (injected to the subject as `COMMAND_STREAM_NAME`
+> / `EVENT_STREAM_NAME`). The **Go anchor**
+> (`conformance-subjects/scope-service`) freezes the same v1.0.0 wire as
+> constants in `wire.go` — `integration.cmd.identity.service_scope.declare.v1` /
+> `integration.evt.identity.service_scope.{accepted,rejected}.v1` and the
+> `INTEGRATION_EVT` confirmation stream — and performs the two-stream split
+> (publish the declare onto `INTEGRATION_CMD` by subject, await confirmations on
+> `INTEGRATION_EVT`). The anchor freezes these names independently of the lib
+> (the env injection is the runner's, not the anchor's, contract). The
+> `#[ignore]`-gated real-infra tests in `tests/conformance.rs` run in the
+> `infra-e2e` CI job against a real `nats-server` (lib-as-oracle / Go-as-anchor:
+> the Go side freezes the wire independently of the lib).
+
 ## What it proves — and why this is a backward-compat anchor
 
 The runner's fake acceptor plays the Identity side **at the wire level, using the
@@ -75,11 +93,13 @@ binary by reusing the helpers, not just the tests:
 - `Subject` / `SubjectConfig` — spawn the built binary with its env wiring and
   poll `/readyz` / `/livez` (status, and `readyz_body()` for the rejection
   reason S4 corroborates).
-- `create_handshake_stream`, and the three subject derivers
-  (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`),
-  read from `br-scope-declaration-contract` rather than hardcoded — so a subject
-  drift in `br-rust-common` diverges from the frozen Go wire fixture and the
-  battery goes red.
+- The three subject derivers
+  (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`)
+  render the typed `br-scope-declaration-contract` coordinates through the
+  `br-util-nats-fabric` Fabric rather than hardcoding strings — so a subject drift
+  in `br-rust-common` diverges from the frozen Go wire fixture and the battery goes
+  red. The fixed `INTEGRATION_CMD` / `INTEGRATION_EVT` streams are provisioned by
+  the harness via `FabricTestNats`.
 
 ## The single-implementation check API
 
@@ -111,11 +131,14 @@ Both stand up a `CheckContext` and call the same checks; they differ only in how
 the dependencies are obtained.
 
 - `run_spawn(SpawnTarget { binary }, expected, behavior, scenarios, timeout)` —
-  the convenience mode. Stands up a throwaway `SpawnedNats`, creates the
-  handshake stream, and launches the subject binary with the env contract
-  (`SERVICE_KEY`, `SCOPE_KEYS`, `PLATFORM_ONLY`, `SCOPE_DECLARATION_ENABLED`, …).
-  Runs the full `s1..s6` default because it controls the subject's config and
-  lifecycle. Needs `nats-server` on `PATH`.
+  the convenience mode. Stands up a throwaway `FabricTestNats`, provisions the
+  two fixed handshake streams (`INTEGRATION_CMD` / `INTEGRATION_EVT`), and
+  launches the subject binary with the env contract (`COMMAND_STREAM_NAME`,
+  `EVENT_STREAM_NAME`, `SERVICE_KEY`, `SCOPE_KEYS`, `PLATFORM_ONLY`,
+  `SCOPE_DECLARATION_ENABLED`, …). Runs the full `s1..s6` default because it
+  controls the subject's config and lifecycle. Needs `nats-server` on `PATH`.
+  The Go anchor freezes the v1.0.0 `integration.*` subjects and the
+  `INTEGRATION_EVT` stream as constants, so this mode runs green against v1.0.0.
 - `run_attach(AttachTarget { nats_url, readyz_url, stream_name }, expected,
   behavior, scenarios, timeout)` — the primary mode, with **zero host runtime
   deps**: it connects to an already-running service's NATS and polls its
@@ -144,6 +167,14 @@ without infra:
 cargo test -p conformance-scope --test conformance -- --ignored
 ```
 
+The suite **provisions the scope-declaration handshake topology by spawning the
+`fabric-nats` CLI** (`fabric-nats provision --manifest
+tests/fixtures/scope_declaration.toml`) — the conformance suite is the CLI's
+real-life testbed. The crate carries **no `async-nats` dependency**: the declare
+capture is a thin typed view over the harness `CommandCapture`, the acceptor
+publishes accept/reject through a `Fabric`, and attach mode connects via
+`FabricTestNats::connect`.
+
 CI runs it in the `infra-e2e` job — which now additionally requires **`go`** on
 the runner (alongside `nats-server`), to build the conformance subject.
 
@@ -151,11 +182,11 @@ the runner (alongside `nats-server`), to build the conformance subject.
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
 crates.io). Keep its `br-rust-common` tag identical to `br-test-harness`'s
-(`v0.11.1`) so Cargo resolves a single source and never duplicates `br-core-*`:
+(`v1.0.1`) so Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.6.0" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.0" }
 ```
 
 ## Why — the non-obvious bits
@@ -167,7 +198,7 @@ conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", ta
 | `DeclareCapture` uses `DeliverPolicy::All` on the declare-capture | Attach mode attaches the capture **after** the subject's boot declare is already on the stream; replay is the only way to catch it. `New` would skip that first declare and only converge on the ~10s re-publish, making the gate slow. The declarer's own confirmation awaiter still uses `New` (a confirmation pre-published before its consumer exists is missed), which is why `accept`/`reject` publish only after the subject is up. |
 | Capture buffers via a lenient `correlation_id`-only probe, while `decode()` uses the strict real type | The buffer must record every declare to count re-publishes and read the id to echo it — that only needs the correlation_id, exactly as the real awaiter's `CorrelationProbe`. The conformance verdict (S1) is the separate, strict `decode()` against the real envelope + payload. Splitting them keeps the shape check honest without making the buffer depend on a conformant payload. |
 | The Go build uses `go build -C <dir>` | `br_test_harness::run_once` sets env but not the child's working directory; `-C` builds the package without depending on cwd, race-free under parallel `cargo test`. |
-| The stream is created by the runner, not the subject | The platform never auto-provisions (fail-loud); the subject does `get_stream`, so the harness owns stream setup. `identity.>` captures the declare command **and** both event subjects — the declare must be captured because the declarer awaits its publish ack. |
+| The streams are created by the runner, not the subject | The platform never auto-provisions (fail-loud); the subject does `get_stream`, so the harness owns stream setup. `FabricTestNats` provisions the two fixed streams — `INTEGRATION_CMD` (`integration.cmd.>`, the declare command) and `INTEGRATION_EVT` (`integration.evt.>`, both confirmations) — because the declarer awaits its publish ack and a missing stream fails the publish. |
 | The Go binary is built to a unique temp path per call | Each test builds its own subject; a shared output path would race under parallel `cargo test`. |
 | The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + `go` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
 | S4 reads the `/readyz` **body** before asserting no more declares | "It went quiet" alone is satisfiable by a reject that was never delivered. The subject writes `scope declaration rejected: <code>` into its `/readyz` body, so matching that body (the code is the real `ScopeDeclarationError` Display, not a literal) positively proves the reject was received and processed — only then is the tight `== count_at_reject` (no `+1` slack) sound. |

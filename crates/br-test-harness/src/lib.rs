@@ -1,6 +1,8 @@
 pub mod spawned_process;
 pub mod wait;
 
+#[cfg(feature = "nats-fabric")]
+pub mod fabric_nats;
 #[cfg(feature = "nats")]
 pub mod nats;
 #[cfg(feature = "nats")]
@@ -23,9 +25,18 @@ pub mod verdict;
 #[cfg(feature = "ws")]
 pub mod ws;
 
-pub use spawned_process::{BootOutcome, SpawnedProcess, run_once};
+pub use spawned_process::{
+    BootOutcome, SpawnedProcess, run_once, spawn_fabric_provision, workspace_bin,
+};
 pub use wait::wait_until;
 
+#[cfg(feature = "nats-fabric")]
+pub use fabric_nats::{
+    BEARER_BUCKET, BareFabricNats, BearerSeedError, BearerSeeder, CapturedMessage, CommandAwaiter,
+    CommandCapture, EventCapture, FabricAwaiter, FabricKvError, FabricTestNats, Manifest,
+    ManifestError, NatsBacking, Rendered, RenderedCommand, RenderedEvent, RunNamespace,
+    SeededToken, WidenedDurable, unknown_bearer,
+};
 #[cfg(feature = "nats")]
 pub use nats::TestNats;
 #[cfg(feature = "nats")]

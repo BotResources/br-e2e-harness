@@ -2,7 +2,7 @@ use crate::endpoint::Resolution;
 use crate::error::Result;
 use crate::outcome::CheckOutcome;
 use crate::scenario::Scenario;
-use crate::seed::unknown_bearer;
+use br_test_harness::unknown_bearer;
 
 use super::CheckContext;
 

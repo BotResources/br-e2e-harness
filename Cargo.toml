@@ -4,6 +4,7 @@ members = [
     "crates/br-test-harness",
     "crates/conformance-directory",
     "crates/conformance-identity",
+    "crates/conformance-nats-fabric",
     "crates/conformance-passport",
     "crates/conformance-scope",
     "crates/conformance-scope-cli",
@@ -11,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"

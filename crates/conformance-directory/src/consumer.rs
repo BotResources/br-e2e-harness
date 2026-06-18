@@ -1,5 +1,8 @@
 use br_core_directory::DirectoryMeta;
-use br_util_directory::{DirectoryProjector, DirectorySnapshot, KnownUser, migrate};
+use br_util_directory::{
+    DirectoryProjector, DirectorySnapshot, KnownUser, PersistedExtensions, migrate,
+};
+use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -31,12 +34,12 @@ async fn consumer_reads_users_inner(
     snapshot: &DirectorySnapshotWire,
 ) -> Result<CheckOutcome> {
     let source = AnchorSource::from_snapshot(snapshot)?;
-    publish_snapshot(harness.store(), &source).await?;
+    publish_snapshot(harness.fabric(), &source).await?;
     migrate(db.pool())
         .await
         .map_err(|e| ConformanceError::Directory(format!("migrate: {e}")))?;
 
-    let projector = DirectoryProjector::new(harness.store().clone(), db.pool().clone());
+    let projector = DirectoryProjector::new(harness.fabric().clone(), db.pool().clone());
     let manifest = projector
         .reconcile()
         .await
@@ -74,12 +77,10 @@ async fn consumer_reads_users_inner(
         }
     }
 
-    let projector_after = DirectoryProjector::new(harness.store().clone(), db.pool().clone());
-    harness
-        .store()
-        .delete(&br_core_directory::user_kv_key(*expected_id))
-        .await
-        .map_err(|e| ConformanceError::Jetstream(format!("retract user: {e}")))?;
+    let projector_after = DirectoryProjector::new(harness.fabric().clone(), db.pool().clone());
+    let mut retracted = source.clone();
+    retracted.drop_user(expected_id);
+    publish_snapshot(harness.fabric(), &retracted).await?;
     let manifest = projector_after
         .reconcile()
         .await
@@ -135,11 +136,11 @@ async fn consumer_reads_groups_inner(
     };
     let member = group.member_ids[0];
 
-    publish_snapshot(harness.store(), &source).await?;
+    publish_snapshot(harness.fabric(), &source).await?;
     migrate(db.pool())
         .await
         .map_err(|e| ConformanceError::Directory(format!("migrate: {e}")))?;
-    let projector = DirectoryProjector::new(harness.store().clone(), db.pool().clone());
+    let projector = DirectoryProjector::new(harness.fabric().clone(), db.pool().clone());
     let manifest = projector
         .reconcile()
         .await
@@ -192,20 +193,23 @@ async fn consumer_reads_groups_inner(
     ))
 }
 
+type KnownUserRow = (Uuid, String, Option<String>, Option<String>, Value);
+
 async fn load_snapshot(pool: &PgPool, manifest: &DirectoryMeta) -> Result<DirectorySnapshot> {
     let mut snapshot = DirectorySnapshot::new(manifest);
 
-    let users: Vec<(Uuid, String, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT user_id, email, first_name, last_name FROM known_users")
+    let users: Vec<KnownUserRow> =
+        sqlx::query_as("SELECT user_id, email, first_name, last_name, extensions FROM known_users")
             .fetch_all(pool)
             .await
             .map_err(|e| ConformanceError::Postgres(format!("read known_users: {e}")))?;
-    for (user_id, email, first_name, last_name) in users {
+    for (user_id, email, first_name, last_name, extensions) in users {
         snapshot.upsert_user(KnownUser {
             user_id,
             email,
             first_name,
             last_name,
+            extensions: PersistedExtensions::from_value(extensions),
         });
     }
 

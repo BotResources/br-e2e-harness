@@ -7,7 +7,307 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
-## [0.6.0] — 2026-06-15
+## 1.0.0
+
+### Added
+
+- **`br-test-harness` — `FabricTestNats` connect-mode + the typed
+  observation/publish/capture surface + the `fabric-nats` bin (#74, phase 1).**
+  The Fabric provisioner gains `connect(url)` (attach to an already-running NATS,
+  alongside `start()` which spawns its own) backed by a `NatsBacking { Owned |
+  Attached }` so `shutdown()` only tears down a server the harness started — it
+  never kills a shared NATS. **All provisioning is get-or-create** (fixed streams,
+  PL bucket, bearer bucket), the structural fix for the #73 shared-bucket-wipe
+  class. A typed surface so a test body never needs a raw handle: `fabric_owned()`,
+  `capture_events` / `capture_commands` (background-drain, correlation-keyed:
+  `count`/`first`/`for_correlation`/`correlation_ids`/`stop`, on one
+  harness-internal consumer), `await_event` (wraps the lib `CorrelatedAwaiter`) +
+  `await_command` (the command-stream counterpart), `pl_publisher` / `pl_reader`
+  (delegate to the lib), `pl_list` / `pl_get_meta` (hand-rolled key-scans —
+  `PublishedLanguageReader` has no list), `pl_put_raw` (the adversarial raw hatch),
+  `with_bearer_tokens` + `bearer_seeder` (`BearerSeeder` moved in from
+  `conformance-passport`, typed on `BearerTokenEntry`), and the negative methods
+  `assert_missing_stream` / `publish_dead_subject` / `raw_message_absent`. A new
+  `fabric-nats` bin (`required-features = ["nats-fabric"]`) is a thin shell over
+  the same provisioner — `provision` / `verify` / `print-subjects` over a TOML
+  manifest that speaks coords + durable names + a bucket flag, **never a raw
+  subject** (exit codes 0/2/3/4). `CapturedMessage`, `FabricKvError`,
+  `BearerSeedError` and `ManifestError` are harness-owned; the lib's
+  `jetstream()` / `client()` handles stay public for now (phase-2 seal demotes
+  them). The two hand-rolled lib gaps (command-side `await`, reader `keys()`) are
+  noted for `br-util-nats-fabric` nice-to-haves.
+- **`fabric-nats` manifest gains a `[bearer_tokens] enabled` flag (#74, phase 2b).**
+  Additive, alongside `[published_language]`: when set, `provision` calls
+  `with_bearer_tokens()` to get-or-create the `bearer_tokens` KV bucket and prints
+  `kv bearer_tokens`. This lets a passport suite — which uses only the bearer bucket,
+  not the Fabric streams — provision through the same CLI handshake as every other
+  suite, with no in-binary special-casing. Exit codes and all other behavior are
+  unchanged.
+- **`conformance-directory` — extension, copy-filter and `UsersOnly` Cx
+  scenarios (#77, #78).** Four new directory checks drive the real
+  `br-util-directory` consumer kit (`DirectoryProjector::with_config`) against
+  real NATS KV + real Postgres: **C3** proves an extracted extension survives the
+  projection into `known_users.extensions` losslessly (`extract_user_extensions`);
+  **C4** proves a user passing `filter_users` is projected, then **orphan-deleted**
+  on republish when it fails the filter (the copy filter is re-evaluated, a flip
+  retracts); **C5** proves a `ConsumptionScope::UsersOnly` consumer against a
+  schema that **lacks** the group tables reconciles + watches cleanly and emits no
+  group DML — the missing `known_groups` / `known_user_group` turn any stray group
+  write into a hard error, so the scope genuinely narrows the projection. **W6**
+  (offline) proves an extensions map shadowing a reserved core key is rejected at
+  `PublishedUser` construction with `DirectoryError::ReservedExtensionKey`
+  (fail-closed), never a silent overwrite. New public helpers
+  (`extension_survives_projection`, `filter_flip_orphan_deletes`,
+  `users_only_narrows_projection`, `reserved_key_rejected`) and a
+  `ConsumerDb::apply_users_only_schema` / `group_tables_exist` schema variant; the
+  C3/C4/C5 real-infra checks are `#[ignore]`-gated per the existing convention.
+- **`FabricTestNats` — a typed, drift-proof NATS Fabric provisioner** (new
+  `nats-fabric` feature). It generalises the hand-rolled `NatsEnv` that every
+  Fabric service used to copy into `tests/common/mod.rs`: `start()` spawns a
+  per-process `SpawnedNats`, provisions the two **fixed** Fabric streams
+  (`INTEGRATION_CMD` → `integration.cmd.>`, `INTEGRATION_EVT` →
+  `integration.evt.>`), mints a UUIDv7 `run_id`, and hands back a ready `Fabric`.
+  Durables are bound from **typed `CommandCoords` / `EventCoords`** through the
+  lib's own `command_subject` / `event_subject`, so a durable's `filter_subjects`
+  is byte-identical to what the lib binds — subject-grammar drift now breaks the
+  bind. `.with_published_language()` is **get-or-create, never wiped** (the #73
+  never-wipe posture). `.durable(logical)`, `.key_prefix()` and `.correlation()`
+  namespace each run. **Negative-path helpers are first-class**:
+  `.with_widened_durable(...)` proves `FabricError::FilterMismatch`, and
+  `BareFabricNats::{without_fixed_streams, with_only_command_stream,
+  with_only_event_stream}` start a server missing a fixed stream / the bucket to
+  prove the lib bind fails loud and never auto-provisions.
+- **`conformance-nats-fabric` — black-box conformance for the NATS Fabric** (#76):
+  a new crate driving `br-util-nats-fabric` v1.0.0 against real NATS via
+  `FabricTestNats`, anchored by a new **independent Go subject renderer** in
+  `conformance-subjects/nats-fabric` (lib-as-oracle / Go-as-anchor; a `make
+  guard` fails the anchor build if the dead `identity.cmd.`/`identity.evt.`
+  grammar reappears). It proves: a **widened durable** is rejected with
+  `FabricError::FilterMismatch`; a **missing fixed stream** makes the bind fail
+  loud (no auto-provision); the anchor's rendered subjects match the lib's
+  `command_subject`/`event_subject` **byte-for-byte**; the **dead `identity.*`
+  grammar fails loud** (publish lands on no fixed stream, no `INTEGRATION_*`
+  stream captures it); and for the published-language KV — `retract`
+  orphan-deletes, `reconcile` converges drift, `bootstrap` is parallel-safe
+  under a running `watch`, and a malformed value **fails closed naming the
+  offending key**. Real-infra tests are `#[ignore]`-gated per the harness
+  convention.
+- **The three new real-infra batteries are wired into CI.** The `infra-e2e` job
+  now runs `conformance-nats-fabric`, `conformance-passport` and
+  `conformance-directory` with `-- --ignored` (directory at `--test-threads=1`,
+  it provisions a throwaway role + database per Cx check), alongside the existing
+  `br-test-harness` / `conformance-scope` / `conformance-scope-cli` /
+  `conformance-identity` steps. The README "CI covers this" claims on those three
+  crates are now enforced, not documentary.
+
+### Changed
+
+- **`br-test-harness` gains `workspace_bin(name)` + `spawn_fabric_provision(url,
+  manifest)`; the four conformance crates stop hand-rolling the binary locator.**
+  `workspace_bin` derives the built binary's path from `current_exe()` (pop, then
+  pop a `deps/` layer) instead of guessing `../../target/<profile>/` from a
+  `cfg!(debug_assertions)` profile — which broke under a custom `CARGO_TARGET_DIR`,
+  a `--release` test run, or a relocated `target`. `spawn_fabric_provision` hoists
+  the provision-spawn body (locate `fabric-nats`, `run_once`, status check) that
+  `conformance-{scope,identity,passport,directory}` each duplicated; every
+  `provision.rs` now keeps only its thin `map_err` into its own
+  `ConformanceError`. The `conformance-nats-fabric` test binary-locator routes
+  through `workspace_bin` too. Both helpers are always-compiled (std + `tokio`).
+- **`fabric_nats::subscribe_command` (was `await_command_consumer`).** Internal
+  rename only — the function is module-private to the Fabric capture path and was
+  never re-exported; the public `await_command` / `CommandAwaiter` surface is
+  unchanged. The name no longer implies a JetStream consumer: it opens a core-NATS
+  `Subscriber` (no replay), because the lib's awaiter binds `INTEGRATION_EVT` only.
+- **The seal: `async-nats` is confined to `br-test-harness`; the raw JetStream /
+  client handles are removed from the typed surface (#74 complete, phase 2c).**
+  `FabricTestNats::jetstream()` / `client()` and `BareFabricNats::jetstream()` are
+  gone — no Fabric type hands back a raw `async-nats` handle. The last in-harness
+  consumers (the harness's own `fabric_nats` / `fabric_smoke` self-tests) route
+  through new typed observers instead: `fixed_streams_present`,
+  `published_language_present`, `pl_get_raw`, `publish_event_envelope`, and on
+  `BareFabricNats` `command_stream_absent` / `assert_missing_command_stream`. With
+  this, **`br-test-harness` is the sole crate in the workspace that depends on
+  `async-nats`**: every conformance battery provisions via the `fabric-nats` CLI
+  and observes via the typed surface, so none can reach a bare handle — and the
+  workspace compiling with the handles unexposed *is* the completeness proof. This
+  closes #74: connect-mode + get-or-create provisioning, the typed
+  capture/await/KV/bearer/negative surface, the `fabric-nats` bin
+  (provision/verify/print-subjects over a coords-only TOML manifest including the
+  bearer flag), and the six conformance suites standing as the CLI's testbed. The
+  two hand-rolled lib stand-ins remain noted for `br-util-nats-fabric`
+  nice-to-haves: the command-stream `await` and the PL reader `keys()`/`entries()`
+  enumeration that `pl_list` / `pl_get_meta` hand-roll today.
+- **`conformance-scope`, `conformance-identity` and `conformance-nats-fabric`
+  provision their NATS topology by spawning the `fabric-nats` CLI, and drop all
+  `async-nats` (#74, phase 2a).** Each suite is now the CLI's real-life testbed:
+  it spawns `fabric-nats provision --manifest <crate>/tests/fixtures/*.toml`
+  against the harness URL (a TOML manifest of coords + durable names + a
+  `[published_language] enabled` flag, never a raw subject), then drives and
+  observes the run through the frozen typed `FabricTestNats` surface only —
+  `fabric_owned()`, `capture_events` / `capture_commands`, `pl_reader` /
+  `pl_publisher` / `pl_put_raw`, and `assert_missing_stream` /
+  `publish_dead_subject` / `raw_message_absent`. The three crates no longer depend
+  on `async-nats` (nor the now-unused `futures-util`): their hand-rolled
+  `DeclareCapture` / `ConfirmationCapture` consumers become thin typed views over
+  the harness `CommandCapture` / `EventCapture`, the acceptor publisher takes a
+  `&Fabric` instead of a raw `jetstream::Context`, and attach-mode runners connect
+  via `FabricTestNats::connect`. `grep -rn async_nats` over the three crates is
+  empty. The directory/passport suites still use the public raw handles
+  (untouched here; the handle demotion is the phase-2c seal).
+- **`conformance-directory` and `conformance-passport` provision via the
+  `fabric-nats` CLI and drop all `async-nats` (#74, phase 2b).** Both suites now
+  follow the phase-2a pattern: they spawn `fabric-nats provision --manifest
+  <crate>/tests/fixtures/*.toml` against the harness URL and drive the run through
+  the frozen typed `FabricTestNats` surface only. `conformance-directory`'s
+  `read_users` / `read_groups` / `read_meta` re-home onto `pl_list` / `pl_get_meta`
+  (no more raw `kv::Store` key-scan), `DirectoryHarness` drops its held `kv::Store`
+  and CLI-provisions the `PUBLISHED_LANGUAGE` bucket (`[published_language]`
+  manifest), and the C1 user-retract step orphan-deletes through a
+  `DirectoryPublisher` reconcile instead of a raw `store().delete()` — same
+  observable KV effect, via the typed publisher. `conformance-passport` deletes its
+  local `BearerSeeder` (the harness owns it since phase 1), CLI-provisions the
+  `bearer_tokens` bucket (`[bearer_tokens]` manifest), and seeds/revokes through
+  `FabricTestNats::with_bearer_tokens()` + `bearer_seeder()`. Both crates drop
+  `async-nats` (directory also `futures-util`, passport also `serde_json`);
+  `grep -rn async_nats` over both is empty. The remaining public raw handles are
+  untouched — their demotion is the phase-2c seal.
+- **The dead-grammar guard is enforced on the real test path.** `build_anchor` /
+  `build_subject` in `conformance-nats-fabric`, `conformance-identity` and
+  `conformance-scope` now run `make -C <anchor-dir> guard` before `go build` and
+  fail loud (surfacing stdout+stderr) on a hit, so the `make guard` grep for the
+  dead pre-v1 `identity.cmd.`/`identity.evt.` grammar actually runs whenever the
+  anchor is built — previously it was bypassed by the direct `go build` call.
+- **C5 (`users_only_narrows_projection`) now proves *live* narrowing.** It runs
+  `DirectoryProjector::watch()` as a concurrent task, publishes a fresh user
+  (absent from the initial snapshot) into the Published-Language bucket while the
+  watch runs, then asserts that user's row appears in `known_users` within a
+  bounded deadline **and** the group tables still do not exist — turning a
+  watch-timeout-as-success placeholder into a real live-PUT proof. Because the
+  directory keys are slash-delimited, this also exercises `br-rust-common`
+  v1.0.1's `watch_all` + client-side prefix filter on real NATS, making C5 a
+  regression gate for that fix. New `publish_added_user` helper in
+  `publish_fixture`.
+
+- **The workspace pins `br-rust-common` `v1.0.1`** (was `v1.0.0`), across
+  `br-test-harness` and every `conformance-*` crate. v1.0.1 fixes the
+  `br-util-nats-fabric` prefix-`watch` watch-subject so that incremental `watch`
+  over slash-delimited directory keys delivers live puts on a real `nats-server`.
+  `prefix_watch_does_not_deliver_slash_keyed_directory_puts` is renamed to
+  `prefix_watch_delivers_slash_keyed_directory_puts` and its assertion is flipped
+  (was `!delivered`; now `delivered`) — the limitation is resolved, not
+  worked around.
+- **The workspace pins `br-rust-common` `v1.0.0`** (was `v0.11.1`), across
+  `br-test-harness` and every `conformance-*` crate. This pin is a coordinated
+  migration: under v1.0.0 the `conformance-identity`, `conformance-scope` and
+  `conformance-directory` crates each move onto the new surfaces in their own
+  migration slice (the `NatsIntegrationPublisher` / `IntegrationPublisherExt` /
+  `SubjectError` and `accepted_subject` / `command_subject` / `rejected_subject`
+  surface is removed in v1.0.0; `DirectoryPublisher::new` is removed and
+  `KnownUser` gained an `extensions` field). The slices converge on the
+  `feat/harness-v1.0.0` integration branch — not directly on `main`.
+- **`conformance-passport` reads `Passport` through its typed getters** —
+  `actor_id()`, `auth_method()`, `claims()` — instead of destructuring the
+  `Passport::Human` / `Passport::Service` variants. The checks now bind to the
+  stable accessor surface rather than the variant field layout, and the
+  `passport-wire-v1.md` schema reference is stamped at `v1.0.0`.
+- **`conformance-identity` is migrated onto the Project NATS Fabric.** The
+  declarer now publishes through `br_util_nats_fabric::Fabric::publish_command`
+  with the typed `declare_command_coords()` (the removed
+  `NatsIntegrationPublisher` / `IntegrationPublisherExt` and the freestyle subject
+  builder are gone). `IdentityHarness` provisions the two **fixed** Fabric streams
+  via `FabricTestNats` instead of a per-run `IDENTITY` stream, the confirmation
+  capture binds to `INTEGRATION_EVT`, and the subject derivers render the fixed
+  six-segment grammar (`integration.{cmd,evt}.identity.service_scope.…`) from the
+  contract coords. The frozen Go anchor (`identity-acceptor`) moves to the same
+  fixed grammar so it remains an independent oracle of the v1.0.0 wire. The
+  removed-`SubjectError` and per-run-`stream_name` surface drops accordingly
+  (`AttachTarget` no longer carries `stream_name`; `DEFAULT_STREAM_NAME` →
+  `COMMAND_STREAM_NAME` / `EVENT_STREAM_NAME`).
+- **`conformance-scope` spawn path carries both handshake streams.**
+  `SubjectConfig::new` now takes `(nats_url, command_stream, event_stream,
+  service_key)` and the spawned subject receives both `COMMAND_STREAM_NAME`
+  (`INTEGRATION_CMD`, where the declare lands) and `EVENT_STREAM_NAME`
+  (`INTEGRATION_EVT`, where confirmations arrive) instead of a single
+  `STREAM_NAME`. Under the v1.0.0 `integration.*` grammar the declarer publishes
+  on `INTEGRATION_CMD` but awaits confirmations on `INTEGRATION_EVT`, which one
+  env value cannot express; the two-stream `FabricTestNats` provisioning is now
+  matched by a two-stream subject contract (no more two-stream harness wired to a
+  one-stream subject).
+- **`conformance-scope-cli` drops the `--stream` flag and the manifest
+  `attach.stream` field.** Fabric streams are fixed constants in `v1.0.0`
+  (`INTEGRATION_CMD` / `INTEGRATION_EVT`), so the handshake stream is no longer
+  caller-choosable: the CLI binds the declare consumer to the fixed
+  `INTEGRATION_CMD` command stream. `AttachTarget` no longer carries
+  `stream_name`.
+- **`conformance-directory` migrates onto the v1.0.0 directory API + the Fabric
+  KV.** The kit no longer takes a raw `kv::Store`: `DirectoryPublisher::open(&fabric)`
+  and `DirectoryProjector::new(fabric, pool)` are now opened on the harness
+  `Fabric`. `DirectoryHarness` drops its ad-hoc `identity_directory` bucket
+  (`DEFAULT_DIRECTORY_BUCKET` is removed from the public surface) and instead spins
+  a `FabricTestNats::with_published_language()`, so the publisher/projector exercise
+  the **fixed `PUBLISHED_LANGUAGE` bucket** the lib actually targets. The Cx
+  `load_snapshot` reads back the new `known_users.extensions` jsonb column into
+  `KnownUser { extensions: PersistedExtensions }`. Verified against real NATS +
+  real Postgres (P1/P2/C1/C2 + the W1–W5 wire battery all green).
+- **`conformance-scope::AttachTarget` drops its `stream_name` field.** With the
+  fixed-stream grammar the attach-mode declare consumer binds the fixed
+  `COMMAND_STREAM_NAME` (`INTEGRATION_CMD`) directly, so the handshake stream is
+  no longer caller-supplied; this reconciles the `runner` surface with the
+  `conformance-scope-cli` call sites that already stopped passing it.
+
+### Fixed
+
+- **`br-test-harness` Fabric get-or-create is idempotent — shared-NATS
+  provisioning is race-safe, absorbs already-exists (#74).** The fixed-stream, PL
+  and bearer get-or-create helpers did `get` → `create` → panic on any create
+  error: a TOCTOU on a shared NATS where two processes both observed "absent" made
+  the create-loser panic with the JetStream `stream name in use` / bucket-exists
+  error, breaking the parallel-run guarantee. Create now matches the typed
+  already-exists code (`ErrorCode::STREAM_NAME_EXIST`, 10058) and treats it as
+  success — re-`get`ting the KV handle — and `published-language` reuses the
+  bearer/bucket path. Still wipe-free; proven by the new real-infra
+  `double_provisioning_a_shared_nats_is_idempotent_and_never_wipes` test.
+- **`conformance-identity::SubjectConfig` drops its inert `stream_name` field
+  and the `STREAM_NAME` env injection.** The frozen Go `identity-acceptor`
+  hardcodes `commandStream = "INTEGRATION_CMD"` and never reads `STREAM_NAME`, so
+  the injection was dead wiring; `SubjectConfig::new` now takes `(nats_url)` only.
+  Verified by the full A1–A7 identity conformance battery (green against real
+  NATS + the Go anchor).
+- **`FabricTestNats::correlation()` doc no longer reads as a stable per-run
+  value.** It mints a **fresh** UUIDv7 on every call (one per flux/message),
+  unlike the `run_id`-derived `durable()` / `key_prefix()`; the README now states
+  this so a caller cannot expect two calls to match (doc=code).
+- **Renamed the durable-provisioning test
+  `start_provisions_..._a_byte_identical_durable` →
+  `..._a_filter_identical_durable`.** It asserts only `filter_subjects` via
+  `verify_command_durable`, not the whole `pull::Config` (`ack_wait` differs), so
+  "byte-identical" over-promised.
+- **The `nats-fabric` anchor `make guard` now actually fails on dead grammar.**
+  The recipe wrapped its `exit 1` in a subshell whose non-zero status was then
+  swallowed by a trailing `|| true`, so `make guard` (and `make check`) logged
+  `DEAD GRAMMAR in the live-wire anchor` but exited `0` — the central anti-drift
+  gate was decorative and the pre-v1 `identity.cmd.`/`identity.evt.` grammar
+  could reappear silently while the README and CHANGELOG claimed it failed loud.
+  Inverted to `! grep … || (echo … && exit 1)`: the nominal no-match case exits
+  `0`, an injected `identity.cmd.`/`identity.evt.` match exits non-zero through
+  `make guard` and `make check`.
+
+### Known limitation
+
+- **The `conformance-scope` spawn battery is migrated on the Rust side and the
+  Go anchor is re-frozen on the `v1.0.0` wire, but its `#[ignore]`-gated
+  real-infra tests have not been run in this integration** (no NATS server was
+  available). The Go anchor (`conformance-subjects/scope-service`) now freezes
+  the `integration.*` grammar — `wire.go` carries
+  `integration.cmd.identity.service_scope.declare.v1` /
+  `integration.evt.identity.service_scope.{accepted,rejected}.v1` and the
+  two-stream split (publish the declare onto `INTEGRATION_CMD`, await
+  confirmations on `INTEGRATION_EVT`) — so the wire matches the lib oracle. The
+  remaining gap is purely execution: the spawn-mode tests need a running NATS to
+  go green and have not been exercised here (lib-as-oracle / Go-as-anchor: the
+  Go side freezes the wire independently of the lib).
+
+## 0.6.0
 
 ### Changed (breaking)
 
@@ -71,7 +371,7 @@ single git tag `v{version}` releases the set. Format follows
 - A concurrent-provisioning self-test (`Barrier` + N tasks on a shared role name,
   looped) is added — red on the pre-fix lib, green after.
 
-## [0.5.2] — 2026-06-15
+## 0.5.2
 
 ### Changed
 
@@ -85,7 +385,7 @@ single git tag `v{version}` releases the set. Format follows
   harness (dev-dep) and `br-rust-common` v0.11.1 (prod) on a **single source**,
   preventing a diamond-skew duplication of `br-core-*` in the graph.
 
-## [0.5.1] — 2026-06-14
+## 0.5.1
 
 ### Fixed
 
@@ -101,7 +401,7 @@ single git tag `v{version}` releases the set. Format follows
   mechanism. Real-PG tests cover re-run-after-leak recovery and the Drop-net teardown; an
   offline self-test proves the net survives an unreachable admin without panicking.
 
-## [0.5.0] — 2026-06-14
+## 0.5.0
 
 ### Added
 
@@ -270,7 +570,7 @@ single git tag `v{version}` releases the set. Format follows
   so **≥2 characters** — a single `"A"` is rejected), `is_code_shaped` — with
   **zero transport coupling** (they take a response, not a
   `GraphqlClient`). Feature-gated under `graphql`; promoted from `svc-charter`'s
-  service-local `tests/common/gql.rs` (the BR-fatty reference unit) so every
+  service-local `tests/common/gql.rs` (the BR reference service) so every
   affordance-aware service stops re-inventing the most load-bearing observation
   helper (#55 A.1).
   - **Affordance-skip guarantee:** the rejection-code walker behind
@@ -343,7 +643,7 @@ single git tag `v{version}` releases the set. Format follows
     deserialise → the battery goes red. The wire is frozen for `br-rust-common`
     `v0.11.0`; documented in `docs/conformance/directory-wire-v1.md`.
 
-## [0.4.0] — 2026-06-14
+## 0.4.0
 
 ### Fixed
 
@@ -426,7 +726,7 @@ single git tag `v{version}` releases the set. Format follows
   - The `infra-e2e` CI job (already provisioned with `go` + `nats-server` for G3) now
     additionally runs the G2 battery.
 
-## [0.3.0] — 2026-06-13
+## 0.3.0
 
 ### Added
 
@@ -465,7 +765,7 @@ single git tag `v{version}` releases the set. Format follows
   the breaking position under Cargo semver, so consumers move by bumping the git
   tag). No in-tree consumer referenced the constants.
 
-## [0.2.0] — 2026-06-13
+## 0.2.0
 
 ### Changed
 

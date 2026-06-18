@@ -178,9 +178,9 @@ jobs:
 
           if ! gh release view "${tag}" >/dev/null 2>&1; then
             notes_file="$(mktemp)"
-            awk -v target="## [${version}]" '
-              index($0, target) == 1 { in_section = 1; print; next }
-              in_section && index($0, "## [") == 1 { exit }
+            awk -v target="## ${version}" '
+              $0 == target { in_section = 1; print; next }
+              in_section && /^## / { exit }
               in_section { print }
             ' CHANGELOG.md > "$notes_file"
             if [ ! -s "$notes_file" ]; then

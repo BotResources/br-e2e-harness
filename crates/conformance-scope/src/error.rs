@@ -1,4 +1,4 @@
-use br_core_integration::SubjectError;
+use br_core_integration::CoordError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -8,7 +8,7 @@ pub enum ConformanceError {
     #[error("building the scope-service subject failed: {0}")]
     Build(String),
     #[error("deriving a contract subject failed: {0}")]
-    Subject(#[from] SubjectError),
+    Coord(#[from] CoordError),
     #[error("nats jetstream error: {0}")]
     Jetstream(String),
     #[error("publishing a confirmation failed: {0}")]

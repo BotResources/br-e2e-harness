@@ -22,9 +22,10 @@ pub async fn run_spawn(
     timeout: Duration,
 ) -> Result<ConformanceReport> {
     let harness = IdentityHarness::start_with_binary(target.binary.clone()).await?;
+    crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
     let capture = harness.capture_confirmations().await?;
     let declarer = harness.declarer();
-    let config = SubjectConfig::new(&harness.nats_url(), harness.stream_name());
+    let config = SubjectConfig::new(&harness.nats_url());
     let subject = Subject::spawn(harness.binary(), &config);
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
 

@@ -18,11 +18,9 @@ impl Resolution {
     pub fn label(&self) -> String {
         match self {
             Resolution::Anonymous => "anonymous(no X-Passport)".to_string(),
-            Resolution::Resolved(passport) => match passport {
-                Passport::Human { user_id, .. } => format!("human(user_id={user_id})"),
-                Passport::Service {
-                    service_account_id, ..
-                } => format!("service(service_account_id={service_account_id})"),
+            Resolution::Resolved(passport) => match passport.auth_method() {
+                Some(_) => format!("human(user_id={})", passport.actor_id()),
+                None => format!("service(service_account_id={})", passport.actor_id()),
             },
         }
     }

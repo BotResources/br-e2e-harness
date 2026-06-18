@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use async_nats::jetstream;
-use br_test_harness::{nats::connect, wait_until};
+use br_test_harness::{FabricTestNats, wait_until};
 use uuid::Uuid;
 
 use crate::capture::ConfirmationCapture;
@@ -17,7 +16,6 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct AttachTarget {
     pub nats_url: String,
     pub readyz_url: String,
-    pub stream_name: String,
 }
 
 pub async fn run_attach(
@@ -25,10 +23,7 @@ pub async fn run_attach(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
-    let client = connect(&target.nats_url)
-        .await
-        .map_err(|e| ConformanceError::Jetstream(format!("connect '{}': {e}", target.nats_url)))?;
-    let js = jetstream::new(client);
+    let fabric_nats = FabricTestNats::connect(&target.nats_url).await;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
 
     if !wait_until(timeout, || async { readyz.is_ready().await }).await {
@@ -38,16 +33,13 @@ pub async fn run_attach(
         )));
     }
 
-    let capture = ConfirmationCapture::start(&js, &target.stream_name)
-        .await
-        .map_err(|e| {
-            ConformanceError::Jetstream(format!(
-                "binding the confirmation consumer to stream '{}' failed — in attach mode the \
-                 acceptor owns the handshake stream and it must already exist: {e}",
-                target.stream_name
-            ))
-        })?;
-    let declarer = Declarer::new(js.clone());
+    let capture = ConfirmationCapture::start(&fabric_nats).await.map_err(|e| {
+        ConformanceError::Jetstream(format!(
+            "binding the confirmation consumer to the fixed event stream failed — in attach mode \
+             the acceptor owns the fabric streams and they must already exist: {e}"
+        ))
+    })?;
+    let declarer = Declarer::new(fabric_nats.fabric_owned());
 
     let namespace = Uuid::now_v7().simple().to_string();
     let ctx = CheckContext {
@@ -62,5 +54,6 @@ pub async fn run_attach(
         report.push(run_scenario(*scenario, &ctx).await);
     }
     capture.stop().await;
+    fabric_nats.shutdown().await;
     Ok(report)
 }

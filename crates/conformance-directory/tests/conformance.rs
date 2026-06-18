@@ -1,6 +1,8 @@
 use conformance_directory::{
-    CheckOutcome, build_and_emit, consumer_reads_groups, consumer_reads_users, publisher_floor,
-    publisher_groups_optional, run_wire_battery,
+    CheckOutcome, build_and_emit, consumer_reads_groups, consumer_reads_users,
+    extension_survives_projection, filter_flip_orphan_deletes, publisher_floor,
+    publisher_groups_optional, reserved_key_rejected, run_wire_battery,
+    users_only_narrows_projection,
 };
 
 fn assert_pass(outcome: &CheckOutcome) {
@@ -57,4 +59,30 @@ async fn c1_consumer_reads_users() {
 async fn c2_consumer_reads_groups() {
     let snapshot = build_and_emit().await.expect("anchor snapshot");
     assert_pass(&consumer_reads_groups(&snapshot).await.expect("c2"));
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + a Postgres + `go` on PATH"]
+async fn c3_extension_survives_projection() {
+    let snapshot = build_and_emit().await.expect("anchor snapshot");
+    assert_pass(&extension_survives_projection(&snapshot).await.expect("c3"));
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + a Postgres + `go` on PATH"]
+async fn c4_filter_flip_orphan_deletes() {
+    let snapshot = build_and_emit().await.expect("anchor snapshot");
+    assert_pass(&filter_flip_orphan_deletes(&snapshot).await.expect("c4"));
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + a Postgres + `go` on PATH"]
+async fn c5_users_only_narrows_projection() {
+    let snapshot = build_and_emit().await.expect("anchor snapshot");
+    assert_pass(&users_only_narrows_projection(&snapshot).await.expect("c5"));
+}
+
+#[tokio::test]
+async fn w6_reserved_key_is_rejected_at_construction() {
+    assert_pass(&reserved_key_rejected());
 }

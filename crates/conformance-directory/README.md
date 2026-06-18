@@ -48,13 +48,18 @@ tag is cut.
 | **W3** | `identity/_meta` deserialises through `DirectoryMeta` declaring users + groups. |
 | **W4** | the neutral extension `x_custom` lands in `extensions` (flat), never leaking into a core field — the `#[serde(flatten)]` works. |
 | **W5** | a users-only manifest deserialises and **auto-degrades** groups (`publishes_groups() == false`). |
+| **W6** | an extensions map shadowing a reserved core key (`email`) is **rejected at `PublishedUser` construction** with `DirectoryError::ReservedExtensionKey` (fail-closed), never a silent overwrite. |
 
 The same logic has pure unit tests (`src/wire.rs`, inline JSON mirroring the
 anchor shape) so plain `cargo test` is green with **zero** toolchain.
 
 ### Px — publisher conformance (real NATS KV)
 
-Drives `br_util_directory::DirectoryPublisher` against a `SpawnedNats` KV bucket.
+Drives `br_util_directory::DirectoryPublisher` (opened on the harness `Fabric`)
+against the fixed `PUBLISHED_LANGUAGE` KV bucket, which `DirectoryHarness` provisions
+by spawning the `fabric-nats` CLI on its throwaway NATS (a `[published_language]`
+manifest) — the same CLI handshake every conformance suite uses, no in-process bucket
+creation. KV reads go through the harness's typed `pl_list` / `pl_get_meta` surface.
 
 | Id | Asserts |
 |---|---|
@@ -71,6 +76,9 @@ consume nothing.
 |---|---|
 | **C1** | reconcile-on-boot projects KV users into PG; a `DirectorySnapshot` loaded from `known_users` resolves the carried user (`resolve_user`); retracting a KV user **orphan-deletes** its projection row. |
 | **C2** | with groups in `_meta`, `is_member` / `group_name` resolve from the projected `known_groups` / `known_user_group`; with a users-only `_meta` they **auto-degrade** to empty. |
+| **C3** | a published user carrying an extension the consumer's `extract_user_extensions` selects is projected into `known_users.extensions` and read back **intact** — the sink is lossless and never force-drops extensions. |
+| **C4** | a user passing `filter_users` is projected; republishing it so it **fails** the filter makes the next `reconcile` **orphan-delete** its row (the copy filter is re-evaluated, a flip retracts). |
+| **C5** | a `ConsumptionScope::UsersOnly` consumer against a schema that **lacks** the group tables reconciles, then **watches** a live PUT: a fresh user published into the bucket while `watch()` runs is projected into `known_users` (polled to a deadline), and the group tables still do **not** exist — so the scope narrows a *live* change with **no** group DML (any group write would error on the missing tables). Because directory keys are slash-delimited, the live PUT also exercises `br-rust-common` v1.0.1's `watch_all` + client-side prefix filter on real NATS. |
 
 ## Public helper surface (the reusable battery)
 
@@ -85,10 +93,20 @@ consuming service's e2e can call them directly:
   oracle deser, each erroring with the offending KV key and the lib type it failed
   to deserialise into.
 - `publisher_floor(&snapshot)` / `publisher_groups_optional(&snapshot)` — the Px
-  battery against a throwaway `DirectoryHarness` (a `SpawnedNats` + a KV bucket).
+  battery against a throwaway `DirectoryHarness` (a `FabricTestNats` whose
+  `PUBLISHED_LANGUAGE` bucket is CLI-provisioned at `start`).
 - `consumer_reads_users(&snapshot)` / `consumer_reads_groups(&snapshot)` — the Cx
   battery against a `DirectoryHarness` + a `ConsumerDb` (an `E2eDatabase` + a
   migrated pool).
+- `extension_survives_projection(&snapshot)` / `filter_flip_orphan_deletes(&snapshot)`
+  — the C3/C4 extension + copy-filter Cx scenarios, each driving a
+  `DirectoryProjector::with_config` (a `DirectoryConsumerConfig` with a custom
+  `extract_user_extensions` / `filter_users`).
+- `users_only_narrows_projection(&snapshot)` — the C5 `ConsumptionScope::UsersOnly`
+  scenario against a `ConsumerDb::apply_users_only_schema()` (a schema variant that
+  omits the group tables; `group_tables_exist()` probes their absence).
+- `reserved_key_rejected()` — the W6 offline guard; returns a `CheckOutcome` (no
+  infra), asserting `PublishedUser::new` fails closed on a reserved-key extension.
 - `AnchorSource` — a `DirectorySource` built **from the anchor snapshot** (its
   users/groups are the Go-frozen values re-deserialised through the lib), so the
   wire the publisher emits is exactly the frozen anchor shape; `.without_groups()`
@@ -114,6 +132,11 @@ cargo test -p conformance-directory --test conformance -- --ignored --test-threa
 `CREATE ROLE` / `CREATE DATABASE` — the harness provisions a throwaway owner role
 and database per Cx test and drops them on cleanup.
 
+CI runs the full `--ignored` battery (`--test-threads=1`) in the `infra-e2e` job,
+which provides the Postgres service container, `nats-server` on `PATH`, a `go`
+toolchain, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
+PR, not just documented.
+
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
@@ -122,7 +145,7 @@ Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v0.6.0" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.0" }
 ```
 
 ## Why — the non-obvious bits
@@ -135,6 +158,8 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 | `AnchorSource` rebuilds its `PublishedUser`/`PublishedGroup` from the **anchor snapshot** | So the wire the publisher emits is the Go-frozen shape, not a hand-rolled fixture — the Px round-trip equality (`published == source`) is then a faithful published-wire ⇄ frozen-wire check through the lib. |
 | Cx loads a `DirectorySnapshot` from the projected `known_*` rows, then exercises the readers | The kit's `DirectoryProjector` writes KV→PG; the readers (`resolve_user` / `is_member` / `group_name`) live on `DirectorySnapshot`, which a consumer service builds from its projection. Cx mirrors that: project to PG, read PG back into a snapshot, assert the readers. |
 | Cx uses the `E2eDatabase` owner role for both migration and projection | The directory projection store carries no row-ownership dimension (reference data, not RLS-gated), so there is no second runtime role to model. The owner is a `NOSUPERUSER` least-privilege role; the projector reconciles as it. |
+| W6 (reserved-key) drives `PublishedUser::new`, not a wire deser | The deser path consumes the three reserved core keys (`email` / `first_name` / `last_name`) out of the flatten bag *before* `new`, so a wire value can never leave a reserved key in the residual extensions — the guard is structurally unreachable via deser. It exists to defend the **publisher's** direct constructor path, which is exactly what W6 exercises (fail-closed, never a silent overwrite). |
+| C5 (UsersOnly) proves the narrowing by a schema that **lacks** the group tables | A `UsersOnly` consumer that merely *suppressed* output would pass even against a full schema. Dropping the group tables turns any stray group DML into a hard error, so a green C5 proves the scope genuinely never opens the group consumer — the narrowing is real, not cosmetic. `watch()` is run under a short `timeout` (a live subscription never returns on its own); the assertion is that it does not error and materialises no group tables within the window. |
 | The whole real battery is `#[ignore]`-gated | It drives real infra (`go` + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
 
 ## License

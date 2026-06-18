@@ -1,9 +1,9 @@
-use br_core_auth::{AuthMethod, Passport};
+use br_core_auth::AuthMethod;
 use uuid::Uuid;
 
 use crate::endpoint::Resolution;
 use crate::outcome::{CheckId, CheckOutcome};
-use crate::seed::SeededToken;
+use br_test_harness::SeededToken;
 
 use super::CheckContext;
 
@@ -63,15 +63,13 @@ fn assert_deterministic(
 
 fn human_identity(resolution: &Resolution) -> std::result::Result<(Uuid, AuthMethod), String> {
     match resolution {
-        Resolution::Resolved(Passport::Human {
-            user_id,
-            auth_method,
-            ..
-        }) => Ok((*user_id, auth_method.clone())),
-        Resolution::Resolved(Passport::Service { .. }) => Err(
-            "second resolution is a Service passport; resolution must be deterministic Human"
-                .to_string(),
-        ),
+        Resolution::Resolved(passport) => match passport.auth_method() {
+            Some(auth_method) => Ok((passport.actor_id(), auth_method.clone())),
+            None => Err(
+                "second resolution is a Service passport; resolution must be deterministic Human"
+                    .to_string(),
+            ),
+        },
         Resolution::Anonymous => {
             Err("second resolution is anonymous; resolution must be deterministic".to_string())
         }
@@ -144,19 +142,16 @@ fn assert_resolves_to(
             );
         }
     };
-    let (user_id, auth_method, claims) = match passport {
-        Passport::Human {
-            user_id,
-            auth_method,
-            claims,
-            ..
-        } => (user_id, auth_method, claims),
-        Passport::Service { .. } => {
+    let auth_method = match passport.auth_method() {
+        Some(auth_method) => auth_method,
+        None => {
             return Err(
                 "resolved to a Service passport; a bearer must resolve to Human".to_string(),
             );
         }
     };
+    let user_id = passport.actor_id();
+    let claims = passport.claims();
 
     match auth_method {
         AuthMethod::Pat { token_id } if *token_id == token.token_id => {}
@@ -184,7 +179,7 @@ fn assert_resolves_to(
         ));
     }
 
-    if *user_id == Uuid::nil() {
+    if user_id == Uuid::nil() {
         return Err("user_id is the nil UUID; it must be a present, valid identifier".to_string());
     }
 

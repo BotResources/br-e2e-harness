@@ -29,7 +29,7 @@ pub async fn readiness_gated(ctx: &CheckContext<'_>) -> CheckOutcome {
             ),
         );
     }
-    if let Err(detail) = accept(ctx.js, ctx.service_key, correlation_id).await {
+    if let Err(detail) = accept(ctx.fabric, ctx.service_key, correlation_id).await {
         return CheckOutcome::fail(id, expected, "acceptance published", detail.to_string());
     }
     if wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
@@ -72,7 +72,7 @@ pub async fn republishes_same_correlation_id(ctx: &CheckContext<'_>) -> CheckOut
             format!("correlation_ids diverged: {ids:?}"),
         );
     }
-    if let Err(detail) = accept(ctx.js, ctx.service_key, first).await {
+    if let Err(detail) = accept(ctx.fabric, ctx.service_key, first).await {
         return CheckOutcome::fail(id, expected, "acceptance published", detail.to_string());
     }
     if wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
@@ -113,7 +113,7 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
         }
     };
     let expected_body = format!("scope declaration rejected: {reason}");
-    if let Err(detail) = reject(ctx.js, ctx.service_key, reason, correlation_id).await {
+    if let Err(detail) = reject(ctx.fabric, ctx.service_key, reason, correlation_id).await {
         return CheckOutcome::fail(id, expected, "rejection published", detail.to_string());
     }
     let surfaced = wait_until(ctx.timeout, || async {
@@ -166,7 +166,7 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
             "the subject did not publish a declare command",
         );
     };
-    if let Err(detail) = accept(ctx.js, ctx.service_key, correlation_id).await {
+    if let Err(detail) = accept(ctx.fabric, ctx.service_key, correlation_id).await {
         return CheckOutcome::fail(
             id,
             expected,
@@ -174,7 +174,7 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
             detail.to_string(),
         );
     }
-    if let Err(detail) = accept(ctx.js, ctx.service_key, correlation_id).await {
+    if let Err(detail) = accept(ctx.fabric, ctx.service_key, correlation_id).await {
         return CheckOutcome::fail(
             id,
             expected,

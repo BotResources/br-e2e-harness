@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use conformance_scope::{
-    AcceptorBehavior, AttachTarget, DEFAULT_STREAM_NAME, ExpectedDeclaration, PlatformOnly,
-    SAMPLE_FALLBACK_SCOPE, SpawnTarget, attach_default, parse_scenarios, run_attach, run_spawn,
-    spawn_default,
+    AcceptorBehavior, AttachTarget, ExpectedDeclaration, PlatformOnly, SAMPLE_FALLBACK_SCOPE,
+    SpawnTarget, attach_default, parse_scenarios, run_attach, run_spawn, spawn_default,
 };
 use serde::Deserialize;
 
@@ -44,8 +43,6 @@ pub struct ScopeSpec {
 pub struct AttachSpec {
     pub nats: String,
     pub readyz: String,
-    #[serde(default)]
-    pub stream: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,10 +94,6 @@ async fn run_service(spec: &ServiceSpec) -> Result<ServiceReport> {
             let target = AttachTarget {
                 nats_url: attach.nats.clone(),
                 readyz_url: attach.readyz.clone(),
-                stream_name: attach
-                    .stream
-                    .clone()
-                    .unwrap_or_else(|| DEFAULT_STREAM_NAME.to_string()),
             };
             run_attach(&target, &expected, &behavior, &scenarios, timeout).await?
         }

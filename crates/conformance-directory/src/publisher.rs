@@ -24,14 +24,16 @@ async fn publisher_floor_inner(
     snapshot: &DirectorySnapshotWire,
 ) -> Result<CheckOutcome> {
     let mut source = AnchorSource::from_snapshot(snapshot)?;
-    let publisher = DirectoryPublisher::new(harness.store().clone());
+    let publisher = DirectoryPublisher::open(harness.fabric())
+        .await
+        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
 
     publisher
         .reconcile(&source)
         .await
         .map_err(|e| ConformanceError::Directory(format!("first reconcile: {e}")))?;
 
-    match read_meta(harness.store()).await? {
+    match read_meta(harness.nats()).await? {
         Some(meta) if meta.publishes_users() => {}
         Some(_) => {
             return Ok(CheckOutcome::fail(
@@ -51,7 +53,7 @@ async fn publisher_floor_inner(
         }
     }
 
-    let published_users = read_users(harness.store()).await?;
+    let published_users = read_users(harness.nats()).await?;
     if &published_users != source.users() {
         return Ok(CheckOutcome::fail(
             id,
@@ -84,7 +86,7 @@ async fn publisher_floor_inner(
         .reconcile(&source)
         .await
         .map_err(|e| ConformanceError::Directory(format!("orphan reconcile: {e}")))?;
-    let after_drop = read_users(harness.store()).await?;
+    let after_drop = read_users(harness.nats()).await?;
     if after_drop.contains_key(&orphan_id) {
         return Ok(CheckOutcome::fail(
             id,
@@ -113,13 +115,15 @@ async fn publisher_floor_inner(
 }
 
 async fn before_after_keys(harness: &DirectoryHarness, source: &AnchorSource) -> Result<usize> {
-    let before = read_users(harness.store()).await?;
-    let publisher = DirectoryPublisher::new(harness.store().clone());
+    let before = read_users(harness.nats()).await?;
+    let publisher = DirectoryPublisher::open(harness.fabric())
+        .await
+        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
     publisher
         .reconcile(source)
         .await
         .map_err(|e| ConformanceError::Directory(format!("idempotency reconcile: {e}")))?;
-    let after = read_users(harness.store()).await?;
+    let after = read_users(harness.nats()).await?;
     Ok(symmetric_diff(&before, &after))
 }
 
@@ -158,13 +162,15 @@ async fn publisher_groups_optional_inner(
     snapshot: &DirectorySnapshotWire,
 ) -> Result<CheckOutcome> {
     let source = AnchorSource::from_snapshot(snapshot)?.without_groups();
-    let publisher = DirectoryPublisher::new(harness.store().clone());
+    let publisher = DirectoryPublisher::open(harness.fabric())
+        .await
+        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
     publisher
         .reconcile(&source)
         .await
         .map_err(|e| ConformanceError::Directory(format!("users-only reconcile: {e}")))?;
 
-    match read_meta(harness.store()).await? {
+    match read_meta(harness.nats()).await? {
         Some(meta) if meta.publishes_groups() => {
             return Ok(CheckOutcome::fail(
                 id,
@@ -192,7 +198,7 @@ async fn publisher_groups_optional_inner(
         }
     }
 
-    let groups = read_groups(harness.store()).await?;
+    let groups = read_groups(harness.nats()).await?;
     if !groups.is_empty() {
         return Ok(CheckOutcome::fail(
             id,
@@ -201,7 +207,7 @@ async fn publisher_groups_optional_inner(
             "a users-only source must write no group keys",
         ));
     }
-    let users = read_users(harness.store()).await?;
+    let users = read_users(harness.nats()).await?;
     if users.is_empty() {
         return Ok(CheckOutcome::fail(
             id,

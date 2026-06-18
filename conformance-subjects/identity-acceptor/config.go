@@ -8,17 +8,15 @@ import (
 )
 
 type config struct {
-	natsURL    string
-	httpAddr   string
-	streamName string
-	enabled    bool
+	natsURL  string
+	httpAddr string
+	enabled  bool
 }
 
 func loadConfig() (config, error) {
 	c := config{
-		natsURL:    getenv("NATS_URL", "nats://127.0.0.1:4222"),
-		httpAddr:   getenv("HTTP_ADDR", ":8080"),
-		streamName: getenv("STREAM_NAME", "IDENTITY"),
+		natsURL:  getenv("NATS_URL", "nats://127.0.0.1:4222"),
+		httpAddr: getenv("HTTP_ADDR", ":8080"),
 	}
 
 	enabled, err := parseBool("SCOPE_ACCEPTANCE_ENABLED", true)

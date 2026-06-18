@@ -8,24 +8,22 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "v0.11.1", version = "0.11.1" }
-br-util-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-directory", tag = "v0.11.1", version = "0.11.1", features = [
+br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "v1.0.1", version = "1.0.1" }
+br-util-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-directory", tag = "v1.0.1", version = "1.0.1", features = [
     "publisher",
     "consumer",
 ] }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.1", version = "1.0.1" }
 
-br-test-harness = { path = "../br-test-harness", version = "0.6.0", default-features = false, features = [
-    "nats",
-    "spawned-nats",
+br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
+    "nats-fabric",
     "e2e-db",
 ] }
 
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-async-nats = "0.48"
 async-trait = "0.1"
-futures-util = "0.3"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",

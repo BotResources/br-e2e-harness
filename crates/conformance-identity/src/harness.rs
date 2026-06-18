@@ -1,20 +1,18 @@
 use std::path::PathBuf;
 
-use async_nats::jetstream;
-use br_test_harness::{SpawnedNats, nats::connect};
+use br_test_harness::FabricTestNats;
+use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
 use crate::build::build_subject;
 use crate::capture::ConfirmationCapture;
 use crate::declarer::Declarer;
-use crate::error::{ConformanceError, Result};
-use crate::stream::create_handshake_stream;
+use crate::error::Result;
 
-pub const DEFAULT_STREAM_NAME: &str = "IDENTITY";
+pub const COMMAND_STREAM_NAME: &str = INTEGRATION_CMD;
+pub const EVENT_STREAM_NAME: &str = INTEGRATION_EVT;
 
 pub struct IdentityHarness {
-    nats: SpawnedNats,
-    js: jetstream::Context,
-    stream_name: String,
+    fabric_nats: FabricTestNats,
     binary: PathBuf,
 }
 
@@ -25,32 +23,27 @@ impl IdentityHarness {
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
-        let nats = SpawnedNats::start().await;
-        let client = connect(&nats.url())
-            .await
-            .map_err(|e| ConformanceError::Jetstream(format!("connect: {e}")))?;
-        let js = jetstream::new(client);
-        let stream_name = DEFAULT_STREAM_NAME.to_string();
-        create_handshake_stream(&js, &stream_name).await?;
-
+        let fabric_nats = FabricTestNats::start().await;
         Ok(Self {
-            nats,
-            js,
-            stream_name,
+            fabric_nats,
             binary,
         })
     }
 
     pub fn nats_url(&self) -> String {
-        self.nats.url()
+        self.fabric_nats.url()
     }
 
-    pub fn jetstream(&self) -> &jetstream::Context {
-        &self.js
+    pub fn fabric(&self) -> &Fabric {
+        self.fabric_nats.fabric()
     }
 
-    pub fn stream_name(&self) -> &str {
-        &self.stream_name
+    pub fn command_stream_name(&self) -> &str {
+        COMMAND_STREAM_NAME
+    }
+
+    pub fn event_stream_name(&self) -> &str {
+        EVENT_STREAM_NAME
     }
 
     pub fn binary(&self) -> &PathBuf {
@@ -58,14 +51,14 @@ impl IdentityHarness {
     }
 
     pub fn declarer(&self) -> Declarer {
-        Declarer::new(self.js.clone())
+        Declarer::new(self.fabric_nats.fabric_owned())
     }
 
     pub async fn capture_confirmations(&self) -> Result<ConfirmationCapture> {
-        ConfirmationCapture::start(&self.js, &self.stream_name).await
+        ConfirmationCapture::start(&self.fabric_nats).await
     }
 
     pub async fn shutdown(self) {
-        self.nats.shutdown().await;
+        self.fabric_nats.shutdown().await;
     }
 }

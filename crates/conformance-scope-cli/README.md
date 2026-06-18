@@ -103,11 +103,11 @@ conformance-scope run \
   --scopes example:read,example:admin
 ```
 
-The service owns its handshake JetStream stream; the CLI binds a consumer to the
-**pre-existing** stream (default name from the wire contract; override with
-`--stream`) and fails loud if it is absent. Attach runs `s1, s2` and the
-`declaration-content` assertion by default — the lifecycle-controlling scenarios
-(s3/s4/s6) cannot run against an already-booted service.
+The CLI binds a consumer to the **pre-existing**, fixed-name handshake stream
+(`INTEGRATION_CMD`, the wire-contract command stream) and fails loud if it is
+absent. Attach runs `s1, s2` and the `declaration-content` assertion by default —
+the lifecycle-controlling scenarios (s3/s4/s6) cannot run against an
+already-booted service.
 
 ### Spawn — convenience, needs `nats-server`
 
@@ -124,7 +124,7 @@ conformance-scope run \
 
 The subject binary is configured via environment variables: `SERVICE_KEY`,
 `SCOPE_KEYS` (CSV), `PLATFORM_ONLY`, `SCOPE_DECLARATION_ENABLED`, plus the NATS /
-HTTP / stream wiring the CLI sets per scenario.
+HTTP wiring the CLI sets per scenario.
 
 ## Expected declaration
 
@@ -194,7 +194,6 @@ services:
     attach:
       nats: nats://127.0.0.1:4222
       readyz: http://127.0.0.1:8080/readyz
-      # stream: IDENTITY   # optional, defaults to the wire-contract stream
   - service_key: other-service
     scopes:
       - key: other:read
