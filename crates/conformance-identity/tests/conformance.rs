@@ -3,11 +3,17 @@ use std::time::Duration;
 use br_test_harness::wait_until;
 use conformance_identity::checks::{CheckContext, run_scenario};
 use conformance_identity::{
-    ConfirmationCapture, IdentityHarness, ReadyzProbe, Scenario, Subject, SubjectConfig,
+    ConfirmationCapture, IdentityHarness, ReadyzProbe, Scenario, Subject, SubjectConfig, provision,
 };
 use uuid::Uuid;
 
 const SHORT: Duration = Duration::from_secs(10);
+
+async fn provision_scope_declaration(harness: &IdentityHarness) {
+    provision(&harness.nats_url(), "scope_declaration.toml")
+        .await
+        .expect("fabric-nats provision");
+}
 
 struct Fixture {
     harness: IdentityHarness,
@@ -19,6 +25,7 @@ struct Fixture {
 impl Fixture {
     async fn start() -> Self {
         let harness = IdentityHarness::start().await.expect("harness");
+        provision_scope_declaration(&harness).await;
         let capture = harness.capture_confirmations().await.expect("capture");
         let config = SubjectConfig::new(&harness.nats_url());
         let subject = Subject::spawn(harness.binary(), &config);

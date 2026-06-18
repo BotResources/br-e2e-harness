@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use async_nats::jetstream;
 use br_test_harness::FabricTestNats;
-use br_util_nats_fabric::{INTEGRATION_CMD, INTEGRATION_EVT};
+use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
 use crate::build::build_subject;
 use crate::capture::DeclareCapture;
@@ -31,8 +30,8 @@ impl ScopeHarness {
         self.nats.url()
     }
 
-    pub fn jetstream(&self) -> &jetstream::Context {
-        self.nats.jetstream()
+    pub fn fabric(&self) -> &Fabric {
+        self.nats.fabric()
     }
 
     pub fn stream_name(&self) -> &str {
@@ -48,7 +47,7 @@ impl ScopeHarness {
     }
 
     pub async fn capture_declares(&self) -> Result<DeclareCapture> {
-        DeclareCapture::start(self.jetstream(), COMMAND_STREAM_NAME).await
+        DeclareCapture::start(&self.nats).await
     }
 
     pub async fn shutdown(self) {

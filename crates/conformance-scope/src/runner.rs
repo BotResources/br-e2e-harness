@@ -1,14 +1,12 @@
 use std::time::Duration;
 
-use async_nats::jetstream;
 use br_core_scope::ServiceKey;
-use br_test_harness::nats::connect;
+use br_test_harness::FabricTestNats;
 
 use crate::capture::DeclareCapture;
 use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
-use crate::harness::COMMAND_STREAM_NAME;
 use crate::outcome::ConformanceReport;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario};
@@ -28,22 +26,18 @@ pub async fn run_attach(
     timeout: Duration,
 ) -> Result<ConformanceReport> {
     let service_key = service_key(expected)?;
-    let client = connect(&target.nats_url)
-        .await
-        .map_err(|e| ConformanceError::Jetstream(format!("connect '{}': {e}", target.nats_url)))?;
-    let js = jetstream::new(client);
+    let nats = FabricTestNats::connect(&target.nats_url).await;
+    let fabric = nats.fabric_owned();
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
-    let capture = DeclareCapture::start(&js, COMMAND_STREAM_NAME)
-        .await
-        .map_err(|e| {
-            ConformanceError::Jetstream(format!(
-                "binding the declare consumer to stream '{COMMAND_STREAM_NAME}' failed — in attach \
-                 mode the service owns the fixed handshake stream and it must already exist: {e}"
-            ))
-        })?;
+    let capture = DeclareCapture::start(&nats).await.map_err(|e| {
+        ConformanceError::Jetstream(format!(
+            "binding the declare consumer to the fixed handshake stream failed — in attach mode \
+             the service owns the fixed handshake stream and it must already exist: {e}"
+        ))
+    })?;
 
     let ctx = CheckContext {
-        js: &js,
+        fabric: &fabric,
         readyz: &readyz,
         capture: &capture,
         expected,
@@ -57,6 +51,7 @@ pub async fn run_attach(
         report.push(run_scenario(*scenario, &ctx).await);
     }
     capture.stop().await;
+    nats.shutdown().await;
     Ok(report)
 }
 

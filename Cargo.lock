@@ -565,7 +565,6 @@ dependencies = [
 name = "conformance-identity"
 version = "1.0.0"
 dependencies = [
- "async-nats",
  "br-core-integration",
  "br-core-scope",
  "br-identity-domain",
@@ -573,9 +572,7 @@ dependencies = [
  "br-test-harness",
  "br-util-nats-fabric",
  "chrono",
- "futures-util",
  "reqwest",
- "serde",
  "serde_json",
  "thiserror",
  "tokio",
@@ -586,7 +583,6 @@ dependencies = [
 name = "conformance-nats-fabric"
 version = "1.0.0"
 dependencies = [
- "async-nats",
  "async-trait",
  "br-core-directory",
  "br-core-integration",
@@ -617,14 +613,12 @@ dependencies = [
 name = "conformance-scope"
 version = "1.0.0"
 dependencies = [
- "async-nats",
  "br-core-integration",
  "br-core-scope",
  "br-scope-declaration-contract",
  "br-test-harness",
  "br-util-nats-fabric",
  "chrono",
- "futures-util",
  "reqwest",
  "serde",
  "serde_json",

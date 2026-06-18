@@ -3,14 +3,14 @@ use std::collections::BTreeMap;
 use br_core_directory::PublishedUser;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{
-    Fabric, FabricError, KvKey, PublishedLanguagePublisher, PublishedLanguageReader,
+    FabricError, KvKey, PublishedLanguagePublisher, PublishedLanguageReader,
 };
 
 use crate::error::Result;
-use crate::harness::{namespaced_key, namespaced_prefix, published_language_store, put_raw};
+use crate::harness::{namespaced_key, namespaced_prefix};
 
 pub async fn assert_retract_orphan_deletes(harness: &FabricTestNats) -> Result<()> {
-    let fabric = Fabric::new(harness.jetstream().clone());
+    let fabric = harness.fabric_owned();
     let publisher: PublishedLanguagePublisher<PublishedUser> =
         PublishedLanguagePublisher::open(&fabric).await?;
     let reader: PublishedLanguageReader<PublishedUser> =
@@ -30,7 +30,7 @@ pub async fn assert_retract_orphan_deletes(harness: &FabricTestNats) -> Result<(
 }
 
 pub async fn assert_reconcile_drift_converges(harness: &FabricTestNats) -> Result<()> {
-    let fabric = Fabric::new(harness.jetstream().clone());
+    let fabric = harness.fabric_owned();
     let publisher: PublishedLanguagePublisher<PublishedUser> =
         PublishedLanguagePublisher::open(&fabric).await?;
     let reader: PublishedLanguageReader<PublishedUser> =
@@ -71,13 +71,12 @@ pub async fn assert_reconcile_drift_converges(harness: &FabricTestNats) -> Resul
 }
 
 pub async fn assert_decode_fails_closed_naming_the_key(harness: &FabricTestNats) -> Result<()> {
-    let fabric = Fabric::new(harness.jetstream().clone());
+    let fabric = harness.fabric_owned();
     let reader: PublishedLanguageReader<PublishedUser> =
         PublishedLanguageReader::open(&fabric).await?;
-    let store = published_language_store(harness).await?;
 
     let key = namespaced_key(harness, "identity/users/poison");
-    put_raw(&store, &key, b"{ not json").await?;
+    harness.pl_put_raw(&key, b"{ not json").await;
 
     let err = reader
         .get(&key)
@@ -101,13 +100,12 @@ pub async fn assert_poison_from_anchor_names_the_key(
     anchor_key_suffix: &str,
     poison_value: &str,
 ) -> Result<()> {
-    let fabric = Fabric::new(harness.jetstream().clone());
+    let fabric = harness.fabric_owned();
     let reader: PublishedLanguageReader<PublishedUser> =
         PublishedLanguageReader::open(&fabric).await?;
-    let store = published_language_store(harness).await?;
 
     let key = namespaced_key(harness, anchor_key_suffix);
-    put_raw(&store, &key, poison_value.as_bytes()).await?;
+    harness.pl_put_raw(&key, poison_value.as_bytes()).await;
 
     let err = reader
         .get(&key)

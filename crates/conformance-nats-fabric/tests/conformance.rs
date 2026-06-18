@@ -1,4 +1,7 @@
-use br_test_harness::{BareFabricNats, FabricTestNats};
+use std::path::PathBuf;
+use std::time::Duration;
+
+use br_test_harness::{BareFabricNats, FabricTestNats, run_once};
 use conformance_nats_fabric::anchor::frozen_wire;
 use conformance_nats_fabric::checks::integration::{
     assert_dead_grammar_fails_loud, assert_missing_stream_fails_loud,
@@ -15,6 +18,56 @@ use conformance_nats_fabric::checks::published_language::{
 };
 
 const DEAD_COMMAND_SUBJECT: &str = "identity.cmd.service_scope.declare.v1";
+const PROVISION_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn fabric_nats_bin() -> PathBuf {
+    let mut dir = std::env::current_exe().expect("test executable path");
+    dir.pop();
+    if dir.ends_with("deps") {
+        dir.pop();
+    }
+    let bin = dir.join("fabric-nats");
+    assert!(
+        bin.exists(),
+        "fabric-nats binary must be built by the workspace at {}",
+        bin.display()
+    );
+    bin
+}
+
+fn fixture(name: &str) -> String {
+    format!("tests/fixtures/{name}")
+}
+
+async fn provision(harness: &FabricTestNats, manifest: &str) {
+    let bin = fabric_nats_bin();
+    let url = harness.url();
+    let output = run_once(
+        &bin.to_string_lossy(),
+        &[
+            "provision",
+            "--nats",
+            &url,
+            "--manifest",
+            &fixture(manifest),
+        ],
+        &[],
+        PROVISION_TIMEOUT,
+    )
+    .await
+    .expect("fabric-nats provision runs");
+    assert!(
+        output.status.success(),
+        "fabric-nats provision failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+async fn published_language_subject(manifest: &str) -> FabricTestNats {
+    let harness = FabricTestNats::start().await;
+    provision(&harness, manifest).await;
+    harness
+}
 
 #[tokio::test]
 #[ignore = "requires go toolchain; renders the frozen wire from the anchor"]
@@ -86,10 +139,7 @@ async fn the_dead_grammar_fails_loud() {
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
 async fn published_language_retract_orphan_deletes() {
-    let harness = FabricTestNats::start()
-        .await
-        .with_published_language()
-        .await;
+    let harness = published_language_subject("published_language.toml").await;
     assert_retract_orphan_deletes(&harness)
         .await
         .expect("retract orphan-deletes");
@@ -99,10 +149,7 @@ async fn published_language_retract_orphan_deletes() {
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
 async fn published_language_reconcile_converges() {
-    let harness = FabricTestNats::start()
-        .await
-        .with_published_language()
-        .await;
+    let harness = published_language_subject("published_language.toml").await;
     assert_reconcile_drift_converges(&harness)
         .await
         .expect("reconcile converges");
@@ -112,10 +159,7 @@ async fn published_language_reconcile_converges() {
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
 async fn published_language_bootstrap_then_watch_is_parallel_safe() {
-    let harness = FabricTestNats::start()
-        .await
-        .with_published_language()
-        .await;
+    let harness = published_language_subject("published_language.toml").await;
     assert_bootstrap_then_watch_is_parallel_safe(&harness)
         .await
         .expect("bootstrap then watch is parallel-safe");
@@ -125,10 +169,7 @@ async fn published_language_bootstrap_then_watch_is_parallel_safe() {
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
 async fn prefix_watch_delivers_slash_keyed_directory_puts() {
-    let harness = FabricTestNats::start()
-        .await
-        .with_published_language()
-        .await;
+    let harness = published_language_subject("published_language.toml").await;
     let delivered = assert_prefix_watch_delivery_gap(&harness)
         .await
         .expect("the gap probe runs");
@@ -143,10 +184,7 @@ async fn prefix_watch_delivers_slash_keyed_directory_puts() {
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
 async fn published_language_decode_fails_closed_naming_the_key() {
-    let harness = FabricTestNats::start()
-        .await
-        .with_published_language()
-        .await;
+    let harness = published_language_subject("published_language.toml").await;
     assert_decode_fails_closed_naming_the_key(&harness)
         .await
         .expect("decode fails closed naming the key");
@@ -157,10 +195,7 @@ async fn published_language_decode_fails_closed_naming_the_key() {
 #[ignore = "requires a real nats-server + go toolchain"]
 async fn published_language_anchor_poison_fails_closed_naming_the_key() {
     let wire = frozen_wire().await.expect("anchor renders the frozen wire");
-    let harness = FabricTestNats::start()
-        .await
-        .with_published_language()
-        .await;
+    let harness = published_language_subject("published_language.toml").await;
     assert_poison_from_anchor_names_the_key(
         &harness,
         &wire.poison_user_key,

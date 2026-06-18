@@ -80,8 +80,9 @@ context by driving a prior accepted declaration, then drives the contested one.
 - `Declarer` — builds a real `IntegrationCommand<DeclareServiceScopes>` and publishes
   it (ack-confirmed) via `br_util_nats_fabric::Fabric::publish_command` with the typed
   `br_scope_declaration_contract::declare_command_coords()` — no freestyle subject.
-- `ConfirmationCapture` — a subscribe-**first** ephemeral consumer
-  (`DeliverPolicy::New`, `AckPolicy::None`) over both event subjects;
+- `ConfirmationCapture` — a thin typed view over the harness `EventCapture`
+  (a **replaying** background-drain consumer, `DeliverPolicy::All`,
+  `AckPolicy::None`) filtered to both event subjects;
   `verdict_for(correlation_id)` decodes the reply by `from_slice` into the real
   `IntegrationEvent<…>` types — the type-oracle check.
 - `oracle::expected_verdict` / `expected_step_verdicts` — replays a declaration
@@ -133,6 +134,14 @@ without infra:
 ```sh
 cargo test -p conformance-identity --test conformance -- --ignored
 ```
+
+The suite **provisions its scope-declaration topology by spawning the
+`fabric-nats` CLI** (`fabric-nats provision --manifest
+tests/fixtures/scope_declaration.toml`) — the conformance suite is the CLI's
+real-life testbed. The crate carries **no `async-nats` dependency**: the
+confirmation capture is a thin typed view over the harness `EventCapture`, the
+declarer publishes through a `Fabric`, and attach mode connects via
+`FabricTestNats::connect`.
 
 CI runs it in the `infra-e2e` job, which already has `go` and `nats-server` on the
 runner (shared with G3).

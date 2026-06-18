@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use async_nats::jetstream;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
@@ -35,10 +34,6 @@ impl IdentityHarness {
         self.fabric_nats.url()
     }
 
-    pub fn jetstream(&self) -> &jetstream::Context {
-        self.fabric_nats.jetstream()
-    }
-
     pub fn fabric(&self) -> &Fabric {
         self.fabric_nats.fabric()
     }
@@ -56,11 +51,11 @@ impl IdentityHarness {
     }
 
     pub fn declarer(&self) -> Declarer {
-        Declarer::new(self.fabric_nats.fabric().clone())
+        Declarer::new(self.fabric_nats.fabric_owned())
     }
 
     pub async fn capture_confirmations(&self) -> Result<ConfirmationCapture> {
-        ConfirmationCapture::start(self.fabric_nats.jetstream(), EVENT_STREAM_NAME).await
+        ConfirmationCapture::start(&self.fabric_nats).await
     }
 
     pub async fn shutdown(self) {

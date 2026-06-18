@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use br_core_directory::PublishedUser;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{
-    Fabric, KvKey, ProjectionSink, PublishedLanguageConsumer, PublishedLanguagePublisher,
+    KvKey, ProjectionSink, PublishedLanguageConsumer, PublishedLanguagePublisher,
 };
 use tokio::sync::Mutex;
 
@@ -48,7 +48,7 @@ impl ProjectionSink<PublishedUser> for MemorySink {
 }
 
 pub async fn assert_bootstrap_then_watch_is_parallel_safe(harness: &FabricTestNats) -> Result<()> {
-    let fabric = Fabric::new(harness.jetstream().clone());
+    let fabric = harness.fabric_owned();
     let publisher: PublishedLanguagePublisher<PublishedUser> =
         PublishedLanguagePublisher::open(&fabric).await?;
     let prefix = namespaced_prefix(harness, "identity/users/");
@@ -94,7 +94,7 @@ pub async fn assert_bootstrap_then_watch_is_parallel_safe(harness: &FabricTestNa
 }
 
 pub async fn assert_prefix_watch_delivery_gap(harness: &FabricTestNats) -> Result<bool> {
-    let fabric = Fabric::new(harness.jetstream().clone());
+    let fabric = harness.fabric_owned();
     let publisher: PublishedLanguagePublisher<PublishedUser> =
         PublishedLanguagePublisher::open(&fabric).await?;
     let prefix = namespaced_prefix(harness, "identity/users/");

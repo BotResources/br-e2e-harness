@@ -34,11 +34,12 @@ pub async fn run_spawn(
         .collect();
     if !observed.is_empty() {
         let harness = ScopeHarness::start_with_binary(target.binary.clone()).await?;
+        crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
         let capture = harness.capture_declares().await?;
         let subject = Subject::spawn(harness.binary(), &enabled_config(&harness, expected));
         let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
         let ctx = CheckContext {
-            js: harness.jetstream(),
+            fabric: harness.fabric(),
             readyz: &readyz,
             capture: &capture,
             expected,
@@ -77,6 +78,7 @@ async fn run_lifecycle_scenario(
     timeout: Duration,
 ) -> Result<crate::outcome::CheckOutcome> {
     let harness = ScopeHarness::start_with_binary(target.binary.clone()).await?;
+    crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
     let capture = harness.capture_declares().await?;
     let config = match scenario {
         Scenario::DisabledModeReadyWithoutDeclare => {
@@ -88,7 +90,7 @@ async fn run_lifecycle_scenario(
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
     let scenario_behavior = lifecycle_behavior(scenario, behavior, expected);
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected,

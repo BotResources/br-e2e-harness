@@ -3,9 +3,9 @@ mod observe;
 
 use std::time::Duration;
 
-use async_nats::jetstream;
 use br_core_scope::ServiceKey;
 use br_test_harness::wait_until;
+use br_util_nats_fabric::Fabric;
 use uuid::Uuid;
 
 use crate::capture::DeclareCapture;
@@ -21,7 +21,7 @@ pub use confirmation::{
 pub use observe::{declaration_content, declare_well_formed, disabled_mode_ready_without_declare};
 
 pub struct CheckContext<'a> {
-    pub js: &'a jetstream::Context,
+    pub fabric: &'a Fabric,
     pub readyz: &'a ReadyzProbe,
     pub capture: &'a DeclareCapture,
     pub expected: &'a ExpectedDeclaration,

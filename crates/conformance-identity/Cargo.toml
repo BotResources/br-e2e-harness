@@ -21,13 +21,10 @@ br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-feat
 ] }
 
 tokio = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-async-nats = "0.48"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 uuid = { version = "1", features = ["v7"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-futures-util = "0.3"
 thiserror = { workspace = true }
 
 [dev-dependencies]

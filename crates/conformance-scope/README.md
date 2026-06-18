@@ -167,6 +167,14 @@ without infra:
 cargo test -p conformance-scope --test conformance -- --ignored
 ```
 
+The suite **provisions the scope-declaration handshake topology by spawning the
+`fabric-nats` CLI** (`fabric-nats provision --manifest
+tests/fixtures/scope_declaration.toml`) — the conformance suite is the CLI's
+real-life testbed. The crate carries **no `async-nats` dependency**: the declare
+capture is a thin typed view over the harness `CommandCapture`, the acceptor
+publishes accept/reject through a `Fabric`, and attach mode connects via
+`FabricTestNats::connect`.
+
 CI runs it in the `infra-e2e` job — which now additionally requires **`go`** on
 the runner (alongside `nats-server`), to build the conformance subject.
 

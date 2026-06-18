@@ -9,11 +9,17 @@ use conformance_scope::checks::{
 };
 use conformance_scope::{
     AcceptorBehavior, ExpectedDeclaration, ExpectedScope, ReadyzProbe, ScopeHarness, Subject,
-    SubjectConfig,
+    SubjectConfig, provision,
 };
 
 const SERVICE_KEY: &str = "notifier";
 const SHORT: Duration = Duration::from_secs(10);
+
+async fn provision_handshake(harness: &ScopeHarness) {
+    provision(&harness.nats_url(), "scope_declaration.toml")
+        .await
+        .expect("fabric-nats provision");
+}
 
 fn expected() -> ExpectedDeclaration {
     ExpectedDeclaration::new(
@@ -56,6 +62,7 @@ fn service_key() -> ServiceKey {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn s1_declare_on_boot_is_well_formed() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -63,7 +70,7 @@ async fn s1_declare_on_boot_is_well_formed() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -88,6 +95,7 @@ async fn s1_declare_on_boot_is_well_formed() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn declaration_content_matches_expected() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -95,7 +103,7 @@ async fn declaration_content_matches_expected() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -120,6 +128,7 @@ async fn declaration_content_matches_expected() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn declaration_content_flags_wrong_scopes() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -133,7 +142,7 @@ async fn declaration_content_flags_wrong_scopes() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &wrong,
@@ -162,6 +171,7 @@ async fn declaration_content_flags_wrong_scopes() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn s2_readiness_is_gated_on_acceptance() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -169,7 +179,7 @@ async fn s2_readiness_is_gated_on_acceptance() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -194,6 +204,7 @@ async fn s2_readiness_is_gated_on_acceptance() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn s3_republishes_same_correlation_id_until_answered() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -201,7 +212,7 @@ async fn s3_republishes_same_correlation_id_until_answered() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -226,6 +237,7 @@ async fn s3_republishes_same_correlation_id_until_answered() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn s4_rejection_keeps_subject_unready_and_stops_republishing() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -235,7 +247,7 @@ async fn s4_rejection_keeps_subject_unready_and_stops_republishing() {
         AcceptorBehavior::reject(Some("scope_owned_by_another_service"), "notifier:read")
             .expect("reject behavior");
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -260,6 +272,7 @@ async fn s4_rejection_keeps_subject_unready_and_stops_republishing() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn s5_duplicate_confirmations_are_tolerated() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -267,7 +280,7 @@ async fn s5_duplicate_confirmations_are_tolerated() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -296,6 +309,7 @@ async fn s5_duplicate_confirmations_are_tolerated() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn s6_disabled_mode_publishes_nothing_and_is_ready_immediately() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
     let subject = Subject::spawn(harness.binary(), &config(&harness).enabled(false));
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -303,7 +317,7 @@ async fn s6_disabled_mode_publishes_nothing_and_is_ready_immediately() {
     let key = service_key();
     let behavior = AcceptorBehavior::Accept;
     let ctx = CheckContext {
-        js: harness.jetstream(),
+        fabric: harness.fabric(),
         readyz: &readyz,
         capture: &capture,
         expected: &expected,
@@ -328,25 +342,18 @@ async fn s6_disabled_mode_publishes_nothing_and_is_ready_immediately() {
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn attach_capture_replays_the_boot_declare_published_before_it() {
     let harness = ScopeHarness::start().await.expect("harness");
+    provision_handshake(&harness).await;
     let subject = Subject::spawn(harness.binary(), &config_with_long_wait_timeout(&harness));
 
-    let boot_declare_on_stream = wait_until(Duration::from_secs(10), || async {
-        let mut stream = match harness.jetstream().get_stream(harness.stream_name()).await {
-            Ok(stream) => stream,
-            Err(_) => return false,
-        };
-        stream
-            .info()
-            .await
-            .map(|info| info.state.messages >= 1)
-            .unwrap_or(false)
-    })
-    .await;
+    let landed = harness.capture_declares().await.expect("landed capture");
+    let boot_declare_on_stream =
+        wait_until(Duration::from_secs(10), || async { landed.count() >= 1 }).await;
     assert!(
         boot_declare_on_stream,
-        "the boot declare must land on the stream before the capture is created; logs:\n{}",
+        "the boot declare must land on the stream before the replay capture is created; logs:\n{}",
         subject.logs()
     );
+    landed.stop().await;
 
     let started_at = Instant::now();
     let capture = harness.capture_declares().await.expect("capture");

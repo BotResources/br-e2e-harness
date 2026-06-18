@@ -45,12 +45,8 @@ pub async fn assert_widened_durable_rejected(
 }
 
 pub async fn assert_missing_stream_fails_loud(bare: &BareFabricNats) -> FabricError {
-    let fabric = br_util_nats_fabric::Fabric::new(bare.jetstream().clone());
     let coords = sample_event_coords();
-    let err = fabric
-        .verify_event_durable(&coords, "any-durable")
-        .await
-        .expect_err("binding against a missing fixed stream must fail loud, not auto-provision");
+    let err = bare.assert_missing_stream(&coords, "any-durable").await;
     assert!(
         matches!(
             err,
@@ -70,18 +66,7 @@ pub async fn assert_dead_grammar_fails_loud(
 ) -> PublishErrorKind {
     let payload = serde_json::json!({ "probe": "dead-grammar" });
     let bytes = serde_json::to_vec(&payload).expect("probe serializes");
-    let publish = harness
-        .jetstream()
-        .publish(dead_subject.to_string(), bytes.into())
-        .await;
-
-    let err = match publish {
-        Ok(ack) => ack
-            .await
-            .expect_err("a publish to the dead grammar must not be acked by any fixed stream"),
-        Err(err) => err,
-    };
-    let kind: PublishErrorKind = err.kind().into();
+    let kind = harness.publish_dead_subject(dead_subject, &bytes).await;
     assert_eq!(
         kind,
         PublishErrorKind::NoStream,
@@ -95,14 +80,8 @@ pub async fn assert_no_fixed_stream_captured(
     dead_subject: &str,
 ) -> Result<()> {
     for stream_name in [INTEGRATION_CMD, INTEGRATION_EVT] {
-        let stream = harness
-            .jetstream()
-            .get_stream(stream_name)
-            .await
-            .expect("fixed stream exists");
-        let info = stream.get_last_raw_message_by_subject(dead_subject).await;
         assert!(
-            info.is_err(),
+            harness.raw_message_absent(stream_name, dead_subject).await,
             "no fixed stream may have captured the dead-grammar subject {dead_subject}"
         );
     }

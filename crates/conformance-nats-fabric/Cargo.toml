@@ -19,7 +19,6 @@ br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-feat
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-async-nats = "0.48"
 async-trait = "0.1"
 uuid = { version = "1", features = ["v7"] }
 thiserror = { workspace = true }

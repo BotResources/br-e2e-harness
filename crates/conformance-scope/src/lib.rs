@@ -6,6 +6,7 @@ pub mod error;
 pub mod expected;
 pub mod harness;
 pub mod outcome;
+pub mod provision;
 pub mod readyz;
 pub mod runner;
 pub mod scenario;
@@ -24,6 +25,7 @@ pub use expected::{
 };
 pub use harness::{COMMAND_STREAM_NAME, EVENT_STREAM_NAME, ScopeHarness};
 pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
+pub use provision::provision;
 pub use readyz::ReadyzProbe;
 pub use runner::{AttachTarget, DEFAULT_TIMEOUT, run_attach};
 pub use scenario::{AcceptorBehavior, Scenario, attach_default, parse_scenarios, spawn_default};

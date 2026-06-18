@@ -67,6 +67,15 @@ a `nats-server` on `PATH` and a `go` toolchain:
 cargo test -p conformance-nats-fabric --test conformance -- --ignored
 ```
 
+The published-language tests **provision their KV topology by spawning the
+`fabric-nats` CLI** (`fabric-nats provision --manifest
+tests/fixtures/published_language.toml`) rather than calling
+`FabricTestNats::with_published_language()` in-process — the suite is the CLI's
+real-life testbed. The crate carries **no `async-nats` dependency**: it observes
+and mutates the fabric exclusively through the typed `FabricTestNats` surface
+(`fabric_owned`, `pl_reader` / `pl_publisher` / `pl_put_raw`,
+`assert_missing_stream` / `publish_dead_subject` / `raw_message_absent`).
+
 CI runs this battery in the `infra-e2e` job (which installs `nats-server` on
 `PATH` and provides a `go` toolchain), so the real-infra gate is enforced on
 every PR, not just documented.

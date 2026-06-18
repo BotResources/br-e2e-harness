@@ -95,6 +95,23 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
+- **`conformance-scope`, `conformance-identity` and `conformance-nats-fabric`
+  provision their NATS topology by spawning the `fabric-nats` CLI, and drop all
+  `async-nats` (#74, phase 2a).** Each suite is now the CLI's real-life testbed:
+  it spawns `fabric-nats provision --manifest <crate>/tests/fixtures/*.toml`
+  against the harness URL (a TOML manifest of coords + durable names + a
+  `[published_language] enabled` flag, never a raw subject), then drives and
+  observes the run through the frozen typed `FabricTestNats` surface only —
+  `fabric_owned()`, `capture_events` / `capture_commands`, `pl_reader` /
+  `pl_publisher` / `pl_put_raw`, and `assert_missing_stream` /
+  `publish_dead_subject` / `raw_message_absent`. The three crates no longer depend
+  on `async-nats` (nor the now-unused `futures-util`): their hand-rolled
+  `DeclareCapture` / `ConfirmationCapture` consumers become thin typed views over
+  the harness `CommandCapture` / `EventCapture`, the acceptor publisher takes a
+  `&Fabric` instead of a raw `jetstream::Context`, and attach-mode runners connect
+  via `FabricTestNats::connect`. `grep -rn async_nats` over the three crates is
+  empty. The directory/passport suites still use the public raw handles
+  (untouched here; the handle demotion is the phase-2c seal).
 - **The dead-grammar guard is enforced on the real test path.** `build_anchor` /
   `build_subject` in `conformance-nats-fabric`, `conformance-identity` and
   `conformance-scope` now run `make -C <anchor-dir> guard` before `go build` and
