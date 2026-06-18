@@ -23,16 +23,20 @@ acceptor** against this spec.
 
 ## 1. NATS subjects (literal, FROZEN)
 
-Derived from `br-util-scope-declaration/src/subjects.rs` →
-`integration_subject(bc, kind, aggregate, name, version)` with
-`bc="identity"`, `aggregate="service_scope"`, `version=1`.
-Format: `{bc}.{cmd|evt}.{aggregate}.{name}.v{N}`.
+Derived from the typed coordinates in `br-scope-declaration-contract`
+(`declare_command_coords`, `accepted_event_coords`, `rejected_event_coords`) rendered through
+the `br-util-nats-fabric` Fabric (`command_subject` / `event_subject`). The Fabric is the only
+subject renderer — there is no freestyle subject builder — and it emits the fixed v1.0.0
+integration grammar with `bc/producer="identity"`, `aggregate="service_scope"`, `version=1`:
+
+- command: `integration.cmd.{receiver}.{aggregate}.{verb}.v{N}`
+- event:   `integration.evt.{producer}.{aggregate}.{fact}.v{N}`
 
 | Role | Subject |
 |---|---|
-| **declare** (command, published by declarer) | `identity.cmd.service_scope.declare.v1` |
-| **accepted** (event, published by acceptor)  | `identity.evt.service_scope.accepted.v1` |
-| **rejected** (event, published by acceptor)  | `identity.evt.service_scope.rejected.v1` |
+| **declare** (command, published by declarer) | `integration.cmd.identity.service_scope.declare.v1` |
+| **accepted** (event, published by acceptor)  | `integration.evt.identity.service_scope.accepted.v1` |
+| **rejected** (event, published by acceptor)  | `integration.evt.identity.service_scope.rejected.v1` |
 
 `command_type` field value = `"service_scope.declare"` (`{aggregate}.{name}`, no bc, no version).
 Event `event_type` values observed in the lib's stubs: `"service_scope.accepted"` /
@@ -229,46 +233,47 @@ The declarer logs `reason.reason` (the tag) and sets readiness DOWN with that st
 
 ## 5. JetStream topology (what the declarer expects)
 
-From `br-util-scope-declaration/src/handshake.rs` + `br-core-integration/src/awaiter.rs` +
-`nats.rs`, and the lib's e2e harness (`tests/common/mod.rs`).
+From `br-util-scope-declaration` + the `br-util-nats-fabric` Fabric/awaiter, and the lib's
+fabric test harness (`FabricTestNats`).
 
-### 5.1 The stream (ONE stream carries all three subjects)
+### 5.1 The two FIXED streams (`INTEGRATION_CMD` + `INTEGRATION_EVT`)
 
-- The declarer is given a single `stream_name` (env `STREAM_NAME`). It both **publishes the
-  declare command to** and **awaits confirmations on** this **same** stream.
-- The declarer does **NOT create the stream** — `br-rust-common` never auto-provisions
-  (fail-loud doctrine). `CorrelatedAwaiter::create_with` calls `jetstream.get_stream(name)`;
-  a missing stream is a hard error (readiness stays DOWN, `declare_scopes` returns `Err`).
-- ⇒ **The acceptor / test harness MUST create the stream up front**, with subjects covering
-  the declare command **and** both event subjects. The lib's reference setup:
+The v1.0.0 fabric binds two fixed, non-caller-choosable streams; the integration grammar splits
+commands and events across them:
 
   ```
-  stream name:    <STREAM_NAME>           (e.g. "IDENTITY")
-  subjects:       ["identity.>"]          (captures cmd + accepted + rejected)
+  INTEGRATION_CMD   subjects: ["integration.cmd.>"]   (carries the declare command)
+  INTEGRATION_EVT   subjects: ["integration.evt.>"]   (carries accepted + rejected)
   ```
 
-  `identity.>` is the simplest correct binding. Any subject set that captures all three literal
-  subjects in §1 works (e.g. listing the three explicitly). The declare command must be captured
-  because the declarer publishes via JetStream and **awaits the publish ack** (`ack.await`) —
-  publishing to a subject no stream captures fails the publish.
+- The declarer **publishes the declare command to** `INTEGRATION_CMD` and **awaits confirmations
+  on** `INTEGRATION_EVT`.
+- The declarer does **NOT create the streams** — `br-rust-common` never auto-provisions
+  (fail-loud doctrine). The awaiter calls `jetstream.get_stream(name)`; a missing stream is a hard
+  error (readiness stays DOWN, the declare returns `Err`).
+- ⇒ **The acceptor / test harness MUST create both fixed streams up front.** `FabricTestNats`
+  provisions exactly `INTEGRATION_CMD` (`integration.cmd.>`) and `INTEGRATION_EVT`
+  (`integration.evt.>`). The declare command must be captured by a stream because the declarer
+  publishes via JetStream and **awaits the publish ack** (`ack.await`) — publishing to a subject
+  no stream captures fails the publish.
 
 ### 5.2 Publish path (declarer → declare subject)
 
-`NatsIntegrationPublisher::publish`: `jetstream.publish(subject, bytes)` **then awaits the
-PubAck**. So the declare command is a JetStream publish into `<STREAM_NAME>`, ack-confirmed.
+The fabric publish does `jetstream.publish(subject, bytes)` **then awaits the PubAck**. So the
+declare command is a JetStream publish onto `INTEGRATION_CMD` (subject
+`integration.cmd.identity.service_scope.declare.v1`), ack-confirmed.
 
 ### 5.3 Await path (declarer ← confirmation events)
 
-`CorrelatedAwaiter::create_with(jetstream, stream_name, filter_subjects, AwaiterConfig)` creates
-a **pull consumer** on `<STREAM_NAME>` with:
+The fabric awaiter creates a **pull consumer** on `INTEGRATION_EVT` with:
 
 | Consumer setting | Value |
 |---|---|
 | `durable_name` | `None` → **ephemeral** consumer |
 | `deliver_policy` | `DeliverPolicy::New` → only messages arriving **after** the consumer is created |
 | `ack_policy` | `AckPolicy::None` → no acks |
-| `filter_subjects` | `["identity.evt.service_scope.accepted.v1", "identity.evt.service_scope.rejected.v1"]` (both event subjects; NOT the declare subject) |
-| `inactive_threshold` | `AwaiterConfig.inactive_threshold`, default **300s** |
+| `filter_subjects` | `["integration.evt.identity.service_scope.accepted.v1", "integration.evt.identity.service_scope.rejected.v1"]` (both event subjects; NOT the declare subject) |
+| `inactive_threshold` | default **300s** |
 
 Consumer is consumed via `consumer.messages()` (push-style pull stream, parks at zero CPU —
 never `fetch()` in a loop).
@@ -322,17 +327,17 @@ Readiness liveness split (the G3 subject exposes both as HTTP):
 
 ## 8. What the fake acceptor MUST do (checklist for the Rust runner)
 
-1. **Create the JetStream stream first** (name = the subject's `STREAM_NAME`, subjects
-   `["identity.>"]` or the three literals). The subject will NOT create it and will fail loud.
-2. Consume the declare subject `identity.cmd.service_scope.declare.v1` (a pull consumer
-   filtered on it; ack policy is your choice — the lib's stub uses ephemeral + DeliverPolicy::New
-   + AckPolicy::None).
+1. **Create both fixed streams first** — `INTEGRATION_CMD` (`integration.cmd.>`) and
+   `INTEGRATION_EVT` (`integration.evt.>`). The subject will NOT create them and will fail loud.
+2. Consume the declare subject `integration.cmd.identity.service_scope.declare.v1` (a pull consumer
+   on `INTEGRATION_CMD` filtered on it; ack policy is your choice — the lib's stub uses ephemeral +
+   DeliverPolicy::New + AckPolicy::None).
 3. Parse the incoming command JSON; extract `metadata.correlation_id` (string UUID). Optionally
    validate/echo `payload.declaration` to decide accept vs reject.
-4. **Reply on the matching subject**, echoing that **exact `correlation_id`** in
-   `metadata.correlation_id` of an `IntegrationEvent`:
-   - accept ⇒ publish to `identity.evt.service_scope.accepted.v1`, payload `{"service":"<key>"}`.
-   - reject ⇒ publish to `identity.evt.service_scope.rejected.v1`, payload
+4. **Reply on the matching subject** (onto `INTEGRATION_EVT`), echoing that **exact
+   `correlation_id`** in `metadata.correlation_id` of an `IntegrationEvent`:
+   - accept ⇒ publish to `integration.evt.identity.service_scope.accepted.v1`, payload `{"service":"<key>"}`.
+   - reject ⇒ publish to `integration.evt.identity.service_scope.rejected.v1`, payload
      `{"service":"<key>","reason":{...}}` per §4.3.
 5. Publish the reply via JetStream (so it lands in the stream the declarer's consumer reads).
 6. For the timeout/re-publish test: ignore the first N declare messages, then reply — the

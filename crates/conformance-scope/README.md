@@ -75,11 +75,13 @@ binary by reusing the helpers, not just the tests:
 - `Subject` / `SubjectConfig` — spawn the built binary with its env wiring and
   poll `/readyz` / `/livez` (status, and `readyz_body()` for the rejection
   reason S4 corroborates).
-- `create_handshake_stream`, and the three subject derivers
-  (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`),
-  read from `br-scope-declaration-contract` rather than hardcoded — so a subject
-  drift in `br-rust-common` diverges from the frozen Go wire fixture and the
-  battery goes red.
+- The three subject derivers
+  (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`)
+  render the typed `br-scope-declaration-contract` coordinates through the
+  `br-util-nats-fabric` Fabric rather than hardcoding strings — so a subject drift
+  in `br-rust-common` diverges from the frozen Go wire fixture and the battery goes
+  red. The fixed `INTEGRATION_CMD` / `INTEGRATION_EVT` streams are provisioned by
+  the harness via `FabricTestNats`.
 
 ## The single-implementation check API
 
@@ -167,7 +169,7 @@ conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", ta
 | `DeclareCapture` uses `DeliverPolicy::All` on the declare-capture | Attach mode attaches the capture **after** the subject's boot declare is already on the stream; replay is the only way to catch it. `New` would skip that first declare and only converge on the ~10s re-publish, making the gate slow. The declarer's own confirmation awaiter still uses `New` (a confirmation pre-published before its consumer exists is missed), which is why `accept`/`reject` publish only after the subject is up. |
 | Capture buffers via a lenient `correlation_id`-only probe, while `decode()` uses the strict real type | The buffer must record every declare to count re-publishes and read the id to echo it — that only needs the correlation_id, exactly as the real awaiter's `CorrelationProbe`. The conformance verdict (S1) is the separate, strict `decode()` against the real envelope + payload. Splitting them keeps the shape check honest without making the buffer depend on a conformant payload. |
 | The Go build uses `go build -C <dir>` | `br_test_harness::run_once` sets env but not the child's working directory; `-C` builds the package without depending on cwd, race-free under parallel `cargo test`. |
-| The stream is created by the runner, not the subject | The platform never auto-provisions (fail-loud); the subject does `get_stream`, so the harness owns stream setup. `identity.>` captures the declare command **and** both event subjects — the declare must be captured because the declarer awaits its publish ack. |
+| The streams are created by the runner, not the subject | The platform never auto-provisions (fail-loud); the subject does `get_stream`, so the harness owns stream setup. `FabricTestNats` provisions the two fixed streams — `INTEGRATION_CMD` (`integration.cmd.>`, the declare command) and `INTEGRATION_EVT` (`integration.evt.>`, both confirmations) — because the declarer awaits its publish ack and a missing stream fails the publish. |
 | The Go binary is built to a unique temp path per call | Each test builds its own subject; a shared output path would race under parallel `cargo test`. |
 | The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + `go` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
 | S4 reads the `/readyz` **body** before asserting no more declares | "It went quiet" alone is satisfiable by a reject that was never delivered. The subject writes `scope declaration rejected: <code>` into its `/readyz` body, so matching that body (the code is the real `ScopeDeclarationError` Display, not a literal) positively proves the reject was received and processed — only then is the tight `== count_at_reject` (no `+1` slack) sound. |

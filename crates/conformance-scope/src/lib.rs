@@ -10,7 +10,6 @@ pub mod readyz;
 pub mod runner;
 pub mod scenario;
 pub mod spawn;
-pub mod stream;
 pub mod subject;
 pub mod subjects;
 
@@ -23,14 +22,11 @@ pub use expected::{
     ExpectedDeclaration, ExpectedScope, PlatformOnly, SAMPLE_FALLBACK_SCOPE, parse_platform_only,
     parse_scope_keys,
 };
-pub use harness::{DEFAULT_STREAM_NAME, ScopeHarness};
+pub use harness::{COMMAND_STREAM_NAME, EVENT_STREAM_NAME, ScopeHarness};
 pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
 pub use readyz::ReadyzProbe;
 pub use runner::{AttachTarget, DEFAULT_TIMEOUT, run_attach};
 pub use scenario::{AcceptorBehavior, Scenario, attach_default, parse_scenarios, spawn_default};
 pub use spawn::{SpawnTarget, run_spawn};
-pub use stream::create_handshake_stream;
 pub use subject::{Subject, SubjectConfig};
-pub use subjects::{
-    STREAM_SUBJECTS, accepted_event_subject, declare_subject, rejected_event_subject,
-};
+pub use subjects::{accepted_event_subject, declare_subject, rejected_event_subject};
