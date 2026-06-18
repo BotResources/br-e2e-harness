@@ -64,9 +64,9 @@ async fn attach_run_flags_wrong_scopes_with_a_diff() {
         SERVICE_KEY,
     )
     .scope_keys(SCOPES)
-        .label_key("label.notifier")
-        .description_key("desc.notifier")
-        .wait_timeout("500ms");
+    .label_key("label.notifier")
+    .description_key("desc.notifier")
+    .wait_timeout("500ms");
     let subject = Subject::spawn(harness.binary(), &config);
     let readyz_url = format!("{}/readyz", subject.base_url());
 

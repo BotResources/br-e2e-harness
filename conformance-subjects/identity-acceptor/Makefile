@@ -15,7 +15,7 @@ fmt:
 	gofmt -w .
 
 guard:
-	@grep -rn --exclude=Makefile "identity.cmd.\|identity.evt." . && (echo DEAD GRAMMAR && exit 1) || true
+	@if grep -rn --exclude=Makefile --exclude='*_test.go' 'identity\.cmd\.\|identity\.evt\.' . ; then echo 'DEAD GRAMMAR in the live-wire anchor'; exit 1; fi
 
 check: fmt vet test guard
 

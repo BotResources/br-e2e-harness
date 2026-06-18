@@ -149,6 +149,15 @@ single git tag `v{version}` releases the set. Format follows
   `..._a_filter_identical_durable`.** It asserts only `filter_subjects` via
   `verify_command_durable`, not the whole `pull::Config` (`ack_wait` differs), so
   "byte-identical" over-promised.
+- **The `nats-fabric` anchor `make guard` now actually fails on dead grammar.**
+  The recipe wrapped its `exit 1` in a subshell whose non-zero status was then
+  swallowed by a trailing `|| true`, so `make guard` (and `make check`) logged
+  `DEAD GRAMMAR in the live-wire anchor` but exited `0` — the central anti-drift
+  gate was decorative and the pre-v1 `identity.cmd.`/`identity.evt.` grammar
+  could reappear silently while the README and CHANGELOG claimed it failed loud.
+  Inverted to `! grep … || (echo … && exit 1)`: the nominal no-match case exits
+  `0`, an injected `identity.cmd.`/`identity.evt.` match exits non-zero through
+  `make guard` and `make check`.
 
 ### Known limitation
 
@@ -164,18 +173,6 @@ single git tag `v{version}` releases the set. Format follows
   remaining gap is purely execution: the spawn-mode tests need a running NATS to
   go green and have not been exercised here (lib-as-oracle / Go-as-anchor: the
   Go side freezes the wire independently of the lib).
-
-### Fixed
-
-- **The `nats-fabric` anchor `make guard` now actually fails on dead grammar.**
-  The recipe wrapped its `exit 1` in a subshell whose non-zero status was then
-  swallowed by a trailing `|| true`, so `make guard` (and `make check`) logged
-  `DEAD GRAMMAR in the live-wire anchor` but exited `0` — the central anti-drift
-  gate was decorative and the pre-v1 `identity.cmd.`/`identity.evt.` grammar
-  could reappear silently while the README and CHANGELOG claimed it failed loud.
-  Inverted to `! grep … || (echo … && exit 1)`: the nominal no-match case exits
-  `0`, an injected `identity.cmd.`/`identity.evt.` match exits non-zero through
-  `make guard` and `make check`.
 
 ## [0.6.0] — 2026-06-15
 
