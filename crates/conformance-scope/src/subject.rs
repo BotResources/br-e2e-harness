@@ -6,7 +6,8 @@ use reqwest::StatusCode;
 
 pub struct SubjectConfig {
     pub nats_url: String,
-    pub stream_name: String,
+    pub command_stream: String,
+    pub event_stream: String,
     pub service_key: String,
     pub scope_keys: String,
     pub label_key: String,
@@ -17,10 +18,16 @@ pub struct SubjectConfig {
 }
 
 impl SubjectConfig {
-    pub fn new(nats_url: &str, stream_name: &str, service_key: &str) -> Self {
+    pub fn new(
+        nats_url: &str,
+        command_stream: &str,
+        event_stream: &str,
+        service_key: &str,
+    ) -> Self {
         Self {
             nats_url: nats_url.to_string(),
-            stream_name: stream_name.to_string(),
+            command_stream: command_stream.to_string(),
+            event_stream: event_stream.to_string(),
             service_key: service_key.to_string(),
             scope_keys: String::new(),
             label_key: String::new(),
@@ -83,7 +90,8 @@ impl Subject {
         let envs = [
             ("NATS_URL", config.nats_url.as_str()),
             ("HTTP_ADDR", addr.as_str()),
-            ("STREAM_NAME", config.stream_name.as_str()),
+            ("COMMAND_STREAM_NAME", config.command_stream.as_str()),
+            ("EVENT_STREAM_NAME", config.event_stream.as_str()),
             ("SERVICE_KEY", config.service_key.as_str()),
             ("SCOPE_KEYS", config.scope_keys.as_str()),
             ("LABEL_KEY", config.label_key.as_str()),
