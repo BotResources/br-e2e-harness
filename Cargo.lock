@@ -249,8 +249,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-auth"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "base64",
  "br-core-kernel",
@@ -264,18 +264,19 @@ dependencies = [
 
 [[package]]
 name = "br-core-directory"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "serde",
  "serde_json",
+ "thiserror",
  "uuid",
 ]
 
 [[package]]
 name = "br-core-events"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "br-core-kernel",
  "chrono",
@@ -286,26 +287,20 @@ dependencies = [
 
 [[package]]
 name = "br-core-integration"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
- "async-nats",
- "async-trait",
  "br-core-events",
  "chrono",
- "futures-util",
  "serde",
- "serde_json",
  "thiserror",
- "tokio",
- "tracing",
  "uuid",
 ]
 
 [[package]]
 name = "br-core-kernel"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "serde",
  "uuid",
@@ -313,8 +308,8 @@ dependencies = [
 
 [[package]]
 name = "br-core-scope"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "serde",
  "thiserror",
@@ -322,8 +317,8 @@ dependencies = [
 
 [[package]]
 name = "br-identity-domain"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "br-core-scope",
  "serde",
@@ -332,8 +327,8 @@ dependencies = [
 
 [[package]]
 name = "br-scope-declaration-contract"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
  "br-core-integration",
 ]
@@ -345,6 +340,9 @@ dependencies = [
  "async-nats",
  "axum",
  "br-core-auth",
+ "br-core-integration",
+ "br-scope-declaration-contract",
+ "br-util-nats-fabric",
  "bytes",
  "dotenvy",
  "futures-util",
@@ -363,31 +361,45 @@ dependencies = [
 
 [[package]]
 name = "br-util-directory"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
- "async-nats",
  "async-trait",
  "br-core-directory",
+ "br-util-nats-fabric",
  "br-util-postgres",
- "futures-util",
- "serde",
  "serde_json",
  "sqlx",
  "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "br-util-nats-fabric"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "br-core-events",
+ "br-core-integration",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
  "tracing",
  "uuid",
 ]
 
 [[package]]
 name = "br-util-postgres"
-version = "0.11.1"
-source = "git+https://github.com/BotResources/br-rust-common?tag=v0.11.1#d17d06284f220fb9e4d78ac1a6526ed16d0089b8"
+version = "1.0.0"
+source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.0#19ad48df08d81c70c4ca27c8508a092514ce0784"
 dependencies = [
- "br-core-auth",
  "sqlx",
  "thiserror",
- "tracing",
  "url",
  "uuid",
 ]

@@ -320,6 +320,54 @@ throwaway UUID-suffixed buckets, not a service-contract stream:
   or KV bucket, giving each serial scenario an empty bus on a shared server.
   Names are caller-supplied; the helpers carry zero service knowledge.
 
+### Typed Fabric provisioning (`nats-fabric`)
+
+`FabricTestNats` is the typed, drift-proof generalisation of the hand-rolled
+`NatsEnv` that every Fabric service used to copy into its `tests/common/mod.rs`.
+It owns a per-process `SpawnedNats`, provisions the **two fixed Fabric streams**
+(`INTEGRATION_CMD` binding `integration.cmd.>`, `INTEGRATION_EVT` binding
+`integration.evt.>`), and hands back a ready `Fabric` — never a freestyle subject
+string. Durables are bound from **typed `CommandCoords` / `EventCoords`** through
+the lib's own `command_subject` / `event_subject`, so a durable's
+`filter_subjects` is **byte-identical** to what the lib binds — if the lib's
+subject grammar drifts, the durable bind stops matching and the test fails.
+
+- **`FabricTestNats::start()`** — spawn, connect, provision both fixed streams,
+  mint a UUIDv7 `run_id`.
+- **`.with_published_language()`** — **get-or-create** the
+  `PUBLISHED_LANGUAGE` KV bucket and **never** delete it (the #73 never-wipe fix:
+  a published-language bucket is reconcile-no-wipe state, not a per-scenario
+  throwaway).
+- **`.with_command_durable(&coords, name)` / `.with_event_durable(&coords, name)`**
+  — a durable whose single filter is the rendered coord subject; assert it with
+  the lib's own `fabric().verify_*_durable(&coords, &durable(name))`.
+- **`.fabric()` / `.url()` / `.jetstream()` / `.client()`** — the live handles.
+- **`.durable(logical)` → `"{logical}_{run_id}"`, `.key_prefix()` →
+  `KvPrefix("{run_id}/")`, `.correlation()`** — the per-run namespace, so parallel
+  runs never collide on a durable name or a KV key.
+
+**Negative-path helpers are first-class** — they prove the lib fails loud, never
+auto-provisions:
+
+- **`.with_widened_durable(stream, name, "integration.evt.>")`** returns a
+  `WidenedDurable` marker; feeding its `durable` to `verify_event_durable` yields
+  `FabricError::FilterMismatch`.
+- **`BareFabricNats::without_fixed_streams()` / `with_only_command_stream()` /
+  `with_only_event_stream()`** start a server **missing** a fixed stream so a lib
+  bind against the absent stream fails with `FabricError::Consume`, and
+  `published_language_absent()` proves the bucket is not silently created.
+
+**Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
+suffix + KV prefix + correlation), so independent scenarios coexist on one server
+without cross-talk. The boundary it does **not** cross: the two **fixed** streams
+(`INTEGRATION_CMD` / `INTEGRATION_EVT`) and the **shared** `PUBLISHED_LANGUAGE`
+bucket are global, frozen names — two real *competing consumers* on the same fixed
+stream race for the same messages. A scenario that asserts a specific consumer
+**receives** a command (rather than only that a durable binds) must run
+`#[serial]`-style: each `FabricTestNats` spawns **its own** NATS server, so the
+isolation is per-process by construction — do **not** point two `FabricTestNats`
+at one URL and expect competing-consumer isolation.
+
 ### The de-flake primitives
 
 Three helpers exist specifically to kill the classic e2e flakes:
@@ -417,6 +465,9 @@ here, synthetically:
 | Interpolated identifiers go through `quote_ident` / literals through `quote_literal` | The public `create_named` / `create_with_app_role` / `with_app_role` surface takes role and DB **names** as arbitrary `&str`. Names were previously interpolated raw into DDL (only the password was escaped); a `"`-bearing name broke the statement (and the `rolname = '…'` existence check). A single quote helper escapes every interpolated name and literal so the DDL is well-formed whatever the caller passes. |
 | The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
+| `FabricTestNats` binds durables from typed coords, never a subject string | The hand-rolled `NatsEnv` it generalises wrote the declare subject as a `const &str`, so a drift in the lib's subject grammar slipped past the harness. Binding through `command_subject(&coords)` / `event_subject(&coords)` makes the durable's `filter_subjects` byte-identical to what the lib's `Fabric` binds at runtime — drift now breaks the bind, which is the point. |
+| `FabricTestNats::with_published_language()` is get-or-create, never wiped | The `PUBLISHED_LANGUAGE` bucket is **reconcile-no-wipe** state (the #73 fix): a directory consumer folds it and a wipe would replay-from-empty. It is created if absent and otherwise left exactly as found — unlike `recreate_*`, which delete-then-create per-scenario throwaway streams. |
+| `FabricTestNats` namespaces durables/keys but spawns its own server per instance | Durable suffix + KV prefix + correlation isolate *non-competing* scenarios on one server. But the two **fixed** streams and the shared `PUBLISHED_LANGUAGE` bucket are frozen global names — two real competing consumers on one fixed stream race for the same messages, which no namespacing can fix. So each `FabricTestNats` owns its own `SpawnedNats`: a competing-consumer scenario is isolated by process, and the helper deliberately offers no "share one URL" mode that would silently reintroduce the race. |
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. |
 | `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
@@ -439,6 +490,7 @@ transitive deps out of its binary:
 |---|---|---|
 | `nats` | `TestNats`, `await_integration_event`, `recreate_stream`, `recreate_kv` | `async-nats`, `futures-util` |
 | `spawned-nats` | `SpawnedNats` | `tempfile` |
+| `nats-fabric` | `FabricTestNats`, `BareFabricNats`, `RunNamespace`, `WidenedDurable` | `br-util-nats-fabric`, `br-core-integration`, `br-scope-declaration-contract` (+ `nats`, `spawned-nats`) |
 | `e2e-db` | `E2eDatabase` | `sqlx` |
 | `server` | `TestServer` | `axum`, `reqwest` |
 | `passport` | `PassportBuilder` | `br-core-auth` |
@@ -467,7 +519,7 @@ br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag 
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
 (its `test-support` feature, which ships `PassportBuilder`) pinned to
-`br-rust-common` `tag = "v0.11.1"`. A slim build that omits the
+`br-rust-common` `tag = "v1.0.0"`. A slim build that omits the
 passport-bearing features drops the dependency. If your service already pins
 `br-rust-common`, keep both on the **same ref** so Cargo resolves a single
 source (two refs of one git URL are two distinct sources and duplicate

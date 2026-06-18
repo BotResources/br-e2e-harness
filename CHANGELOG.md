@@ -7,6 +7,30 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`FabricTestNats` — a typed, drift-proof NATS Fabric provisioner** (new
+  `nats-fabric` feature). It generalises the hand-rolled `NatsEnv` that every
+  Fabric service used to copy into `tests/common/mod.rs`: `start()` spawns a
+  per-process `SpawnedNats`, provisions the two **fixed** Fabric streams
+  (`INTEGRATION_CMD` → `integration.cmd.>`, `INTEGRATION_EVT` →
+  `integration.evt.>`), mints a UUIDv7 `run_id`, and hands back a ready `Fabric`.
+  Durables are bound from **typed `CommandCoords` / `EventCoords`** through the
+  lib's own `command_subject` / `event_subject`, so a durable's `filter_subjects`
+  is byte-identical to what the lib binds — subject-grammar drift now breaks the
+  bind. `.with_published_language()` is **get-or-create, never wiped** (the #73
+  never-wipe posture). `.durable(logical)`, `.key_prefix()` and `.correlation()`
+  namespace each run. **Negative-path helpers are first-class**:
+  `.with_widened_durable(...)` proves `FabricError::FilterMismatch`, and
+  `BareFabricNats::{without_fixed_streams, with_only_command_stream,
+  with_only_event_stream}` start a server missing a fixed stream / the bucket to
+  prove the lib bind fails loud and never auto-provisions.
+
+### Changed
+
+- **The workspace pins `br-rust-common` `v1.0.0`** (was `v0.11.1`), across
+  `br-test-harness` and every `conformance-*` crate.
+
 ## [0.6.0] — 2026-06-15
 
 ### Changed (breaking)

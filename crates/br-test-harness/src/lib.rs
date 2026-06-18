@@ -1,6 +1,8 @@
 pub mod spawned_process;
 pub mod wait;
 
+#[cfg(feature = "nats-fabric")]
+pub mod fabric_nats;
 #[cfg(feature = "nats")]
 pub mod nats;
 #[cfg(feature = "nats")]
@@ -26,6 +28,8 @@ pub mod ws;
 pub use spawned_process::{BootOutcome, SpawnedProcess, run_once};
 pub use wait::wait_until;
 
+#[cfg(feature = "nats-fabric")]
+pub use fabric_nats::{BareFabricNats, FabricTestNats, RunNamespace, WidenedDurable};
 #[cfg(feature = "nats")]
 pub use nats::TestNats;
 #[cfg(feature = "nats")]

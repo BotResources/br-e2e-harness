@@ -12,10 +12,11 @@ ignored = ["serde"]
 
 [features]
 default = ["full"]
-full = ["nats", "spawned-nats", "e2e-db", "server", "passport", "graphql", "sse", "ws", "oidc"]
+full = ["nats", "spawned-nats", "nats-fabric", "e2e-db", "server", "passport", "graphql", "sse", "ws", "oidc"]
 
 nats = ["dep:async-nats", "dep:dotenvy", "dep:url", "dep:percent-encoding", "dep:futures-util"]
 spawned-nats = ["dep:tempfile"]
+nats-fabric = ["nats", "spawned-nats", "dep:br-util-nats-fabric", "dep:br-core-integration", "dep:br-scope-declaration-contract"]
 e2e-db = ["dep:sqlx", "dep:dotenvy"]
 server = ["dep:axum", "http-client"]
 passport = ["dep:br-core-auth"]
@@ -27,7 +28,10 @@ oidc = ["dep:oidc-test-idp"]
 http-client = ["dep:reqwest"]
 
 [dependencies]
-br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v0.11.1", version = "0.11.1", features = ["test-support"], optional = true }
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v1.0.0", version = "1.0.0", features = ["test-support"], optional = true }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.0", version = "1.0.0", optional = true }
+br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v1.0.0", version = "1.0.0", optional = true }
+br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v1.0.0", version = "1.0.0", optional = true }
 
 oidc-test-idp = { path = "../oidc-test-idp", version = "0.6.0", optional = true }
 
@@ -61,3 +65,5 @@ tempfile = { version = "3", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.0", version = "1.0.0" }
+br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v1.0.0", version = "1.0.0" }
