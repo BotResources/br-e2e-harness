@@ -125,6 +125,7 @@ fn enabled_config(harness: &ScopeHarness, expected: &ExpectedDeclaration) -> Sub
     SubjectConfig::new(
         &harness.nats_url(),
         harness.stream_name(),
+        harness.event_stream_name(),
         &expected.service_key,
     )
     .scope_keys(&expected.scope_keys_csv())

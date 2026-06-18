@@ -55,6 +55,30 @@ single git tag `v{version}` releases the set. Format follows
   removed-`SubjectError` and per-run-`stream_name` surface drops accordingly
   (`AttachTarget` no longer carries `stream_name`; `DEFAULT_STREAM_NAME` →
   `COMMAND_STREAM_NAME` / `EVENT_STREAM_NAME`).
+- **`conformance-scope` spawn path carries both handshake streams.**
+  `SubjectConfig::new` now takes `(nats_url, command_stream, event_stream,
+  service_key)` and the spawned subject receives both `COMMAND_STREAM_NAME`
+  (`INTEGRATION_CMD`, where the declare lands) and `EVENT_STREAM_NAME`
+  (`INTEGRATION_EVT`, where confirmations arrive) instead of a single
+  `STREAM_NAME`. Under the v1.0.0 `integration.*` grammar the declarer publishes
+  on `INTEGRATION_CMD` but awaits confirmations on `INTEGRATION_EVT`, which one
+  env value cannot express; the two-stream `FabricTestNats` provisioning is now
+  matched by a two-stream subject contract (no more two-stream harness wired to a
+  one-stream subject).
+
+### Known limitation
+
+- **The `conformance-scope` spawn battery is migrated on the Rust side but not
+  yet executable green against `v1.0.0`, and its `#[ignore]`-gated real-infra
+  tests have not been run.** The Go anchor (`conformance-subjects/scope-service`)
+  is still frozen on the **pre-v1 wire** — `wire.go` hardcodes
+  `identity.cmd.service_scope.declare.v1` / `identity.evt.*` and `config.go`
+  reads a single `STREAM_NAME` (default `IDENTITY`) — so it cannot publish the
+  declare on `INTEGRATION_CMD` while awaiting confirmations on `INTEGRATION_EVT`.
+  Closing this requires re-freezing the Go anchor to the `integration.*` grammar
+  and the two-stream split, a deliberate operator decision on the external wire
+  (lib-as-oracle / Go-as-anchor: the Go side freezes the wire independently of
+  the lib). Until then the spawn-mode tests remain unexecuted against v1.0.0.
 
 ## [0.6.0] — 2026-06-15
 

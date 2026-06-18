@@ -32,11 +32,16 @@ fn expected() -> ExpectedDeclaration {
 }
 
 fn config(harness: &ScopeHarness) -> SubjectConfig {
-    SubjectConfig::new(&harness.nats_url(), harness.stream_name(), SERVICE_KEY)
-        .scope_keys(&expected().scope_keys_csv())
-        .label_key("label.notifier")
-        .description_key("desc.notifier")
-        .wait_timeout("500ms")
+    SubjectConfig::new(
+        &harness.nats_url(),
+        harness.stream_name(),
+        harness.event_stream_name(),
+        SERVICE_KEY,
+    )
+    .scope_keys(&expected().scope_keys_csv())
+    .label_key("label.notifier")
+    .description_key("desc.notifier")
+    .wait_timeout("500ms")
 }
 
 fn config_with_long_wait_timeout(harness: &ScopeHarness) -> SubjectConfig {

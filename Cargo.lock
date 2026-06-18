@@ -600,6 +600,7 @@ dependencies = [
  "br-core-scope",
  "br-scope-declaration-contract",
  "br-test-harness",
+ "br-util-nats-fabric",
  "chrono",
  "futures-util",
  "reqwest",

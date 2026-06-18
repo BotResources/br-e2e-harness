@@ -1,16 +1,15 @@
 use async_nats::jetstream;
-use br_core_integration::{
-    Actor, EventMetadata, IntegrationEvent, IntegrationPublisherExt, NatsIntegrationPublisher,
-    UserId,
-};
+use br_core_integration::{Actor, EventMetadata, IntegrationEvent, UserId};
 use br_core_scope::{
     ScopeDeclarationError, ServiceKey, ServiceScopesAccepted, ServiceScopesRejected,
 };
-use br_scope_declaration_contract::{ACCEPTED, REJECTED, event_type};
+use br_scope_declaration_contract::{
+    ACCEPTED, REJECTED, accepted_event_coords, event_type, rejected_event_coords,
+};
+use br_util_nats_fabric::{EventCoords, Fabric};
 use uuid::Uuid;
 
 use crate::error::{ConformanceError, Result};
-use crate::subjects::{accepted_event_subject, rejected_event_subject};
 
 pub async fn accept(
     js: &jetstream::Context,
@@ -25,7 +24,7 @@ pub async fn accept(
         reply_metadata(correlation_id),
         ServiceScopesAccepted::new(service.clone()),
     );
-    publish(js, &accepted_event_subject()?, &event).await
+    publish(js, accepted_event_coords()?, &event).await
 }
 
 pub async fn reject(
@@ -42,7 +41,7 @@ pub async fn reject(
         reply_metadata(correlation_id),
         ServiceScopesRejected::new(service.clone(), reason),
     );
-    publish(js, &rejected_event_subject()?, &event).await
+    publish(js, rejected_event_coords()?, &event).await
 }
 
 fn reply_metadata(correlation_id: Uuid) -> EventMetadata {
@@ -51,11 +50,11 @@ fn reply_metadata(correlation_id: Uuid) -> EventMetadata {
 
 async fn publish<T: serde::Serialize + Send + Sync>(
     js: &jetstream::Context,
-    subject: &str,
+    coords: EventCoords,
     event: &IntegrationEvent<T>,
 ) -> Result<()> {
-    NatsIntegrationPublisher::new(js.clone())
-        .publish_event(subject, event)
+    Fabric::new(js.clone())
+        .publish_event(&coords, event)
         .await
-        .map_err(|e| ConformanceError::Publish(format!("publish to '{subject}': {e}")))
+        .map_err(|e| ConformanceError::Publish(format!("publish event {coords:?}: {e}")))
 }
