@@ -30,6 +30,12 @@ single git tag `v{version}` releases the set. Format follows
 
 - **The workspace pins `br-rust-common` `v1.0.0`** (was `v0.11.1`), across
   `br-test-harness` and every `conformance-*` crate.
+- **`conformance-scope-cli` drops the `--stream` flag and the manifest
+  `attach.stream` field.** Fabric streams are fixed constants in `v1.0.0`
+  (`INTEGRATION_CMD` / `INTEGRATION_EVT`), so the handshake stream is no longer
+  caller-choosable: the CLI binds the declare consumer to the fixed
+  `INTEGRATION_CMD` command stream. `AttachTarget` no longer carries
+  `stream_name`.
 
 ## [0.6.0] — 2026-06-15
 

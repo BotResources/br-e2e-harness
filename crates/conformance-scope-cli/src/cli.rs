@@ -56,13 +56,6 @@ pub struct RunArgs {
 
     #[arg(
         long,
-        value_name = "NAME",
-        help = "JetStream stream carrying the handshake subjects (attach mode). Defaults to the wire-contract stream."
-    )]
-    pub stream: Option<String>,
-
-    #[arg(
-        long,
         value_name = "KEY",
         help = "Expected declaring service key, e.g. example-service."
     )]
