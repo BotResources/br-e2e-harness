@@ -220,10 +220,7 @@ impl FabricAwaiter {
     }
 }
 
-pub async fn await_command_consumer(
-    js: &jetstream::Context,
-    coords: &CommandCoords,
-) -> CommandAwaiter {
+pub async fn subscribe_command(js: &jetstream::Context, coords: &CommandCoords) -> CommandAwaiter {
     let subject = command_subject(coords);
     let subscriber = js
         .client()

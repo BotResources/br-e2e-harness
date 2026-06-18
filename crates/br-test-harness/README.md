@@ -52,8 +52,8 @@ for one; that the workspace compiles with the handles unexposed is the proof.
 ## The 4-channel observation pattern (the BR e2e doctrine)
 
 A BR service e2e scenario **is** the executable functional spec — the verification
-floor for every service, and the *primary* spec surface for **fatty** units, which
-have no pure-domain `command → event` tests-as-spec. A scenario is a complete
+floor for every service, and the *primary* spec surface for single-crate service
+units, which have no pure-domain `command → event` tests-as-spec. A scenario is a complete
 functional flow (Given/When/Then, hosted in Outline; `tests/` is its executable
 transcript), and it asserts that flow across **four observation channels** —
 nothing else is a legitimate window into the running service:
@@ -96,7 +96,7 @@ copies this ~80-line template, swaps the constants for its own, and writes its f
 4-channel scenario **without re-implementing a single verdict/observation helper** —
 every one of those is imported from `br-test-harness`.
 
-The reference is `svc-charter` (the BR-fatty reference unit). What each service
+The reference is `svc-charter`, the BR reference service. What each service
 **owns** is exactly: the named actors, the named contract streams + KV bucket, the
 two PG role names, the binary's env-var contract, and the restart/boot helpers. What
 it **imports** is everything else.
@@ -606,6 +606,8 @@ here, synthetically:
 | `FabricTestNats` namespaces durables/keys; isolation is per-`SpawnedNats` **or** per-`connect(url)` serial group | Durable suffix + KV prefix + correlation isolate *non-competing* scenarios on one server. But the two **fixed** streams and the shared `PUBLISHED_LANGUAGE` bucket are frozen global names — two real competing consumers on one fixed stream race for the same messages, which no namespacing can fix. So a competing-consumer scenario is isolated by **process** — its own `start()` server — or, on a shared `connect(url)` NATS, by a `#[serial]` group. |
 | `FabricTestNats::start()` *vs* `connect(url)`, and `shutdown()` only kills an `Owned` backing | `start()` owns a `SpawnedNats` (per-process isolation); `connect(url)` attaches to a shared CI/local NATS (the cross-process case the `fabric-nats` CLI drives). All provisioning is **get-or-create** so attaching to a NATS that already carries the fixed streams/bucket neither errors nor wipes — the structural #73 never-wipe fix. `shutdown()` tears down an `Owned` server but is a **no-op when `Attached`**: the harness never kills a NATS it did not start. |
 | `pl_put_raw` is the only raw-bytes KV write, and `publish_dead_subject` the only raw subject | The typed surface (`pl_publisher`/`pl_reader`, coord-driven durables) is drift-proof by construction. Two adversarial holes are kept deliberately and named loud: `pl_put_raw` injects a poison value to prove fail-closed decode, `publish_dead_subject` publishes to a hand-written subject to prove the dead grammar lands on no fixed stream. Both exist *to test the failure*, never as a convenient bypass. |
+| `await_event` rides a JetStream awaiter, `await_command` rides a core-NATS subscriber | `await_event` delegates to the lib's JetStream `CorrelatedAwaiter` (replay-capable: it catches an event published before the await). `await_command` instead opens a plain core-NATS subscribe — **no replay**, so the command must be published *after* the subscriber is live — because the lib's awaiter binds `INTEGRATION_EVT` only; until the lib generalises `await` to the command stream (the gap below) the asymmetry is deliberate, not an oversight. |
+| The passport suite provisions `bearer_tokens` via the CLI **and** re-opens it with `with_bearer_tokens()` | Not a double-provision bug. The CLI's `[bearer_tokens]` get-or-creates the bucket per the universal "every suite provisions through the CLI" ruling (no in-binary special-casing); `with_bearer_tokens()` then re-opens the same wipe-free bucket to obtain the in-process `Store` handle `bearer_seeder()` needs to seed/revoke tokens. Both are get-or-create and idempotent, so the second open never wipes or duplicates. |
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. |
 | `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |

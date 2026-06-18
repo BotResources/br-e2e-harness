@@ -199,7 +199,7 @@ impl FabricTestNats {
     }
 
     pub async fn await_command(&self, coords: &CommandCoords) -> CommandAwaiter {
-        capture::await_command_consumer(&self.js, coords).await
+        capture::subscribe_command(&self.js, coords).await
     }
 
     pub async fn pl_publisher<V>(&self) -> PublishedLanguagePublisher<V>

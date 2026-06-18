@@ -102,6 +102,22 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
+- **`br-test-harness` gains `workspace_bin(name)` + `spawn_fabric_provision(url,
+  manifest)`; the four conformance crates stop hand-rolling the binary locator.**
+  `workspace_bin` derives the built binary's path from `current_exe()` (pop, then
+  pop a `deps/` layer) instead of guessing `../../target/<profile>/` from a
+  `cfg!(debug_assertions)` profile — which broke under a custom `CARGO_TARGET_DIR`,
+  a `--release` test run, or a relocated `target`. `spawn_fabric_provision` hoists
+  the provision-spawn body (locate `fabric-nats`, `run_once`, status check) that
+  `conformance-{scope,identity,passport,directory}` each duplicated; every
+  `provision.rs` now keeps only its thin `map_err` into its own
+  `ConformanceError`. The `conformance-nats-fabric` test binary-locator routes
+  through `workspace_bin` too. Both helpers are always-compiled (std + `tokio`).
+- **`fabric_nats::subscribe_command` (was `await_command_consumer`).** Internal
+  rename only — the function is module-private to the Fabric capture path and was
+  never re-exported; the public `await_command` / `CommandAwaiter` surface is
+  unchanged. The name no longer implies a JetStream consumer: it opens a core-NATS
+  `Subscriber` (no replay), because the lib's awaiter binds `INTEGRATION_EVT` only.
 - **The seal: `async-nats` is confined to `br-test-harness`; the raw JetStream /
   client handles are removed from the typed surface (#74 complete, phase 2c).**
   `FabricTestNats::jetstream()` / `client()` and `BareFabricNats::jetstream()` are
@@ -544,7 +560,7 @@ single git tag `v{version}` releases the set. Format follows
   so **≥2 characters** — a single `"A"` is rejected), `is_code_shaped` — with
   **zero transport coupling** (they take a response, not a
   `GraphqlClient`). Feature-gated under `graphql`; promoted from `svc-charter`'s
-  service-local `tests/common/gql.rs` (the BR-fatty reference unit) so every
+  service-local `tests/common/gql.rs` (the BR reference service) so every
   affordance-aware service stops re-inventing the most load-bearing observation
   helper (#55 A.1).
   - **Affordance-skip guarantee:** the rejection-code walker behind

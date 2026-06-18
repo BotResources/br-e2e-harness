@@ -1,7 +1,6 @@
-use std::path::PathBuf;
 use std::time::Duration;
 
-use br_test_harness::{BareFabricNats, FabricTestNats, run_once};
+use br_test_harness::{BareFabricNats, FabricTestNats, run_once, workspace_bin};
 use conformance_nats_fabric::anchor::frozen_wire;
 use conformance_nats_fabric::checks::integration::{
     assert_dead_grammar_fails_loud, assert_missing_stream_fails_loud,
@@ -20,27 +19,12 @@ use conformance_nats_fabric::checks::published_language::{
 const DEAD_COMMAND_SUBJECT: &str = "identity.cmd.service_scope.declare.v1";
 const PROVISION_TIMEOUT: Duration = Duration::from_secs(30);
 
-fn fabric_nats_bin() -> PathBuf {
-    let mut dir = std::env::current_exe().expect("test executable path");
-    dir.pop();
-    if dir.ends_with("deps") {
-        dir.pop();
-    }
-    let bin = dir.join("fabric-nats");
-    assert!(
-        bin.exists(),
-        "fabric-nats binary must be built by the workspace at {}",
-        bin.display()
-    );
-    bin
-}
-
 fn fixture(name: &str) -> String {
     format!("tests/fixtures/{name}")
 }
 
 async fn provision(harness: &FabricTestNats, manifest: &str) {
-    let bin = fabric_nats_bin();
+    let bin = workspace_bin("fabric-nats");
     let url = harness.url();
     let output = run_once(
         &bin.to_string_lossy(),
