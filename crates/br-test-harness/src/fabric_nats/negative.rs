@@ -121,3 +121,30 @@ pub async fn raw_message_absent(js: &jetstream::Context, stream: &str, subject: 
         .await
         .is_err()
 }
+
+pub async fn durable_filter_subjects(
+    js: &jetstream::Context,
+    stream_name: &str,
+    durable: &str,
+) -> Vec<String> {
+    let stream = js
+        .get_stream(stream_name)
+        .await
+        .unwrap_or_else(|e| panic!("get stream {stream_name} to read durable {durable}: {e}"));
+    let mut consumer: jetstream::consumer::PullConsumer = stream
+        .get_consumer(durable)
+        .await
+        .unwrap_or_else(|e| panic!("get durable {durable} on {stream_name}: {e}"));
+    let config = &consumer
+        .info()
+        .await
+        .unwrap_or_else(|e| panic!("read durable {durable} info on {stream_name}: {e}"))
+        .config;
+    if !config.filter_subjects.is_empty() {
+        config.filter_subjects.clone()
+    } else if !config.filter_subject.is_empty() {
+        vec![config.filter_subject.clone()]
+    } else {
+        Vec::new()
+    }
+}

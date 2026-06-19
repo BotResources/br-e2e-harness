@@ -7,6 +7,45 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.0.1
+
+### Changed
+
+- **The workspace pins `br-rust-common` `v1.0.2`** (was `v1.0.1`), across
+  `br-test-harness` and every `conformance-*` crate, to break the diamond skew
+  with services that already consume `br-rust-common` `v1.0.2`. v1.0.2 is additive
+  over v1.0.1 (fabric durable-consumer surface + the ephemeral-auth KV); the
+  harness uses none of the new *positive* surface. The harness own-version moves to
+  its own next patch `1.0.1` — it tracks `br-rust-common` only at the major level,
+  not number-for-number.
+- **The NATS-Fabric durable-bind conformance now proves convergence, matching
+  v1.0.2's repurposed `verify_*_durable` / `FilterMismatch` contract.** In v1.0.2
+  `verify_command_durable` / `verify_event_durable` became create-or-bind readiness
+  gates delegating to `ensure_command_durable` / `ensure_event_durable`: a
+  pre-existing durable left widened on `integration.evt.>` is **narrowed back** to
+  the exact rendered coordinate filter (the anti-over-delivery guarantee) and the
+  call returns `Ok` — it no longer errors. `FabricError::FilterMismatch` is
+  repurposed to guard only the empty-coordinate-set case (which would vacuum the
+  whole stream). The `br-test-harness` self-test
+  `a_widened_durable_is_converged_back_to_the_exact_filter` (was
+  `a_widened_durable_makes_the_lib_bind_fail_with_filter_mismatch`) now binds a
+  widened durable, asserts `Ok`, and reads the durable's `filter_subject(s)` back
+  from the broker to prove the filter was narrowed to the exact coordinate and is
+  no longer `integration.evt.>`. The `conformance-nats-fabric`
+  `a_widened_durable_is_rejected` check is likewise rewritten to
+  `a_widened_durable_is_converged_back_to_the_exact_filter`. The
+  `create_durable` → `ensure_*_durable` provisioning simplification stays
+  **deferred** to lib gap `ws-cc-platform#93` and is intentionally not part of this
+  bump.
+- **`cargo semver-checks` now scopes to `br-test-harness`; the `conformance-*`
+  battery crates are exempt.** A conformance battery is an executable spec: when the
+  lib repurposes a behavior or error, the matching assert-helper *must* rename (here
+  `conformance-nats-fabric::assert_widened_durable_rejected`), which `semver-checks`
+  reads as a major break — a false demand that collides with the harness tracking
+  `br-rust-common` at the major level only. The reusable library surface
+  (`br-test-harness` fixtures) stays fully gated; the conformance assert-helpers,
+  consumed through the battery runner rather than individually, are not.
+
 ## 1.0.0
 
 ### Added

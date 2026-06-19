@@ -154,6 +154,12 @@ jobs:
           fail=0
           for toml in crates/*/Cargo.toml; do
             crate=$(basename "$(dirname "$toml")")
+            case "${crate}" in
+              conformance-*)
+                echo "::notice::${crate} is a conformance battery (executable spec); its assert-helper API tracks the lib contract and renames with it, so it is exempt from semver-checks — br-test-harness stays gated"
+                continue
+                ;;
+            esac
             if [ ! -f "crates/${crate}/src/lib.rs" ]; then
               echo "::notice::${crate} has no library target, skipping semver-checks"
               continue
