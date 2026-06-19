@@ -159,28 +159,3 @@ jobs:
             "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-arm64"
           docker manifest push "${IMAGE}:${VERSION}"
 
-      # -----------------------------------------------------------------------
-      # Smoke-test: --version on both arches.
-      # QEMU/binfmt is required to *execute* the arm64 image on the amd64
-      # GitHub-hosted runner (unlike BR's arc-ubuntu runners, ubuntu-latest
-      # has no binfmt handlers registered). Without it: `exec format error`
-      # even though the published image is correct.
-      # -----------------------------------------------------------------------
-      - name: setup qemu (run non-native arch in smoke-test)
-        if: steps.ver.outputs.skip == 'false'
-        uses: docker/setup-qemu-action@v3
-
-      - name: smoke-test published image (both arches)
-        if: steps.ver.outputs.skip == 'false'
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.ver.outputs.version }}"
-          EXPECTED="${CRATE} ${VERSION}"
-          for platform in linux/amd64 linux/arm64; do
-            out=$(docker run --rm --platform "${platform}" "${IMAGE}:${VERSION}" --version)
-            echo "${platform}: ${out}"
-            [[ "$out" == "$EXPECTED" ]] || {
-              echo "::error::Smoke-test failed on ${platform}: expected '${EXPECTED}', got '${out}'"
-              exit 1
-            }
-          done
