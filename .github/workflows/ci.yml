@@ -60,7 +60,7 @@ jobs:
           key: infra-e2e
       - name: install nats-server
         env:
-          NATS_SERVER_VERSION: v2.10.22
+          NATS_SERVER_VERSION: v2.14.1
         run: |
           set -euo pipefail
           url="https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/nats-server-${NATS_SERVER_VERSION}-linux-amd64.tar.gz"

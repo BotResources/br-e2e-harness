@@ -186,7 +186,7 @@ crates.io). Keep its `br-rust-common` tag identical to `br-test-harness`'s
 
 ```toml
 [dev-dependencies]
-conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.1" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.2" }
 ```
 
 ## Why — the non-obvious bits

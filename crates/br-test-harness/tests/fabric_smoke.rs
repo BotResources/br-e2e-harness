@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use br_core_integration::{Aggregate, Bc, EventCoords, PastFact};
 use br_test_harness::FabricTestNats;
-use br_util_nats_fabric::KvKey;
+use br_util_nats_fabric::{EphemeralAuthStore, KvKey};
+use futures_util::FutureExt as _;
 use uuid::Uuid;
 
 fn ev() -> EventCoords {
@@ -56,6 +57,62 @@ async fn capture_await_pl_bearer_round_trip() {
     let token = seeder.seed("smoke", "alice").await.unwrap();
     assert!(token.raw.starts_with("brk_"));
     seeder.revoke(&token).await.unwrap();
+
+    nats.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "real-infra: needs nats-server"]
+async fn ephemeral_auth_provisions_with_working_per_key_ttl_and_exact_inventory() {
+    let nats = FabricTestNats::start().await.with_ephemeral_auth().await;
+
+    assert!(nats.ephemeral_auth_present().await);
+    nats.assert_only_kv_buckets(&["EPHEMERAL_AUTH"]).await;
+
+    let store: EphemeralAuthStore<serde_json::Value> =
+        EphemeralAuthStore::open(nats.fabric()).await.unwrap();
+    let key = KvKey::new(format!("auth/code/{}", Uuid::now_v7().simple())).unwrap();
+    store
+        .create_with_ttl(
+            &key,
+            &serde_json::json!({ "code": "x" }),
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("per-key ttl write succeeds against the provisioned bucket");
+    assert!(
+        store.get_with_revision(&key).await.unwrap().is_some(),
+        "key is live immediately after the ttl write"
+    );
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert!(
+        store.get_with_revision(&key).await.unwrap().is_none(),
+        "per-key ttl expired the key, proving limit_markers is configured"
+    );
+
+    nats.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "real-infra: needs nats-server"]
+async fn assert_only_kv_buckets_fails_on_a_stray_bucket() {
+    let nats = FabricTestNats::start()
+        .await
+        .with_ephemeral_auth()
+        .await
+        .with_published_language()
+        .await;
+
+    let outcome = std::panic::AssertUnwindSafe(nats.assert_only_kv_buckets(&["EPHEMERAL_AUTH"]))
+        .catch_unwind()
+        .await;
+    assert!(
+        outcome.is_err(),
+        "a stray PUBLISHED_LANGUAGE bucket must make the EPHEMERAL_AUTH-only assertion panic"
+    );
+
+    nats.assert_only_kv_buckets(&["EPHEMERAL_AUTH", "PUBLISHED_LANGUAGE"])
+        .await;
 
     nats.shutdown().await;
 }

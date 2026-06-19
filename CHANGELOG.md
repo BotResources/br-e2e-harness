@@ -7,6 +7,23 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.0.2 - 2026-06-19
+
+### Added
+
+- **`FabricTestNats::with_ephemeral_auth()`** — provisions the sanctioned
+  `EPHEMERAL_AUTH` KV bucket (mirroring `with_published_language()`) so a service
+  e2e can stand it up without importing `async-nats`. The bucket is created with
+  the lib's canonical config — `history = 8`, `max_age = 3600s`, and
+  `limit_markers = 1s` (async-nats 0.48's `subject_delete_marker_ttl`) — so
+  per-key `create_with_ttl` writes actually expire, matching `EphemeralAuthStore`'s
+  prod behavior. New `connect::get_or_create_ephemeral_auth` sibling.
+- **KV bucket inventory:** `FabricTestNats::kv_bucket_names()` enumerates the live
+  `KV_*` JetStream streams and returns the stripped bucket-name set, and
+  `assert_only_kv_buckets(&[&str])` panics with an `expected … got …` diff when the
+  live set differs — the primitive a service uses to prove no stray bucket was
+  created. Plus `ephemeral_auth_present()`.
+
 ## 1.0.1
 
 ### Changed
