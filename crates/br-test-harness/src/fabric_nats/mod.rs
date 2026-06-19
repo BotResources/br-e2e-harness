@@ -14,15 +14,17 @@ pub use kv::FabricKvError;
 pub use namespace::RunNamespace;
 pub use negative::{BareFabricNats, WidenedDurable};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use async_nats::jetstream::{self, consumer};
 use br_core_directory::DirectoryMeta;
 use br_core_integration::{CommandCoords, EventCoords};
 use br_util_nats_fabric::{
-    Fabric, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, KvKey, KvPrefix, PublishErrorKind,
-    PublishedLanguagePublisher, PublishedLanguageReader, command_subject, event_subject,
+    Fabric, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, KV_EPHEMERAL_AUTH,
+    KV_PUBLISHED_LANGUAGE, KvKey, KvPrefix, PublishErrorKind, PublishedLanguagePublisher,
+    PublishedLanguageReader, command_subject, event_subject,
 };
+use futures_util::TryStreamExt as _;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
@@ -75,6 +77,11 @@ impl FabricTestNats {
 
     pub async fn with_published_language(self) -> Self {
         connect::get_or_create_published_language(&self.js).await;
+        self
+    }
+
+    pub async fn with_ephemeral_auth(self) -> Self {
+        connect::get_or_create_ephemeral_auth(&self.js).await;
         self
     }
 
@@ -159,10 +166,35 @@ impl FabricTestNats {
     }
 
     pub async fn published_language_present(&self) -> bool {
-        self.js
-            .get_key_value(br_util_nats_fabric::KV_PUBLISHED_LANGUAGE)
+        self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_ok()
+    }
+
+    pub async fn ephemeral_auth_present(&self) -> bool {
+        self.js.get_key_value(KV_EPHEMERAL_AUTH).await.is_ok()
+    }
+
+    pub async fn kv_bucket_names(&self) -> BTreeSet<String> {
+        let mut names = self.js.stream_names();
+        let mut buckets = BTreeSet::new();
+        while let Some(stream) = names
+            .try_next()
             .await
-            .is_ok()
+            .expect("enumerate JetStream stream names for the kv inventory")
+        {
+            if let Some(bucket) = stream.strip_prefix("KV_") {
+                buckets.insert(bucket.to_string());
+            }
+        }
+        buckets
+    }
+
+    pub async fn assert_only_kv_buckets(&self, expected: &[&str]) {
+        let got = self.kv_bucket_names().await;
+        let expected: BTreeSet<String> = expected.iter().map(|name| name.to_string()).collect();
+        assert!(
+            got == expected,
+            "live KV bucket inventory mismatch: expected {expected:?} got {got:?}"
+        );
     }
 
     pub fn url(&self) -> String {
@@ -269,7 +301,7 @@ impl FabricTestNats {
 
     async fn published_language_store(&self) -> async_nats::jetstream::kv::Store {
         self.js
-            .get_key_value(br_util_nats_fabric::KV_PUBLISHED_LANGUAGE)
+            .get_key_value(KV_PUBLISHED_LANGUAGE)
             .await
             .expect("published-language bucket (call with_published_language first)")
     }

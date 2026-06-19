@@ -349,6 +349,12 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   `PUBLISHED_LANGUAGE` KV bucket and **never** delete it (the #73 never-wipe fix:
   a published-language bucket is reconcile-no-wipe state, not a per-scenario
   throwaway).
+- **`.with_ephemeral_auth()`** — **get-or-create** the sanctioned
+  `EPHEMERAL_AUTH` KV bucket with the lib's canonical config (`history = 8`,
+  `max_age = 3600s`, `limit_markers = 1s` — async-nats' `subject_delete_marker_ttl`),
+  so per-key `EphemeralAuthStore::create_with_ttl` writes actually expire. A
+  service e2e provisions it here instead of importing `async-nats`.
+  `.ephemeral_auth_present()` observes it.
 - **`.with_command_durable(&coords, name)` / `.with_event_durable(&coords, name)`**
   — a durable whose single filter is the rendered coord subject, namespaced
   `{name}_{run_id}`; assert it with the lib's own
@@ -360,6 +366,11 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   JetStream context by hand. The raw `async-nats` JetStream / client handles are
   **not** exposed — `br-test-harness` is the only crate that touches them, and the
   typed surface below is the sole window onto the Fabric.
+- **KV inventory:** `.kv_bucket_names() -> BTreeSet<String>` enumerates the live
+  `KV_*` JetStream streams and returns the stripped bucket-name set;
+  `.assert_only_kv_buckets(&["EPHEMERAL_AUTH"])` panics with an `expected … got …`
+  diff when the live set differs — the primitive a service uses to **prove** no
+  stray KV bucket was created.
 - **`.fixed_streams_present()`** asserts the two fixed streams provisioned;
   **`.published_language_present()`** / **`.pl_get_raw(&key)`** observe the PL bucket
   and a single raw value (the attach-without-wipe assertion) without a bare KV store;
@@ -656,10 +667,10 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.1" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.2" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.1", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.2", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`

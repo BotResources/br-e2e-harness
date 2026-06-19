@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use async_nats::jetstream::context::{
     CreateKeyValueError, CreateStreamError, CreateStreamErrorKind,
 };
 use async_nats::jetstream::{self, ErrorCode, stream};
-use br_util_nats_fabric::KV_PUBLISHED_LANGUAGE;
+use br_util_nats_fabric::{KV_EPHEMERAL_AUTH, KV_PUBLISHED_LANGUAGE};
 
 use crate::spawned_nats::SpawnedNats;
 
@@ -64,24 +66,52 @@ pub async fn get_or_create_published_language(js: &jetstream::Context) {
     get_or_create_bucket(js, KV_PUBLISHED_LANGUAGE).await;
 }
 
+const EPHEMERAL_AUTH_MAX_AGE: Duration = Duration::from_secs(3600);
+const EPHEMERAL_AUTH_MARKER_TTL: Duration = Duration::from_secs(1);
+
+pub async fn get_or_create_ephemeral_auth(
+    js: &jetstream::Context,
+) -> async_nats::jetstream::kv::Store {
+    get_or_create_bucket_with_config(
+        js,
+        jetstream::kv::Config {
+            bucket: KV_EPHEMERAL_AUTH.to_string(),
+            history: 8,
+            max_age: EPHEMERAL_AUTH_MAX_AGE,
+            limit_markers: Some(EPHEMERAL_AUTH_MARKER_TTL),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
 pub async fn get_or_create_bucket(
     js: &jetstream::Context,
     bucket: &str,
 ) -> async_nats::jetstream::kv::Store {
-    if let Ok(store) = js.get_key_value(bucket).await {
-        return store;
-    }
-    match js
-        .create_key_value(jetstream::kv::Config {
+    get_or_create_bucket_with_config(
+        js,
+        jetstream::kv::Config {
             bucket: bucket.to_string(),
             history: 8,
             ..Default::default()
-        })
-        .await
-    {
+        },
+    )
+    .await
+}
+
+async fn get_or_create_bucket_with_config(
+    js: &jetstream::Context,
+    config: jetstream::kv::Config,
+) -> async_nats::jetstream::kv::Store {
+    let bucket = config.bucket.clone();
+    if let Ok(store) = js.get_key_value(&bucket).await {
+        return store;
+    }
+    match js.create_key_value(config).await {
         Ok(store) => store,
         Err(e) if bucket_already_exists(&e) => js
-            .get_key_value(bucket)
+            .get_key_value(&bucket)
             .await
             .unwrap_or_else(|e| panic!("re-get kv bucket {bucket} after concurrent create: {e}")),
         Err(e) => panic!("get-or-create kv bucket {bucket}: {e}"),
@@ -90,9 +120,13 @@ pub async fn get_or_create_bucket(
 
 #[cfg(test)]
 mod tests {
-    use super::{bucket_already_exists, stream_already_exists};
+    use super::{
+        EPHEMERAL_AUTH_MARKER_TTL, EPHEMERAL_AUTH_MAX_AGE, bucket_already_exists,
+        get_or_create_ephemeral_auth, stream_already_exists,
+    };
     use crate::spawned_nats::SpawnedNats;
     use async_nats::jetstream::{self, stream};
+    use br_util_nats_fabric::KV_EPHEMERAL_AUTH;
 
     async fn js_context(nats: &SpawnedNats) -> jetstream::Context {
         let client = async_nats::connect(nats.url())
@@ -188,6 +222,34 @@ mod tests {
             !bucket_already_exists(&err),
             "a genuine (non already-exists) create failure must NOT be absorbed, \
              so the panic path is preserved: {err:?}"
+        );
+
+        nats.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn ephemeral_auth_bucket_is_created_with_the_ttl_marker_config() {
+        let nats = SpawnedNats::start().await;
+        let js = js_context(&nats).await;
+
+        get_or_create_ephemeral_auth(&js).await;
+        get_or_create_ephemeral_auth(&js).await;
+
+        let stream = js
+            .get_stream(format!("KV_{KV_EPHEMERAL_AUTH}"))
+            .await
+            .expect("the EPHEMERAL_AUTH kv stream exists after provisioning");
+        let info = stream.cached_info();
+        assert_eq!(info.config.max_age, EPHEMERAL_AUTH_MAX_AGE);
+        assert!(
+            info.config.allow_message_ttl,
+            "limit_markers must enable per-message ttl on the kv stream"
+        );
+        assert_eq!(
+            info.config.subject_delete_marker_ttl,
+            Some(EPHEMERAL_AUTH_MARKER_TTL),
+            "the delete-marker ttl floor must match the chosen marker ttl"
         );
 
         nats.shutdown().await;

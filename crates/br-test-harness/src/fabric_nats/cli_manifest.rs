@@ -22,6 +22,8 @@ pub struct Manifest {
     #[serde(default)]
     pub published_language: PublishedLanguageSpec,
     #[serde(default)]
+    pub ephemeral_auth: EphemeralAuthSpec,
+    #[serde(default)]
     pub bearer_tokens: BearerTokensSpec,
 }
 
@@ -54,6 +56,13 @@ pub struct PublishedLanguageSpec {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct EphemeralAuthSpec {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BearerTokensSpec {
     #[serde(default)]
     pub enabled: bool,
@@ -78,6 +87,7 @@ pub struct Rendered {
     pub commands: Vec<RenderedCommand>,
     pub events: Vec<RenderedEvent>,
     pub published_language: bool,
+    pub ephemeral_auth: bool,
     pub bearer_tokens: bool,
 }
 
@@ -130,6 +140,7 @@ impl Manifest {
             commands,
             events,
             published_language: self.published_language.enabled,
+            ephemeral_auth: self.ephemeral_auth.enabled,
             bearer_tokens: self.bearer_tokens.enabled,
         })
     }
@@ -164,6 +175,9 @@ version = 1
 [published_language]
 enabled = true
 
+[ephemeral_auth]
+enabled = true
+
 [bearer_tokens]
 enabled = true
 "#;
@@ -184,6 +198,7 @@ enabled = true
             "integration.evt.identity.user.created.v1"
         );
         assert!(rendered.published_language);
+        assert!(rendered.ephemeral_auth);
         assert!(rendered.bearer_tokens);
     }
 
@@ -234,6 +249,7 @@ version = 1
         assert!(rendered.commands.is_empty());
         assert!(rendered.events.is_empty());
         assert!(!rendered.published_language);
+        assert!(!rendered.ephemeral_auth);
         assert!(!rendered.bearer_tokens);
     }
 }
