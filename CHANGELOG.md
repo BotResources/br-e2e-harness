@@ -37,6 +37,14 @@ single git tag `v{version}` releases the set. Format follows
   `create_durable` → `ensure_*_durable` provisioning simplification stays
   **deferred** to lib gap `ws-cc-platform#93` and is intentionally not part of this
   bump.
+- **`cargo semver-checks` now scopes to `br-test-harness`; the `conformance-*`
+  battery crates are exempt.** A conformance battery is an executable spec: when the
+  lib repurposes a behavior or error, the matching assert-helper *must* rename (here
+  `conformance-nats-fabric::assert_widened_durable_rejected`), which `semver-checks`
+  reads as a major break — a false demand that collides with the harness tracking
+  `br-rust-common` at the major level only. The reusable library surface
+  (`br-test-harness` fixtures) stays fully gated; the conformance assert-helpers,
+  consumed through the battery runner rather than individually, are not.
 
 ## 1.0.0
 
