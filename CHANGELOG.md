@@ -23,8 +23,6 @@ single git tag `v{version}` releases the set. Format follows
   `assert_only_kv_buckets(&[&str])` panics with an `expected … got …` diff when the
   live set differs — the primitive a service uses to prove no stray bucket was
   created. Plus `ephemeral_auth_present()`.
-- **`fabric-nats` CLI** gains an `[ephemeral_auth] enabled` manifest spec mirroring
-  `[published_language]`, covered by `provision` / `print-subjects`.
 
 ## 1.0.1
 

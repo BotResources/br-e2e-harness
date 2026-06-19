@@ -89,10 +89,6 @@ async fn provision(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(
         harness = harness.with_published_language().await;
         println!("kv PUBLISHED_LANGUAGE");
     }
-    if rendered.ephemeral_auth {
-        harness = harness.with_ephemeral_auth().await;
-        println!("kv EPHEMERAL_AUTH");
-    }
     if rendered.bearer_tokens {
         harness = harness.with_bearer_tokens().await;
         println!("kv bearer_tokens");
@@ -146,9 +142,6 @@ fn print_subjects(manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
     let rendered = Manifest::parse(manifest)?.render(run_id)?;
     if rendered.published_language {
         println!("kv PUBLISHED_LANGUAGE");
-    }
-    if rendered.ephemeral_auth {
-        println!("kv EPHEMERAL_AUTH");
     }
     if rendered.bearer_tokens {
         println!("kv bearer_tokens");
