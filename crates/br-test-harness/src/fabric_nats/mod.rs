@@ -259,6 +259,10 @@ impl FabricTestNats {
         negative::raw_message_absent(&self.js, stream, subject).await
     }
 
+    pub async fn durable_filter_subjects(&self, stream: &str, durable: &str) -> Vec<String> {
+        negative::durable_filter_subjects(&self.js, stream, durable).await
+    }
+
     pub async fn shutdown(self) {
         self.backing.shutdown().await;
     }

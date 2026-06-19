@@ -405,8 +405,11 @@ handle:
 auto-provisions:
 
 - **`.with_widened_durable(stream, name, "integration.evt.>")`** returns a
-  `WidenedDurable` marker; feeding its `durable` to `verify_event_durable` yields
-  `FabricError::FilterMismatch`.
+  `WidenedDurable` marker; feeding its `durable` to `verify_event_durable`
+  create-or-binds it and **narrows it back** to the exact coordinate filter
+  (the anti-over-delivery guarantee), returning `Ok`. Read the effective filter
+  back with **`.durable_filter_subjects(stream, durable) -> Vec<String>`** to prove
+  the widening was undone.
 - **`.assert_missing_stream(&coords, durable) -> FabricError`** binds against an
   absent fixed stream and returns the `Consume(NoStream)` it fails with;
   **`.publish_dead_subject(subject, bytes) -> PublishErrorKind`** is the one method
@@ -502,7 +505,8 @@ provisions its `bearer_tokens` bucket through the CLI exactly like every other s
 no in-binary special-casing.
 
 Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** NATS
-connect fail · **4** verify mismatch (`FilterMismatch`/`NoStream`).
+connect fail · **4** durable create-or-bind failed (a `FabricError` — `NoStream`
+on an absent gitops stream, or `FilterMismatch` on an empty coordinate set).
 
 ### The de-flake primitives
 
@@ -652,15 +656,15 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.1" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.0", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.1", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
 (its `test-support` feature, which ships `PassportBuilder`) pinned to
-`br-rust-common` `tag = "v1.0.1"`. A slim build that omits the
+`br-rust-common` `tag = "v1.0.2"`. A slim build that omits the
 passport-bearing features drops the dependency. If your service already pins
 `br-rust-common`, keep both on the **same ref** so Cargo resolves a single
 source (two refs of one git URL are two distinct sources and duplicate

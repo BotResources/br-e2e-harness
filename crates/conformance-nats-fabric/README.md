@@ -35,8 +35,9 @@ if the **dead `identity.cmd.` / `identity.evt.` grammar** ever appears in it.
 ### Integration messaging
 
 - A durable **widened** to `integration.evt.>` (not the exact coordinate subject)
-  is rejected at bind with `FabricError::FilterMismatch` — a consumer cannot
-  silently over-subscribe.
+  is **narrowed back** to the exact coordinate filter when the lib create-or-binds
+  it (`verify_event_durable` returns `Ok`); reading the durable's effective filter
+  back proves the widening was undone — a consumer cannot silently over-subscribe.
 - Binding against a **missing fixed stream** fails loud
   (`FabricError::Consume(NoStream)`) — the platform never auto-provisions.
 - The anchor's rendered subjects match the lib renderers **byte-for-byte**.

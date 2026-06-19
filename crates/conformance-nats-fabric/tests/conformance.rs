@@ -4,7 +4,7 @@ use br_test_harness::{BareFabricNats, FabricTestNats, run_once, workspace_bin};
 use conformance_nats_fabric::anchor::frozen_wire;
 use conformance_nats_fabric::checks::integration::{
     assert_dead_grammar_fails_loud, assert_missing_stream_fails_loud,
-    assert_no_fixed_stream_captured, assert_widened_durable_rejected, rust_command_subject,
+    assert_no_fixed_stream_captured, assert_widened_durable_converges, rust_command_subject,
     rust_event_subject, widen,
 };
 use conformance_nats_fabric::checks::projection::{
@@ -94,10 +94,10 @@ async fn anchor_published_users_deserialize_through_the_lib() {
 
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
-async fn a_widened_durable_is_rejected() {
+async fn a_widened_durable_is_converged_back_to_the_exact_filter() {
     let harness = FabricTestNats::start().await;
     let (harness, marker) = widen(harness, "widened_evt").await;
-    assert_widened_durable_rejected(&harness, &marker).await;
+    assert_widened_durable_converges(&harness, &marker).await;
     harness.shutdown().await;
 }
 

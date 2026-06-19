@@ -29,8 +29,8 @@ anonymous request, never a 401 — services do authZ, never authN.
 ## Oracle — the real `br-rust-common` types, never hand-rolled
 
 The runner seeds and decodes **using the real `br-core-auth` types** (branch
-`v1.0.1`, with `test-support` for the G4 builder; the release flips it to
-`tag = "v1.0.1"`), never hand-rolled JSON, never a re-stated wire shape:
+`v1.0.2`, with `test-support` for the G4 builder; the release flips it to
+`tag = "v1.0.2"`), never hand-rolled JSON, never a re-stated wire shape:
 
 - **Seeding** uses the real `bearer_token_key(raw)` for the KV key and
   serializes the real `BearerTokenEntry { email, token_id }` for the value. The
@@ -133,12 +133,12 @@ runner (shared with G2/G3).
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no crates.io).
-Keep its `br-rust-common` pin identical to `br-test-harness`'s (`v1.0.1`) so Cargo
+Keep its `br-rust-common` pin identical to `br-test-harness`'s (`v1.0.2`) so Cargo
 resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.1" }
 ```
 
 ## Why — the non-obvious bits

@@ -3,7 +3,7 @@
 use br_scope_declaration_contract::{accepted_event_coords, declare_command_coords};
 use br_test_harness::fabric_nats::BareFabricNats;
 use br_test_harness::{FabricTestNats, WidenedDurable};
-use br_util_nats_fabric::{FabricError, INTEGRATION_EVT};
+use br_util_nats_fabric::{FabricError, INTEGRATION_EVT, event_subject};
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
@@ -27,20 +27,31 @@ async fn start_provisions_the_two_fixed_streams_and_a_filter_identical_durable()
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn a_widened_durable_makes_the_lib_bind_fail_with_filter_mismatch() {
+async fn a_widened_durable_is_converged_back_to_the_exact_filter() {
     let coords = accepted_event_coords().expect("accepted event coords");
+    let exact = event_subject(&coords);
     let (harness, marker) = FabricTestNats::start()
         .await
         .with_widened_durable(INTEGRATION_EVT, "greedy", "integration.evt.>")
         .await;
-    let WidenedDurable { durable, .. } = marker;
+    let WidenedDurable { stream, durable } = marker;
 
-    let err = harness
+    harness
         .fabric()
         .verify_event_durable(&coords, &durable)
         .await
-        .expect_err("a widened durable must be rejected by the lib's filter check");
-    assert!(matches!(err, FabricError::FilterMismatch { .. }));
+        .expect("create-or-bind converges a widened durable back to the coordinate filter");
+
+    let filters = harness.durable_filter_subjects(stream, &durable).await;
+    assert_eq!(
+        filters,
+        vec![exact],
+        "the widened durable must be narrowed back to the exact coordinate"
+    );
+    assert!(
+        !filters.iter().any(|f| f == "integration.evt.>"),
+        "the durable must no longer be widened on integration.evt.>"
+    );
 
     harness.shutdown().await;
 }

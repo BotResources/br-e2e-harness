@@ -27,21 +27,26 @@ pub fn rust_event_subject(go: &FrozenEventSubject) -> Result<String> {
     Ok(event_subject(&coords))
 }
 
-pub async fn assert_widened_durable_rejected(
-    harness: &FabricTestNats,
-    marker: &WidenedDurable,
-) -> FabricError {
+pub async fn assert_widened_durable_converges(harness: &FabricTestNats, marker: &WidenedDurable) {
     let coords = sample_event_coords();
-    let err = harness
+    harness
         .fabric()
         .verify_event_durable(&coords, &marker.durable)
         .await
-        .expect_err("a durable widened to integration.evt.> must be rejected, not bound");
-    assert!(
-        matches!(err, FabricError::FilterMismatch { .. }),
-        "expected FilterMismatch, got {err:?}"
+        .expect("create-or-bind converges a widened durable back to the coordinate filter");
+
+    let filters = harness
+        .durable_filter_subjects(marker.stream, &marker.durable)
+        .await;
+    assert_eq!(
+        filters,
+        vec![event_subject(&coords)],
+        "expected the widened durable narrowed to the exact coordinate, got {filters:?}"
     );
-    err
+    assert!(
+        !filters.iter().any(|f| f == "integration.evt.>"),
+        "the durable must no longer be widened on integration.evt.>"
+    );
 }
 
 pub async fn assert_missing_stream_fails_loud(bare: &BareFabricNats) -> FabricError {

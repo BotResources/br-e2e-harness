@@ -8,12 +8,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "v1.0.1", version = "1.0.1" }
-br-util-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-directory", tag = "v1.0.1", version = "1.0.1", features = [
+br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "v1.0.2", version = "1.0.2" }
+br-util-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-directory", tag = "v1.0.2", version = "1.0.2", features = [
     "publisher",
     "consumer",
 ] }
-br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.1", version = "1.0.1" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.2", version = "1.0.2" }
 
 br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
     "nats-fabric",
