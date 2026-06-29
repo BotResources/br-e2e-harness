@@ -6,62 +6,132 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/uuid"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-func TestBearerTokenKeyMatchesLibVector(t *testing.T) {
-	const token = "brk_test_token_0001"
-	const want = "08b6b8ef9b27ca8d4561a519a9ab32cadb11ab16b66e2a47280dc55dccef8fd9"
-	got := bearerTokenKey(token)
-	if got != want {
-		t.Fatalf("bearerTokenKey(%q) = %s, want %s", token, got, want)
-	}
-	if len(got) != 64 {
-		t.Fatalf("key length = %d, want 64", len(got))
+const (
+	goldenToken      = "brk_test_token_0001"
+	goldenDigest     = "08b6b8ef9b27ca8d4561a519a9ab32cadb11ab16b66e2a47280dc55dccef8fd9"
+	goldenUserID     = "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+	goldenTokenID    = "0190c0de-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+	goldenNonce      = "AAECAwQFBgcICQoL"
+	goldenCiphertext = "5Z9T88UIStuvgnzPf62Y4s1Y4K5gukTGNOT3YbWYTSvpnju/s8WS+5USRn2zOefu6/uNFaKNRo6jpWjP6Mb3W1qReMiIp9ZBIJKSQfBmGCYf3d935nfG/5vzJ+wnp/5Ko77Fy69/pPkTKJlC8vDgacyvJLS46qyb9ovWAiwhKe8rDoYpZNzGKg=="
+)
+
+func goldenEntry() bearerEntry {
+	return bearerEntry{
+		Actor:   bearerActor{Kind: "human", ID: goldenUserID},
+		TokenID: goldenTokenID,
 	}
 }
 
-func TestUserIDFromEmailIsDeterministicV5(t *testing.T) {
-	const email = "alice@example.com"
-	const want = "ec40195b-2bcc-58bb-b5d3-4db2e505cee5"
-	got := userIDFromEmail(email)
+func fixedKey() []byte {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = 0x2a
+	}
+	return key
+}
+
+func TestKvKeyIsPrefixPlusUnstrippedSha256(t *testing.T) {
+	want := bearerTokensKeyPrefix + goldenDigest
+	got := kvKey(goldenToken)
 	if got != want {
-		t.Fatalf("userIDFromEmail(%q) = %s, want %s", email, got, want)
+		t.Fatalf("kvKey(%q) = %s, want %s", goldenToken, got, want)
 	}
-	parsed, err := uuid.Parse(got)
+	if len(sha256Hex(goldenToken)) != 64 {
+		t.Fatalf("digest length = %d, want 64", len(sha256Hex(goldenToken)))
+	}
+}
+
+func TestAadIsTheUnprefixedDigestNotTheKvKey(t *testing.T) {
+	if string(aad(goldenToken)) != goldenDigest {
+		t.Fatalf("aad(%q) = %q, want the bare digest %q", goldenToken, string(aad(goldenToken)), goldenDigest)
+	}
+	if string(aad(goldenToken)) == kvKey(goldenToken) {
+		t.Fatalf("aad must be the unprefixed digest, never the full kv key %q", kvKey(goldenToken))
+	}
+}
+
+func TestSealOpenRoundTripWithFixedNonceFreezesTheAead(t *testing.T) {
+	aead, err := chacha20poly1305.New(fixedKey())
 	if err != nil {
-		t.Fatalf("user_id is not a valid uuid: %v", err)
+		t.Fatalf("new aead: %v", err)
 	}
-	if parsed.Version() != 5 {
-		t.Fatalf("user_id version = %d, want 5", parsed.Version())
+	nonce, err := base64.StdEncoding.DecodeString(goldenNonce)
+	if err != nil {
+		t.Fatalf("decode golden nonce: %v", err)
+	}
+	plaintext, err := json.Marshal(goldenEntry())
+	if err != nil {
+		t.Fatalf("marshal entry: %v", err)
+	}
+	ct := aead.Seal(nil, nonce, plaintext, aad(goldenToken))
+	if got := base64.StdEncoding.EncodeToString(ct); got != goldenCiphertext {
+		t.Fatalf("frozen ciphertext drifted.\n got: %s\nwant: %s", got, goldenCiphertext)
+	}
+
+	sealed := sealedBearer{Nonce: goldenNonce, Ciphertext: goldenCiphertext}
+	opened, err := openSealed(aead, goldenToken, sealed)
+	if err != nil {
+		t.Fatalf("openSealed of the frozen envelope: %v", err)
+	}
+	if !reflect.DeepEqual(opened, goldenEntry()) {
+		t.Fatalf("opened entry = %#v, want %#v", opened, goldenEntry())
+	}
+}
+
+func TestOpenUnderTheWrongTokenFailsClosed(t *testing.T) {
+	aead, _ := chacha20poly1305.New(fixedKey())
+	sealed := sealedBearer{Nonce: goldenNonce, Ciphertext: goldenCiphertext}
+	if _, err := openSealed(aead, "brk_some_other_token", sealed); err == nil {
+		t.Fatalf("opening with a different token (AAD) must fail: the token is the sole AAD")
+	}
+}
+
+func TestOpenWithTamperedCiphertextFailsClosed(t *testing.T) {
+	aead, _ := chacha20poly1305.New(fixedKey())
+	raw, _ := base64.StdEncoding.DecodeString(goldenCiphertext)
+	raw[0] ^= 0xff
+	sealed := sealedBearer{Nonce: goldenNonce, Ciphertext: base64.StdEncoding.EncodeToString(raw)}
+	if _, err := openSealed(aead, goldenToken, sealed); err == nil {
+		t.Fatalf("opening a tampered ciphertext must fail the AEAD tag")
+	}
+}
+
+func TestSealedBearerRejectsUnknownField(t *testing.T) {
+	raw := []byte(`{"nonce":"AAECAwQFBgcICQoL","ciphertext":"AA==","evil":true}`)
+	if _, err := parseSealed(raw); err == nil {
+		t.Fatalf("parseSealed must reject an unknown field (mirrors deny_unknown_fields)")
 	}
 }
 
 func TestPassportMatchesGoldenShape(t *testing.T) {
-	entry := bearerTokenEntry{
-		Email:   "alice@example.com",
-		TokenID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
-	}
-	got, err := json.Marshal(passportForEntry(entry))
+	got, err := json.Marshal(passportForEntry(goldenEntry()))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-
 	golden := `{
       "kind": "human",
-      "user_id": "ec40195b-2bcc-58bb-b5d3-4db2e505cee5",
+      "user_id": "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
       "is_super_admin": false,
       "is_active": true,
-      "auth_method": {"method": "pat", "token_id": "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"},
+      "auth_method": {"method": "pat", "token_id": "0190c0de-c3d4-7e5f-8a9b-0c1d2e3f4a5b"},
       "impersonator": null,
-      "claims": {"email": "alice@example.com"}
+      "claims": {}
     }`
-
 	assertJSONEqual(t, got, []byte(golden))
 }
 
+func TestUserIDIsTheActorIdNotDerivedFromEmail(t *testing.T) {
+	p := passportForEntry(goldenEntry())
+	if p.UserID != goldenUserID {
+		t.Fatalf("user_id = %s, want the actor id %s (no email derivation)", p.UserID, goldenUserID)
+	}
+}
+
 func TestPassportTopLevelKeysAreExactlyTheContract(t *testing.T) {
-	got, err := json.Marshal(passportForEntry(bearerTokenEntry{Email: "x@y.z", TokenID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}))
+	got, err := json.Marshal(passportForEntry(goldenEntry()))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -85,30 +155,8 @@ func TestPassportTopLevelKeysAreExactlyTheContract(t *testing.T) {
 	}
 }
 
-func TestAuthMethodIsPatWithTokenID(t *testing.T) {
-	got, err := json.Marshal(passportForEntry(bearerTokenEntry{Email: "x@y.z", TokenID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}))
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var p struct {
-		AuthMethod map[string]any `json:"auth_method"`
-	}
-	if err := json.Unmarshal(got, &p); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if p.AuthMethod["method"] != "pat" {
-		t.Fatalf("auth_method.method = %v, want pat", p.AuthMethod["method"])
-	}
-	if p.AuthMethod["token_id"] != "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b" {
-		t.Fatalf("auth_method.token_id = %v, want the entry token_id", p.AuthMethod["token_id"])
-	}
-	if len(p.AuthMethod) != 2 {
-		t.Fatalf("auth_method has %d keys, want exactly method+token_id", len(p.AuthMethod))
-	}
-}
-
-func TestClaimsIsAnObject(t *testing.T) {
-	got, err := json.Marshal(passportForEntry(bearerTokenEntry{Email: "alice@example.com", TokenID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}))
+func TestClaimsIsAnEmptyObjectWithNoEmail(t *testing.T) {
+	got, err := json.Marshal(passportForEntry(goldenEntry()))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -122,14 +170,35 @@ func TestClaimsIsAnObject(t *testing.T) {
 	if err := json.Unmarshal(p.Claims, &obj); err != nil {
 		t.Fatalf("claims must be a JSON object: %v", err)
 	}
-	if obj["email"] != "alice@example.com" {
-		t.Fatalf("claims.email = %v, want alice@example.com", obj["email"])
+	if len(obj) != 0 {
+		t.Fatalf("claims must be empty (no email in the sealed model), got %v", obj)
+	}
+}
+
+func TestAuthMethodIsPatWithTokenID(t *testing.T) {
+	got, err := json.Marshal(passportForEntry(goldenEntry()))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var p struct {
+		AuthMethod map[string]any `json:"auth_method"`
+	}
+	if err := json.Unmarshal(got, &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if p.AuthMethod["method"] != "pat" {
+		t.Fatalf("auth_method.method = %v, want pat", p.AuthMethod["method"])
+	}
+	if p.AuthMethod["token_id"] != goldenTokenID {
+		t.Fatalf("auth_method.token_id = %v, want %s", p.AuthMethod["token_id"], goldenTokenID)
+	}
+	if len(p.AuthMethod) != 2 {
+		t.Fatalf("auth_method has %d keys, want exactly method+token_id", len(p.AuthMethod))
 	}
 }
 
 func TestEncodePassportHeaderIsStandardBase64JSON(t *testing.T) {
-	passport := passportForEntry(bearerTokenEntry{Email: "alice@example.com", TokenID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"})
-	header, err := encodePassportHeader(passport)
+	header, err := encodePassportHeader(passportForEntry(goldenEntry()))
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}

@@ -12,7 +12,10 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"golang.org/x/crypto/chacha20poly1305"
 )
+
+const publishedLanguageBucket = "PUBLISHED_LANGUAGE"
 
 func main() {
 	if err := run(); err != nil {
@@ -26,21 +29,27 @@ func run() error {
 		return err
 	}
 
-	ready := newReadiness("binding the bearer_tokens bucket")
-	res := newResolver(cfg)
+	aead, err := chacha20poly1305.New(cfg.sealKey)
+	if err != nil {
+		return fmt.Errorf("building the chacha20-poly1305 aead from BEARER_SEAL_KEY: %w", err)
+	}
 
+	ready := newReadiness("binding the PUBLISHED_LANGUAGE bucket")
+	res := newResolver(aead)
+
+	addr := "0.0.0.0:" + cfg.port
 	mux := http.NewServeMux()
 	mux.HandleFunc("/internal/passport", res.handle)
 	mux.HandleFunc("/readyz", ready.readyzHandler)
 	mux.HandleFunc("/livez", livezHandler)
 	server := &http.Server{
-		Addr:              cfg.httpAddr,
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		log.Printf("http listening on %s (/internal/passport, /readyz, /livez)", cfg.httpAddr)
+		log.Printf("http listening on %s (/internal/passport, /readyz, /livez)", addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("http server: %v", err)
 		}
@@ -66,15 +75,15 @@ func run() error {
 
 	bindCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	kv, err := js.KeyValue(bindCtx, cfg.bearerBucket)
+	kv, err := js.KeyValue(bindCtx, publishedLanguageBucket)
 	if err != nil {
-		ready.setNotReady(fmt.Sprintf("bearer_tokens bucket %q unreachable: %v", cfg.bearerBucket, err))
-		return fmt.Errorf("bind bucket %q (it must exist — the subject never provisions it): %w", cfg.bearerBucket, err)
+		ready.setNotReady(fmt.Sprintf("PUBLISHED_LANGUAGE bucket unreachable: %v", err))
+		return fmt.Errorf("bind bucket %q (it must exist — the operator/Helm provisions it, the subject never does): %w", publishedLanguageBucket, err)
 	}
 
 	res.bind(kv)
 	ready.setReady()
-	log.Printf("bound bucket %s; readiness UP", cfg.bearerBucket)
+	log.Printf("bound bucket %s; readiness UP", publishedLanguageBucket)
 
 	<-ctx.Done()
 	log.Printf("shutdown signal received")

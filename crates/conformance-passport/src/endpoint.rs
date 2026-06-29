@@ -53,14 +53,7 @@ impl PassportEndpoint {
 
     pub async fn resolve(&self, authorization: Option<&str>) -> Result<Resolution> {
         let url = format!("{}{PASSPORT_PATH}", self.base_url);
-        let mut request = self.client.get(&url);
-        if let Some(authorization) = authorization {
-            request = request.header("Authorization", authorization);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| ConformanceError::Request(format!("GET {url}: {e}")))?;
+        let response = self.send(authorization).await?;
 
         if response.status() != StatusCode::OK {
             return Err(ConformanceError::Request(format!(
@@ -79,5 +72,22 @@ impl PassportEndpoint {
         let passport = Passport::from_header(header)
             .map_err(|e| ConformanceError::NonConformantPassport(format!("{e}")))?;
         Ok(Resolution::Resolved(passport))
+    }
+
+    pub async fn status_for_bearer(&self, raw_token: &str) -> Result<StatusCode> {
+        let response = self.send(Some(&format!("Bearer {raw_token}"))).await?;
+        Ok(response.status())
+    }
+
+    async fn send(&self, authorization: Option<&str>) -> Result<reqwest::Response> {
+        let url = format!("{}{PASSPORT_PATH}", self.base_url);
+        let mut request = self.client.get(&url);
+        if let Some(authorization) = authorization {
+            request = request.header("Authorization", authorization);
+        }
+        request
+            .send()
+            .await
+            .map_err(|e| ConformanceError::Request(format!("GET {url}: {e}")))
     }
 }

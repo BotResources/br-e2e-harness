@@ -169,6 +169,13 @@ impl FabricTestNats {
         self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_ok()
     }
 
+    pub async fn delete_published_language(&self) {
+        self.js
+            .delete_key_value(KV_PUBLISHED_LANGUAGE)
+            .await
+            .expect("delete the PUBLISHED_LANGUAGE bucket out from under the subject");
+    }
+
     pub async fn ephemeral_auth_present(&self) -> bool {
         self.js.get_key_value(KV_EPHEMERAL_AUTH).await.is_ok()
     }

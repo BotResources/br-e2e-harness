@@ -1,101 +1,108 @@
-# identity-passport — G1 conformance subject
+# identity-passport — G1 conformance subject (sealed model)
 
 A minimal **Go** service that plays the BotResources **passport-resolution
 endpoint** the GraphQL gateway calls before every authenticated request, exactly
-as a real `svc-identity` does: it reads a bearer credential, resolves it against
-the `bearer_tokens` NATS KV bucket, and returns the resolved **Passport** in the
+as a real `svc-identity` does: it reads a bearer credential, looks up the
+**sealed** entry in the shared `PUBLISHED_LANGUAGE` NATS KV bucket, **opens** it
+with its own ChaCha20-Poly1305 AEAD, and returns the resolved **Passport** in the
 `X-Passport` response header.
 
 It is the **test SUBJECT** for conformance group **G1**. A separate Rust runner
-drives it as a **black box**: it brings up a JetStream-enabled NATS with a
-pre-created `bearer_tokens` bucket, seeds entries, calls
-`GET /internal/passport` with various `Authorization` headers, and asserts the
-returned `X-Passport` decodes under the real `br_core_auth::Passport`.
+drives it as a **black box**: it brings up JetStream NATS with a pre-created
+`PUBLISHED_LANGUAGE` bucket, seeds **sealed** entries with the real Rust lib
+(`br-auth-identity-util` → `br-auth-contract`), calls `GET /internal/passport`
+with various `Authorization` headers, and asserts the returned `X-Passport`
+decodes under the real `br_core_auth::Passport`.
 
 > This is a **test fixture**. It implements no authentication on its HTTP surface
 > and is meant only for an isolated, throwaway test network.
+
+## The cross-language anchor
+
+This subject is the **frozen, independent Go re-implementation** of the sealed
+wire — its own SHA-256, its own AAD derivation, its own struct parse, and its own
+`golang.org/x/crypto/chacha20poly1305` **open** path. It **never imports the Rust
+lib**. The runner seeds with the *real* Rust seal (`BearerPublisher`); this subject
+independently **decrypts** it. A green run is genuine Rust-seal / Go-open
+cross-language interop: it pins the whole crypto contract — key handling, the
+AAD = unprefixed digest, the cipher / nonce / tag, the envelope JSON, the
+`BearerEntry` shape, and the `Passport` shape. The random per-seal nonce means the
+**ciphertext bytes are not frozen** — the crypto **contract** is.
 
 ## What it does
 
 On boot:
 
-1. Connects to NATS, binds the JetStream KV bucket named by `BEARER_BUCKET`
-   (default `bearer_tokens`), then sets `/readyz` **200**. **The subject does NOT
-   create the bucket** (the platform never auto-provisions). If the bucket is
-   missing, the bind fails and `/readyz` stays **503**.
-2. Serves `GET` on `/internal/passport` (the frozen contract is `GET`; the handler is a
-   plain `net/http` mux entry, so other methods reach it too, but only `GET` is contractual):
+1. Reads `BEARER_SEAL_KEY` (base64-std of a 32-byte key), builds the
+   ChaCha20-Poly1305 AEAD, connects to NATS, and **binds** the JetStream KV bucket
+   `PUBLISHED_LANGUAGE`, then sets `/readyz` **200**. **The subject does NOT create
+   the bucket** (the platform never auto-provisions). If the bucket is missing, the
+   bind fails and `/readyz` stays **503**.
+2. Serves `GET /internal/passport`:
    - Reads `Authorization`. Only `Authorization: Bearer <token>` is resolved.
-   - Computes the KV key = **lowercase-hex SHA-256 of the raw `<token>`** (the
-     full token after `Bearer `, including any `brk_` prefix — the whole string
-     is hashed), matching the lib's `bearer_token_key`.
-   - Looks the key up in the `bearer_tokens` bucket.
-   - **Found** → the value is the lib's `BearerTokenEntry`
-     (`{"email","token_id"}`). Builds a `Passport::Human`, base64-encodes its
-     JSON, and returns **200** with header `X-Passport: <base64>`.
-   - **Not found** (revoked/absent), **no `Authorization`**, **not a Bearer**, or
-     **empty token** → **200 with no `X-Passport`** (anonymous).
-   - KV backend failure → **500**.
+   - Computes the KV key = `"identity/bearer_tokens/"` + **lowercase-hex SHA-256 of
+     the raw `<token>`** (the whole string after `Bearer `, prefix included).
+   - Looks the key up in `PUBLISHED_LANGUAGE`.
+   - **Found** → the value is a sealed envelope (`{"nonce","ciphertext"}`, both
+     base64-std). It opens the AEAD with **AAD = the unprefixed SHA-256 digest** of
+     the token. On success the plaintext is the cleartext entry
+     (`{"actor":{"kind","id"},"token_id"}`); it builds a `Passport::Human`,
+     base64-encodes its JSON, and returns **200** with header `X-Passport`.
+   - **Not found** (revoked/absent), **no `Authorization`**, **not a Bearer**,
+     **empty token**, **unreadable envelope**, **wrong key**, or **tampered
+     ciphertext** → **200 with no `X-Passport`** (anonymous, fail-closed).
+   - **KV backend failure** (e.g. the bucket vanished) → **500**.
 
-`/livez` is always **200**.
+`/livez` is always **200**. The endpoint **resolves**, it does not **gate**: an
+unresolvable credential is anonymous, never 401 — services do authZ, never authN.
 
 ## The frozen Passport wire (the `Human` variant)
 
 The emitted `X-Passport` is standard base64 (RFC 4648, padded) of this exact JSON
-— and only these top-level keys, because the Rust `Passport` is
+— only these seven top-level keys, because the Rust `Passport` is
 `#[serde(deny_unknown_fields)]`:
 
 ```json
 {
   "kind": "human",
-  "user_id": "<uuidv5(email)>",
+  "user_id": "<actor.id>",
   "is_super_admin": false,
   "is_active": true,
   "auth_method": {"method": "pat", "token_id": "<entry.token_id>"},
   "impersonator": null,
-  "claims": {"email": "<entry.email>"}
+  "claims": {}
 }
 ```
+
+`user_id` is the actor's id taken **directly** from the sealed entry
+(`actor: {"kind":"human","id":"<uuid>"}`) — there is **no email** in the sealed
+model and **no UUIDv5-from-email derivation**. `claims` is the empty object.
 
 ## Configuration (env only)
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
 | `NATS_URL` | no | `nats://127.0.0.1:4222` | JetStream-enabled NATS URL |
-| `HTTP_ADDR` | no | `:8080` | bind addr for `/internal/passport` + `/readyz` + `/livez` |
-| `BEARER_BUCKET` | no | `bearer_tokens` | JetStream KV bucket to resolve bearer tokens against (must already exist) |
+| `PORT` | **yes** | — | port to bind (`0.0.0.0:$PORT`) for `/internal/passport` + `/readyz` + `/livez` |
+| `BEARER_SEAL_KEY` | **yes** | — | base64-std of the 32-byte ChaCha20-Poly1305 seal key; must decode to exactly 32 bytes (fail loud otherwise) |
+
+The fixed KV bucket is `PUBLISHED_LANGUAGE` (not an env var — the platform's fixed
+Published-Language bucket).
 
 ## Build & run
 
 ```sh
-# build
 go build -o identity-passport .      # or: make build
-
-# run against a local JetStream NATS with a pre-created bearer_tokens bucket
-NATS_URL=nats://127.0.0.1:4222 \
-HTTP_ADDR=127.0.0.1:8080 \
-BEARER_BUCKET=bearer_tokens \
-./identity-passport
+make check                           # fmt + vet + test + guard
 ```
 
-```sh
-make test       # go vet + go test (incl. the golden-shape + hashing + base64 tests)
-```
+The offline tests (`wire_test.go`) pin the KV-key/AAD vectors, a fixed-nonce
+Go-internal seal+open round-trip (a frozen ciphertext that pins the AEAD wiring),
+and the `Passport` golden shape. The full G1 e2e (found / revoked / unknown /
+no-credential / wrong-key / tampered / KV-failure / readiness) is the Rust
+conformance runner's job; it brings the real `PUBLISHED_LANGUAGE` bucket, the real
+Rust seal, and the real `Passport` deserialiser as the oracle.
 
-The offline tests (key derivation, the Passport golden shape, the base64
-round-trip, the bearer-header parsing) run with plain `go test` — no infra. The
-full G1 e2e (found / revoked / absent-header / non-bearer / KV-failure /
-readiness-gating) is the Rust conformance runner's job; it brings the real
-`bearer_tokens` bucket and the real `Passport` deserialiser as the oracle.
-
-## Why table
-
-| Thing | Why it is the way it is |
-|---|---|
-| `user_id` is a UUIDv5 of the email under a fixed namespace | The `BearerTokenEntry` carries only `email` + `token_id`, and this anchor has **no database** — the real service loads `user_id` from Postgres. A deterministic v5-from-email is a stable stand-in; the battery asserts `user_id` is a present, valid UUID, not a specific value. The namespace is this subject's own, distinct from `br-util-scope-declaration`'s. |
-| Revoked / absent token → **200 anonymous**, never **401** | The endpoint **resolves**, it does not **gate**: an unresolvable credential yields an anonymous request that downstream authZ then refuses. Returning 401 here would conflate resolution with authorization and break the gateway's anonymous-passthrough path. Matches the platform: services do authZ, never authN. |
-| `claims` is minimal `{"email":…}`, no project keys | `claims` is a per-project **seam** (org_id, is_admin, scopes are consumer deltas, not the platform contract). The anchor freezes only the generic envelope, so it emits the single generic claim the entry actually carries. The Rust deserialiser requires `claims` to be a JSON object, so it cannot be null/array. |
-| `impersonator: null` emitted (not omitted) | The contract value for a non-impersonated session; the Rust field is `Option<Uuid>` with `#[serde(default)]`, so `null` deserialises to `None` and is accepted by `deny_unknown_fields` as a known key. |
-| `is_super_admin: false`, `is_active: true` fixed | Fixed anchor defaults — the conformance target is the **wire envelope**, not policy state the anchor has no source for. |
-| Subject does not create the bucket | Mirrors the platform's fail-loud, never-auto-provision doctrine; it binds the bucket, it does not create it. The runner/harness owns bucket setup. |
-| Full raw token (incl. `brk_` prefix) is hashed | Byte-matches the lib's `bearer_token_key`, which SHA-256s the plaintext as-is with no prefix stripping. |
+`make guard` fails loud if any retired-model marker (an `email` JSON tag, a
+`userIDFromEmail` / `uuid.NewSHA1` derivation, or the old plaintext entry type)
+reappears in non-test source.

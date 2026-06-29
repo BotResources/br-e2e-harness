@@ -3,18 +3,18 @@ use std::path::Path;
 
 use br_test_harness::SpawnedProcess;
 
-use br_test_harness::BEARER_BUCKET;
+use crate::seal::seal_key_b64;
 
 pub struct SubjectConfig {
     pub nats_url: String,
-    pub bearer_bucket: String,
+    pub seal_key_b64: String,
 }
 
 impl SubjectConfig {
     pub fn new(nats_url: &str) -> Self {
         Self {
             nats_url: nats_url.to_string(),
-            bearer_bucket: BEARER_BUCKET.to_string(),
+            seal_key_b64: seal_key_b64(),
         }
     }
 }
@@ -26,12 +26,13 @@ pub struct Subject {
 
 impl Subject {
     pub fn spawn(binary: &Path, config: &SubjectConfig) -> Self {
-        let addr = free_loopback_addr();
-        let base_url = format!("http://{addr}");
+        let port = free_loopback_port();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let port = port.to_string();
         let envs = [
             ("NATS_URL", config.nats_url.as_str()),
-            ("HTTP_ADDR", addr.as_str()),
-            ("BEARER_BUCKET", config.bearer_bucket.as_str()),
+            ("PORT", port.as_str()),
+            ("BEARER_SEAL_KEY", config.seal_key_b64.as_str()),
         ];
 
         let process = SpawnedProcess::spawn(&binary.to_string_lossy(), &[], &envs);
@@ -52,11 +53,10 @@ impl Subject {
     }
 }
 
-fn free_loopback_addr() -> String {
+fn free_loopback_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to reserve a loopback port");
-    let port = listener
+    listener
         .local_addr()
         .expect("reserved listener has no address")
-        .port();
-    format!("127.0.0.1:{port}")
+        .port()
 }
