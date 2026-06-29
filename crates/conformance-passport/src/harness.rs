@@ -5,7 +5,6 @@ use br_util_nats_fabric::{Fabric, KvKey};
 
 use crate::build::build_subject;
 use crate::error::Result;
-use crate::provision::provision;
 use crate::seal::{SealedSeeder, seal_key, wrong_seal_key};
 
 pub struct PassportHarness {
@@ -21,7 +20,6 @@ impl PassportHarness {
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
         let nats = FabricTestNats::start().await;
-        provision(&nats.url(), "published_language.toml").await?;
         let nats = nats.with_published_language().await;
         Ok(Self { nats, binary })
     }

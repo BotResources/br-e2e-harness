@@ -7,6 +7,18 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.0.4 - 2026-06-29
+
+### Changed
+
+- conformance-passport provisions `PUBLISHED_LANGUAGE` in-process via
+  `with_published_language()`, dropping the redundant `fabric-nats` CLI
+  provisioning step. The battery no longer depends on the `fabric-nats` binary, so
+  consuming services need neither a `nats-fabric` feature nor a fabric-nats build
+  step — `import + run_spawn` is the whole integration. Pure refactor: no behavior
+  or fidelity change (the subject still binds the pre-existing bucket; P8 still
+  proves KV-error→500).
+
 ## 1.0.3 - 2026-06-29
 
 ### Changed
