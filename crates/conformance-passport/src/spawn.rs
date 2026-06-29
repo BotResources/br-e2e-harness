@@ -80,12 +80,12 @@ mod tests {
     #[test]
     fn destructive_scenarios_run_last() {
         let input = [
-            Scenario::KvErrorIs500,
+            Scenario::KvErrorFailsLoud,
             Scenario::ValidBearerResolvesToPassport,
             Scenario::TamperedEnvelopeFailsClosed,
         ];
         let ordered = ordered_for_destruction(&input);
-        assert_eq!(*ordered.last().unwrap(), Scenario::KvErrorIs500);
+        assert_eq!(*ordered.last().unwrap(), Scenario::KvErrorFailsLoud);
         assert_eq!(ordered.len(), input.len());
     }
 

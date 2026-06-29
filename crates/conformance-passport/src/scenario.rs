@@ -10,7 +10,7 @@ pub enum Scenario {
     DistinctTokensDistinctPassports,
     WrongSealKeyFailsClosed,
     TamperedEnvelopeFailsClosed,
-    KvErrorIs500,
+    KvErrorFailsLoud,
 }
 
 pub const ALL: [Scenario; 8] = [
@@ -21,7 +21,7 @@ pub const ALL: [Scenario; 8] = [
     Scenario::DistinctTokensDistinctPassports,
     Scenario::WrongSealKeyFailsClosed,
     Scenario::TamperedEnvelopeFailsClosed,
-    Scenario::KvErrorIs500,
+    Scenario::KvErrorFailsLoud,
 ];
 
 impl Scenario {
@@ -34,7 +34,7 @@ impl Scenario {
             Scenario::DistinctTokensDistinctPassports => CheckId::DistinctTokensDistinctPassports,
             Scenario::WrongSealKeyFailsClosed => CheckId::WrongSealKeyFailsClosed,
             Scenario::TamperedEnvelopeFailsClosed => CheckId::TamperedEnvelopeFailsClosed,
-            Scenario::KvErrorIs500 => CheckId::KvErrorIs500,
+            Scenario::KvErrorFailsLoud => CheckId::KvErrorFailsLoud,
         }
     }
 
@@ -43,7 +43,7 @@ impl Scenario {
     }
 
     pub fn is_destructive(self) -> bool {
-        matches!(self, Scenario::KvErrorIs500)
+        matches!(self, Scenario::KvErrorFailsLoud)
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
@@ -57,7 +57,7 @@ impl Scenario {
             }
             CheckId::WrongSealKeyFailsClosed => Some(Scenario::WrongSealKeyFailsClosed),
             CheckId::TamperedEnvelopeFailsClosed => Some(Scenario::TamperedEnvelopeFailsClosed),
-            CheckId::KvErrorIs500 => Some(Scenario::KvErrorIs500),
+            CheckId::KvErrorFailsLoud => Some(Scenario::KvErrorFailsLoud),
             CheckId::ScopesClaimRoundTrip => None,
         }
     }
@@ -100,7 +100,7 @@ mod tests {
         for scenario in ALL {
             assert_eq!(
                 scenario.is_destructive(),
-                scenario == Scenario::KvErrorIs500
+                scenario == Scenario::KvErrorFailsLoud
             );
         }
     }

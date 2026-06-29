@@ -9,7 +9,7 @@ pub enum CheckId {
     DistinctTokensDistinctPassports,
     WrongSealKeyFailsClosed,
     TamperedEnvelopeFailsClosed,
-    KvErrorIs500,
+    KvErrorFailsLoud,
     ScopesClaimRoundTrip,
 }
 
@@ -23,7 +23,7 @@ impl CheckId {
             CheckId::DistinctTokensDistinctPassports => "p5",
             CheckId::WrongSealKeyFailsClosed => "p6",
             CheckId::TamperedEnvelopeFailsClosed => "p7",
-            CheckId::KvErrorIs500 => "p8",
+            CheckId::KvErrorFailsLoud => "p8",
             CheckId::ScopesClaimRoundTrip => "g4",
         }
     }
@@ -37,7 +37,7 @@ impl CheckId {
             "p5" => Some(CheckId::DistinctTokensDistinctPassports),
             "p6" => Some(CheckId::WrongSealKeyFailsClosed),
             "p7" => Some(CheckId::TamperedEnvelopeFailsClosed),
-            "p8" => Some(CheckId::KvErrorIs500),
+            "p8" => Some(CheckId::KvErrorFailsLoud),
             "g4" => Some(CheckId::ScopesClaimRoundTrip),
             _ => None,
         }
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn a_skipped_only_report_is_not_conformant() {
         let mut report = ConformanceReport::default();
-        report.push(CheckOutcome::skipped(CheckId::KvErrorIs500, "no infra"));
+        report.push(CheckOutcome::skipped(CheckId::KvErrorFailsLoud, "no infra"));
         assert!(!report.is_conformant());
     }
 

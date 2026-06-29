@@ -113,8 +113,8 @@ async fn p7_tampered_envelope_fails_closed() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
-async fn p8_kv_error_is_500() {
-    assert_scenario(Scenario::KvErrorIs500).await;
+async fn p8_kv_error_fails_loud() {
+    assert_scenario(Scenario::KvErrorFailsLoud).await;
 }
 
 #[tokio::test]
