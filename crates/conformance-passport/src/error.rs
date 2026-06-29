@@ -6,8 +6,6 @@ pub enum ConformanceError {
     GoUnavailable(String),
     #[error("building the identity-passport subject failed: {0}")]
     Build(String),
-    #[error("nats jetstream error: {0}")]
-    Jetstream(String),
     #[error("sealing/publishing a bearer into the PUBLISHED_LANGUAGE bucket failed: {0}")]
     Seed(String),
     #[error("calling GET /internal/passport failed: {0}")]

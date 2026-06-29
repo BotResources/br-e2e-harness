@@ -147,9 +147,9 @@ Per-test isolation: each test spawns its **own** `FabricTestNats`. The subject
 fails loud if the bucket is missing, so the boot order is fixed:
 
 1. `FabricTestNats::start()` (its own `nats-server`).
-2. Provision `PUBLISHED_LANGUAGE` by spawning the `fabric-nats` CLI
-   (`tests/fixtures/published_language.toml`) **before** the subject, then bind it
-   via `with_published_language()` for seeding.
+2. Provision the `PUBLISHED_LANGUAGE` bucket in-process via
+   `with_published_language()` (no external binary, so the gate is a zero-ceremony
+   drop-in) **before** the subject, which also binds it for seeding.
 3. Spawn the subject with `NATS_URL` / `PORT` / `BEARER_SEAL_KEY`.
 4. `wait_until` `/readyz` == 200.
 5. Run the scenarios (P8 last), then shut down.
@@ -157,15 +157,15 @@ fails loud if the bucket is missing, so the boot order is fixed:
 ## Running it
 
 Needs `nats-server` and the **Go toolchain** on `PATH` (the runner builds the
-subject and runs its `make guard`). The `fabric-nats` workspace bin must be built.
-The tests are `#[ignore]`-gated so the default `cargo test` stays green:
+subject and runs its `make guard`). No external binary is required — the bucket is
+provisioned in-process. The tests are `#[ignore]`-gated so the default `cargo test`
+stays green:
 
 ```sh
 # offline (G4 + unit tests)
 cargo test -p conformance-passport
 
 # full P1..P8 battery against the Go anchor (real infra)
-cargo build -p br-test-harness --bin fabric-nats --features nats-fabric
 cargo test -p conformance-passport --test conformance -- --ignored --test-threads=1
 ```
 

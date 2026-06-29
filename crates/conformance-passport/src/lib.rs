@@ -4,7 +4,6 @@ pub mod endpoint;
 pub mod error;
 pub mod harness;
 pub mod outcome;
-pub mod provision;
 pub mod readyz;
 pub mod scenario;
 pub mod scopes;
