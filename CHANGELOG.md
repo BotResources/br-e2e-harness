@@ -7,6 +7,33 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.0.5 - 2026-06-29
+
+### Changed
+
+- **conformance-passport P8 renamed `KvErrorFailsLoud` (was `KvErrorIs500`) and
+  loosened from `== 500` to a fail-loud contract.** The property P8 actually guards
+  is *no silent fail-open*: when the `PUBLISHED_LANGUAGE` bucket is destroyed under
+  a live subject, the loss must surface **loudly** — either as a **5xx** or by the
+  resolver becoming **unreachable** (the stream deletion drops its NATS connection /
+  the process exits, a fail-loud outcome consistent with BR doctrine). Both are
+  correct; only a **200** (anonymous or resolved) is the real failure, because it
+  would let the request proceed as a valid anonymous call. The old strict `== 500`
+  **reds on a loud connection-drop**: the real gateway reference
+  (`example-svc-identity`) becomes unreachable on stream deletion in integrated CI,
+  which is *not* a security failure, yet the strict check failed it. P8 now PASSes
+  iff the re-resolve yields a 5xx **or** a transport error, and FAILs on any 2xx or
+  other non-5xx status. A **pre-deletion health guard** was added: the subject must
+  resolve the seed *before* the destructive step, so a later unreachability can only
+  be attributed to the infra loss (never a boot failure). The `Ok(status)`-vs-`Err`
+  verdict was extracted to a pure helper with offline unit tests (500/503/transport
+  → pass; 200/401 → fail). The scenario code string `"p8"` is unchanged.
+  conformance-passport is exempt from cargo-semver-checks, so the rename is safe.
+- **`anyhow` 1.0.102 → 1.0.103** (Cargo.lock-only, transitive). Patches
+  **RUSTSEC-2026-0190**, an unsoundness advisory in `Error::downcast_mut()`; the
+  patched release exists, so no `deny.toml` ignore is added. `cargo deny` advisories
+  are clean after the bump.
+
 ## 1.0.4 - 2026-06-29
 
 ### Changed

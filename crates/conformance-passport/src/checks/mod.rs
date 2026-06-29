@@ -30,6 +30,6 @@ pub async fn run_scenario(scenario: Scenario, ctx: &CheckContext<'_>) -> CheckOu
         | Scenario::NoCredentialIsAnonymous => run_anonymous_scenario(scenario, ctx).await,
         Scenario::WrongSealKeyFailsClosed => run_wrong_seal_key(ctx).await,
         Scenario::TamperedEnvelopeFailsClosed => run_tampered_envelope(ctx).await,
-        Scenario::KvErrorIs500 => run_kv_error(ctx).await,
+        Scenario::KvErrorFailsLoud => run_kv_error(ctx).await,
     }
 }

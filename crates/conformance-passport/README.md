@@ -23,11 +23,14 @@ a **sealed** bearer credential into a `Passport` exactly as the platform require
 - token absent / revoked, no `Authorization`, a non-Bearer credential, an
   **unreadable envelope**, a **wrong seal key**, or a **tampered ciphertext** →
   **200, no `X-Passport`** (anonymous, fail-closed).
-- a backend (KV) error → **500**.
+- a backend (KV) error → it **fails loud** (a **5xx**, or the resolver becomes
+  unreachable), never a silent 200.
 
 The endpoint **resolves**, it does not **gate**: an unresolvable or non-openable
 credential is an anonymous request, never a 401 — services do authZ, never authN.
-Only genuine infra (a KV read failure) is a 500.
+Catastrophic infra loss (the KV bucket/stream gone) is the one thing that must
+**not** resolve to a silent 200: it surfaces loudly as a 5xx or by the resolver
+dropping its connection / exiting (fail-loud).
 
 ## The sealed wire
 
@@ -91,7 +94,7 @@ scenarios):
 | **P5** | Two distinct sealed entries (distinct `user_id` + `token_id`) resolve, **each to its own passport**, no cross-talk. |
 | **P6** | A bearer sealed under a **WRONG key** (a second `BearerPublisher` with a different 32-byte key) → the subject (correct key) AEAD-open fails → **anonymous**, never a wrong identity. |
 | **P7** | A correctly-sealed bearer whose stored ciphertext is then **byte-flipped** (`pl_get_raw` → flip → `pl_put_raw`) → the AEAD tag fails → **anonymous**. |
-| **P8** | With the `PUBLISHED_LANGUAGE` bucket **destroyed** under the live subject, resolution returns **500**, never silently anonymous. Destructive → `run_spawn` always runs it **last**. |
+| **P8** | With the `PUBLISHED_LANGUAGE` bucket **destroyed** under the live subject, resolution **fails loud** — a **5xx** *or* the resolver becoming **unreachable** (transport error) — never a silent **200** (anonymous or resolved). A pre-deletion health guard first confirms the subject resolves the seed, so a later unreachability is attributable to the infra loss alone. Destructive → `run_spawn` always runs it **last**. |
 | **G4** | A `Passport` carrying a `scopes` claim survives the `X-Passport` base64 round-trip identically, and the typed-scopes API holds (`scopes()` / `has_scope` / absent = empty / malformed skipped). |
 
 The non-tautological property **P1 + P5** prove: the independent subject opens what
