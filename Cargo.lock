@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "aead"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
+dependencies = [
+ "crypto-common",
+ "generic-array",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -248,6 +258,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "br-auth-contract"
+version = "0.1.0"
+source = "git+https://github.com/BotResources/svc-auth?tag=v1.0.2#8f0fc3477a88b39742ca7f975d55b52b0b5591db"
+dependencies = [
+ "base64",
+ "br-core-auth",
+ "br-core-kernel",
+ "chacha20poly1305",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "br-auth-identity-util"
+version = "0.1.0"
+source = "git+https://github.com/BotResources/svc-auth?tag=v1.0.2#8f0fc3477a88b39742ca7f975d55b52b0b5591db"
+dependencies = [
+ "br-auth-contract",
+ "br-util-nats-fabric",
+ "thiserror",
+]
+
+[[package]]
 name = "br-core-auth"
 version = "1.0.2"
 source = "git+https://github.com/BotResources/br-rust-common?tag=v1.0.2#3513953956453cd39f6da4a492bb8f251405c597"
@@ -335,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "br-test-harness"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "async-nats",
  "axum",
@@ -464,6 +500,17 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chacha20"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3613f74bd2eac03dad61bd53dbe620703d4371614fe0bc3b9f04dd36fe4e818"
+dependencies = [
+ "cfg-if",
+ "cipher",
+ "cpufeatures 0.2.17",
+]
+
+[[package]]
+name = "chacha20"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
@@ -471,6 +518,19 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "chacha20poly1305"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
+dependencies = [
+ "aead",
+ "chacha20 0.9.1",
+ "cipher",
+ "poly1305",
+ "zeroize",
 ]
 
 [[package]]
@@ -485,6 +545,17 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "windows-link",
+]
+
+[[package]]
+name = "cipher"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
+dependencies = [
+ "crypto-common",
+ "inout",
+ "zeroize",
 ]
 
 [[package]]
@@ -544,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-directory"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "async-trait",
  "br-core-directory",
@@ -561,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-identity"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "br-core-integration",
  "br-core-scope",
@@ -579,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-nats-fabric"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "async-trait",
  "br-core-directory",
@@ -595,11 +666,17 @@ dependencies = [
 
 [[package]]
 name = "conformance-passport"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
+ "base64",
+ "br-auth-contract",
+ "br-auth-identity-util",
  "br-core-auth",
+ "br-core-kernel",
  "br-test-harness",
+ "br-util-nats-fabric",
  "reqwest",
+ "serde_json",
  "thiserror",
  "tokio",
  "uuid",
@@ -607,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "br-core-integration",
  "br-core-scope",
@@ -625,7 +702,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope-cli"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -713,6 +790,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array",
+ "rand_core 0.6.4",
  "typenum",
 ]
 
@@ -1367,6 +1445,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inout"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
+dependencies = [
+ "generic-array",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1637,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "oidc-test-idp"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "axum",
  "base64",
@@ -1665,6 +1752,12 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "opaque-debug"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl-probe"
@@ -1784,6 +1877,17 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "poly1305"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
+dependencies = [
+ "cpufeatures 0.2.17",
+ "opaque-debug",
+ "universal-hash",
+]
 
 [[package]]
 name = "portable-atomic"
@@ -1964,7 +2068,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
- "chacha20",
+ "chacha20 0.10.0",
  "getrandom 0.4.2",
  "rand_core 0.10.1",
 ]
@@ -3186,6 +3290,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
+name = "universal-hash"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
+dependencies = [
+ "crypto-common",
+ "subtle",
+]
+
+[[package]]
 name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3841,6 +3955,20 @@ name = "zeroize"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "zerotrie"

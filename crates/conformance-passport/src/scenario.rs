@@ -8,14 +8,20 @@ pub enum Scenario {
     UnknownBearerIsAnonymous,
     NoCredentialIsAnonymous,
     DistinctTokensDistinctPassports,
+    WrongSealKeyFailsClosed,
+    TamperedEnvelopeFailsClosed,
+    KvErrorIs500,
 }
 
-pub const ALL: [Scenario; 5] = [
+pub const ALL: [Scenario; 8] = [
     Scenario::ValidBearerResolvesToPassport,
     Scenario::RevokedBearerIsAnonymous,
     Scenario::UnknownBearerIsAnonymous,
     Scenario::NoCredentialIsAnonymous,
     Scenario::DistinctTokensDistinctPassports,
+    Scenario::WrongSealKeyFailsClosed,
+    Scenario::TamperedEnvelopeFailsClosed,
+    Scenario::KvErrorIs500,
 ];
 
 impl Scenario {
@@ -26,11 +32,18 @@ impl Scenario {
             Scenario::UnknownBearerIsAnonymous => CheckId::UnknownBearerIsAnonymous,
             Scenario::NoCredentialIsAnonymous => CheckId::NoCredentialIsAnonymous,
             Scenario::DistinctTokensDistinctPassports => CheckId::DistinctTokensDistinctPassports,
+            Scenario::WrongSealKeyFailsClosed => CheckId::WrongSealKeyFailsClosed,
+            Scenario::TamperedEnvelopeFailsClosed => CheckId::TamperedEnvelopeFailsClosed,
+            Scenario::KvErrorIs500 => CheckId::KvErrorIs500,
         }
     }
 
     pub fn code(self) -> &'static str {
         self.check_id().code()
+    }
+
+    pub fn is_destructive(self) -> bool {
+        matches!(self, Scenario::KvErrorIs500)
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
@@ -42,6 +55,9 @@ impl Scenario {
             CheckId::DistinctTokensDistinctPassports => {
                 Some(Scenario::DistinctTokensDistinctPassports)
             }
+            CheckId::WrongSealKeyFailsClosed => Some(Scenario::WrongSealKeyFailsClosed),
+            CheckId::TamperedEnvelopeFailsClosed => Some(Scenario::TamperedEnvelopeFailsClosed),
+            CheckId::KvErrorIs500 => Some(Scenario::KvErrorIs500),
             CheckId::ScopesClaimRoundTrip => None,
         }
     }
@@ -76,6 +92,16 @@ mod tests {
     fn every_scenario_round_trips_its_code() {
         for scenario in ALL {
             assert_eq!(Scenario::from_code(scenario.code()), Some(scenario));
+        }
+    }
+
+    #[test]
+    fn only_the_kv_error_scenario_is_destructive() {
+        for scenario in ALL {
+            assert_eq!(
+                scenario.is_destructive(),
+                scenario == Scenario::KvErrorIs500
+            );
         }
     }
 

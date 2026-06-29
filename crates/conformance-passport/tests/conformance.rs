@@ -3,7 +3,7 @@ use std::time::Duration;
 use br_test_harness::wait_until;
 use conformance_passport::checks::{CheckContext, run_scenario};
 use conformance_passport::{
-    BearerSeeder, PassportEndpoint, PassportHarness, ReadyzProbe, Scenario, Subject, SubjectConfig,
+    PassportEndpoint, PassportHarness, ReadyzProbe, Scenario, SealedSeeder, Subject, SubjectConfig,
 };
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ const SHORT: Duration = Duration::from_secs(10);
 
 struct Fixture {
     harness: PassportHarness,
-    seeder: BearerSeeder,
+    seeder: SealedSeeder,
     endpoint: PassportEndpoint,
     subject: Subject,
     namespace: String,
@@ -20,7 +20,7 @@ struct Fixture {
 impl Fixture {
     async fn start() -> Self {
         let harness = PassportHarness::start().await.expect("harness");
-        let seeder = harness.seeder();
+        let seeder = harness.seeder().await.expect("sealed seeder");
         let config = SubjectConfig::new(&harness.nats_url());
         let subject = Subject::spawn(harness.binary(), &config);
         let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -42,6 +42,7 @@ impl Fixture {
 
     async fn run(&self, scenario: Scenario) -> conformance_passport::CheckOutcome {
         let ctx = CheckContext {
+            harness: &self.harness,
             seeder: &self.seeder,
             endpoint: &self.endpoint,
             namespace: &self.namespace,
@@ -100,6 +101,24 @@ async fn p5_distinct_tokens_distinct_passports() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn p6_wrong_seal_key_fails_closed() {
+    assert_scenario(Scenario::WrongSealKeyFailsClosed).await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn p7_tampered_envelope_fails_closed() {
+    assert_scenario(Scenario::TamperedEnvelopeFailsClosed).await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn p8_kv_error_is_500() {
+    assert_scenario(Scenario::KvErrorIs500).await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn full_battery_is_conformant_via_run_spawn() {
     use conformance_passport::{ALL, SpawnTarget, build_subject, run_spawn};
     let binary = build_subject().await.expect("build subject");
@@ -108,11 +127,11 @@ async fn full_battery_is_conformant_via_run_spawn() {
         .expect("run_spawn");
     assert!(
         report.is_conformant(),
-        "the full P1..P5 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
+        "the full P1..P8 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
         report.passed(),
         report.failed(),
         report.skipped(),
         report.outcomes,
     );
-    assert_eq!(report.passed(), 5, "all five checks must pass");
+    assert_eq!(report.passed(), 8, "all eight checks must pass");
 }

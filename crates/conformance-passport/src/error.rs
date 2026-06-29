@@ -8,7 +8,7 @@ pub enum ConformanceError {
     Build(String),
     #[error("nats jetstream error: {0}")]
     Jetstream(String),
-    #[error("seeding a bearer token into the bearer_tokens bucket failed: {0}")]
+    #[error("sealing/publishing a bearer into the PUBLISHED_LANGUAGE bucket failed: {0}")]
     Seed(String),
     #[error("calling GET /internal/passport failed: {0}")]
     Request(String),
@@ -20,12 +20,6 @@ pub enum ConformanceError {
     Readyz(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
-}
-
-impl From<br_test_harness::BearerSeedError> for ConformanceError {
-    fn from(e: br_test_harness::BearerSeedError) -> Self {
-        ConformanceError::Seed(e.to_string())
-    }
 }
 
 pub type Result<T> = std::result::Result<T, ConformanceError>;

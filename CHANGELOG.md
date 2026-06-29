@@ -7,6 +7,53 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.0.3 - 2026-06-29
+
+### Changed
+
+- **`conformance-passport` migrated to the sealed/AEAD bearer model.** The G1
+  battery now resolves bearers stored as `br_auth_contract::SealedBearer`
+  (ChaCha20-Poly1305, RFC 8439 — random 12-byte nonce, 16-byte tag) in the fixed
+  `PUBLISHED_LANGUAGE` bucket at `bearer_token_kv_key(tok)` =
+  `"identity/bearer_tokens/" + sha256hex(tok)`, **AAD = the unprefixed digest**.
+  The sealed cleartext is `br_auth_contract::BearerEntry { actor, token_id }` — it
+  carries **no email**, so the resolved `Passport::Human` has `user_id` = the
+  sealed actor's `UserId` and **empty `claims`** (the retired plaintext
+  `bearer_tokens` / `BearerTokenEntry { email, token_id }` model is gone).
+- **Seeding goes through the real Rust lib.** A new in-crate `SealedSeeder` wraps
+  `br_auth_identity_util::BearerPublisher` (seals + writes / retracts on the
+  existing `with_published_language` PL seam) — no new `br-test-harness` seeding
+  API. The Go anchor independently **opens** the Rust-sealed envelope with its own
+  `golang.org/x/crypto/chacha20poly1305`: genuine Rust-seal / Go-open
+  cross-language interop pins the whole crypto contract (the random nonce means the
+  ciphertext bytes are not frozen, the *contract* is).
+- **Subject env contract realigned** to `NATS_URL` + `PORT` + `BEARER_SEAL_KEY`
+  (base64-std of the 32-byte key); dropped `HTTP_ADDR` and `BEARER_BUCKET` (the
+  bucket is the fixed `PUBLISHED_LANGUAGE`). Matches the gateway `svc-identity`
+  example exactly so `run_spawn` drives both the Go anchor and a real reference.
+
+### Added
+
+- **Fail-closed + infra-error checks.** P6 `WrongSealKeyFailsClosed` (an envelope
+  sealed under a different key → anonymous, never a wrong identity), P7
+  `TamperedEnvelopeFailsClosed` (the stored ciphertext is byte-flipped → AEAD tag
+  fails → anonymous), and P8 `KvErrorIs500` (the `PUBLISHED_LANGUAGE` bucket is
+  destroyed under the live subject → resolution returns 500, never silently
+  anonymous). P8 is destructive, so `run_spawn` always runs it last. P1/P5 now
+  assert `user_id` to the exact sealed value and that `claims` carries no email.
+- **Go-anchor retired-model guard.** `make guard` in `identity-passport` fails loud
+  if any retired marker (an `email` JSON tag, a `userIDFromEmail` / `uuid.NewSHA1`
+  derivation, or the old plaintext entry type) reappears in source; the Rust build
+  runs it before `go build`.
+- **`FabricTestNats::delete_published_language()`** — additive harness helper (the
+  P8 destructive hook), keeping `async-nats` confined to `br-test-harness`.
+
+### Dependencies
+
+- `conformance-passport` adds `br-auth-contract`, `br-auth-identity-util`
+  (svc-auth `v1.0.2`), `br-core-kernel`, `br-util-nats-fabric` (`v1.0.2`), plus
+  `base64` / `serde_json`.
+
 ## 1.0.2 - 2026-06-19
 
 ### Added

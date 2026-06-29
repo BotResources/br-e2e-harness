@@ -2,23 +2,22 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/cipher"
 	"errors"
 	"log"
 	"net/http"
-	"strings"
 	"sync/atomic"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
 
 type resolver struct {
-	kv  atomic.Pointer[jetstream.KeyValue]
-	cfg config
+	kv   atomic.Pointer[jetstream.KeyValue]
+	aead cipher.AEAD
 }
 
-func newResolver(cfg config) *resolver {
-	return &resolver{cfg: cfg}
+func newResolver(aead cipher.AEAD) *resolver {
+	return &resolver{aead: aead}
 }
 
 func (r *resolver) bind(kv jetstream.KeyValue) {
@@ -38,13 +37,27 @@ func (r *resolver) handle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	entry, found, err := r.lookup(req.Context(), *kvPtr, token)
+	raw, found, err := r.lookup(req.Context(), *kvPtr, token)
 	if err != nil {
-		log.Printf("bearer lookup failed: %v", err)
+		log.Printf("bearer kv lookup failed: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if !found {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	sealed, err := parseSealed(raw)
+	if err != nil {
+		log.Printf("stored sealed bearer is unreadable, resolving anonymous: %v", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	entry, err := openSealed(r.aead, token, sealed)
+	if err != nil {
+		log.Printf("sealed bearer did not open (wrong key or tampered), resolving anonymous: %v", err)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -59,31 +72,13 @@ func (r *resolver) handle(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (r *resolver) lookup(ctx context.Context, kv jetstream.KeyValue, token string) (bearerTokenEntry, bool, error) {
-	value, err := kv.Get(ctx, bearerTokenKey(token))
+func (r *resolver) lookup(ctx context.Context, kv jetstream.KeyValue, token string) ([]byte, bool, error) {
+	value, err := kv.Get(ctx, kvKey(token))
 	if errors.Is(err, jetstream.ErrKeyNotFound) {
-		return bearerTokenEntry{}, false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return bearerTokenEntry{}, false, err
+		return nil, false, err
 	}
-	var entry bearerTokenEntry
-	if err := json.Unmarshal(value.Value(), &entry); err != nil {
-		return bearerTokenEntry{}, false, err
-	}
-	return entry, true, nil
-}
-
-func bearerToken(authorization string) (string, bool) {
-	if len(authorization) <= len(bearerPrefix) {
-		return "", false
-	}
-	if !strings.HasPrefix(authorization, bearerPrefix) {
-		return "", false
-	}
-	token := authorization[len(bearerPrefix):]
-	if token == "" {
-		return "", false
-	}
-	return token, true
+	return value.Value(), true, nil
 }

@@ -7,6 +7,9 @@ pub enum CheckId {
     UnknownBearerIsAnonymous,
     NoCredentialIsAnonymous,
     DistinctTokensDistinctPassports,
+    WrongSealKeyFailsClosed,
+    TamperedEnvelopeFailsClosed,
+    KvErrorIs500,
     ScopesClaimRoundTrip,
 }
 
@@ -18,6 +21,9 @@ impl CheckId {
             CheckId::UnknownBearerIsAnonymous => "p3",
             CheckId::NoCredentialIsAnonymous => "p4",
             CheckId::DistinctTokensDistinctPassports => "p5",
+            CheckId::WrongSealKeyFailsClosed => "p6",
+            CheckId::TamperedEnvelopeFailsClosed => "p7",
+            CheckId::KvErrorIs500 => "p8",
             CheckId::ScopesClaimRoundTrip => "g4",
         }
     }
@@ -29,6 +35,9 @@ impl CheckId {
             "p3" => Some(CheckId::UnknownBearerIsAnonymous),
             "p4" => Some(CheckId::NoCredentialIsAnonymous),
             "p5" => Some(CheckId::DistinctTokensDistinctPassports),
+            "p6" => Some(CheckId::WrongSealKeyFailsClosed),
+            "p7" => Some(CheckId::TamperedEnvelopeFailsClosed),
+            "p8" => Some(CheckId::KvErrorIs500),
             "g4" => Some(CheckId::ScopesClaimRoundTrip),
             _ => None,
         }
@@ -158,6 +167,34 @@ impl ConformanceReport {
     }
 
     pub fn is_conformant(&self) -> bool {
-        self.failed() == 0
+        !self.outcomes.is_empty() && self.failed() == 0 && self.skipped() == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_report_is_not_conformant() {
+        assert!(!ConformanceReport::default().is_conformant());
+    }
+
+    #[test]
+    fn a_skipped_only_report_is_not_conformant() {
+        let mut report = ConformanceReport::default();
+        report.push(CheckOutcome::skipped(CheckId::KvErrorIs500, "no infra"));
+        assert!(!report.is_conformant());
+    }
+
+    #[test]
+    fn an_all_pass_report_is_conformant() {
+        let mut report = ConformanceReport::default();
+        report.push(CheckOutcome::pass(
+            CheckId::ValidBearerResolvesToPassport,
+            "ok",
+            "ok",
+        ));
+        assert!(report.is_conformant());
     }
 }

@@ -1,8 +1,9 @@
+use br_test_harness::unknown_bearer;
+
 use crate::endpoint::Resolution;
 use crate::error::Result;
 use crate::outcome::CheckOutcome;
 use crate::scenario::Scenario;
-use br_test_harness::unknown_bearer;
 
 use super::CheckContext;
 
@@ -30,9 +31,9 @@ pub async fn run_anonymous_scenario(scenario: Scenario, ctx: &CheckContext<'_>) 
 async fn resolve(scenario: Scenario, ctx: &CheckContext<'_>) -> Result<Resolution> {
     match scenario {
         Scenario::RevokedBearerIsAnonymous => {
-            let token = ctx.seeder.seed(ctx.namespace, "revoked").await?;
-            ctx.seeder.revoke(&token).await?;
-            ctx.endpoint.resolve_bearer(&token.raw).await
+            let seed = ctx.seeder.seed(ctx.namespace, "revoked").await?;
+            ctx.seeder.revoke(&seed).await?;
+            ctx.endpoint.resolve_bearer(&seed.raw).await
         }
         Scenario::UnknownBearerIsAnonymous => ctx.endpoint.resolve_bearer(&unknown_bearer()).await,
         Scenario::NoCredentialIsAnonymous => ctx.endpoint.resolve_anonymous().await,

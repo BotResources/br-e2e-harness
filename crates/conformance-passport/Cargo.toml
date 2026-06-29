@@ -11,8 +11,12 @@ repository.workspace = true
 br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v1.0.2", version = "1.0.2", features = [
     "test-support",
 ] }
+br-core-kernel = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-kernel", tag = "v1.0.2", version = "1.0.2" }
+br-auth-contract = { git = "https://github.com/BotResources/svc-auth", package = "br-auth-contract", tag = "v1.0.2", version = "0.1.0" }
+br-auth-identity-util = { git = "https://github.com/BotResources/svc-auth", package = "br-auth-identity-util", tag = "v1.0.2", version = "0.1.0" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.2", version = "1.0.2" }
 
-br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "1.0.3", default-features = false, features = [
     "nats-fabric",
 ] }
 
@@ -20,6 +24,8 @@ tokio = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 uuid = { version = "1", features = ["v7"] }
 thiserror = { workspace = true }
+base64 = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
