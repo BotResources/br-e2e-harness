@@ -175,12 +175,12 @@ cargo test -p conformance-passport --test conformance -- --ignored --test-thread
 ## Install
 
 A **dev-dependency**, pinned to a release tag. Keep its `br-rust-common` pin
-identical to `br-test-harness`'s (`v1.0.2`) so Cargo resolves a single source of
+identical to `br-test-harness`'s (`v1.1.0`) so Cargo resolves a single source of
 `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.3" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.1" }
 ```
 
 ## License

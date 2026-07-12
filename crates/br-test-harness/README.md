@@ -667,10 +667,10 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.1" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.0", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.1", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
