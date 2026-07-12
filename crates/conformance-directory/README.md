@@ -145,7 +145,7 @@ Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.0.2" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.0" }
 ```
 
 ## Why — the non-obvious bits

@@ -7,6 +7,32 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.1.0 - 2026-07-12
+
+### Changed
+
+- **The workspace pins `br-rust-common` `v1.1.0`** (was `v1.0.2`), across
+  `br-test-harness` and the conformance batteries. v1.1.0 is an additive minor:
+  the managed fabric run-loop now **auto-recovers transient consume errors**
+  (rebind + backoff — a bounded budget for `Other`, unbounded retry for the new
+  `ConsumeErrorKind::HeartbeatMissed`, while `NoStream` stays terminal), and the
+  `br-core-values` reason codes moved to `lower_snake` (`locale_unknown`,
+  `money_out_of_range`, `primary_content_missing`), with `Affordance` reason
+  constructors now panicking on any non-`lower_snake` code. No harness or
+  conformance code needed adapting: no suite asserted a heartbeat-driven loop
+  death, referenced `ConsumerGone`, or emitted an upper-case reason code. The
+  `NoStream` fail-loud assertions in `conformance-nats-fabric` are unchanged
+  (`NoStream` remains terminal). The Go anchor's byte-for-byte subject/wire
+  checks pass unchanged.
+
+- **`conformance-passport` is temporarily removed from the workspace and its CI
+  battery step** because it bridges the `svc-auth` `br-auth-contract` /
+  `br-auth-identity-util` crates (still pinned to `br-rust-common` `v1.0.2`) with
+  the now-`v1.1.0` `br-test-harness`, which cannot resolve to a single
+  `br-rust-common` source. Its own manifest stays on `v1.0.2`. It re-enters the
+  workspace once `svc-auth` ships a release pinned to `br-rust-common` `v1.1.0`
+  (the next lockstep step); the code is source-compatible with `v1.1.0`.
+
 ## 1.0.5 - 2026-06-29
 
 ### Changed
