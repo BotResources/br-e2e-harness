@@ -8,11 +8,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v1.0.2", version = "1.0.2" }
-br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "v1.0.2", version = "1.0.2" }
-br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", package = "br-identity-domain", tag = "v1.0.2", version = "1.0.2" }
-br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v1.0.2", version = "1.0.2" }
-br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.0.2", version = "1.0.2" }
+br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "v1.1.0", version = "1.1.0" }
+br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "v1.1.0", version = "1.1.0" }
+br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", package = "br-identity-domain", tag = "v1.1.0", version = "1.1.0" }
+br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v1.1.0", version = "1.1.0" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.1.0", version = "1.1.0" }
 
 br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
     "nats",

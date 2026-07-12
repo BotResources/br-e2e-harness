@@ -5,14 +5,13 @@ members = [
     "crates/conformance-directory",
     "crates/conformance-identity",
     "crates/conformance-nats-fabric",
-    "crates/conformance-passport",
     "crates/conformance-scope",
     "crates/conformance-scope-cli",
     "crates/oidc-test-idp",
 ]
 
 [workspace.package]
-version = "1.0.5"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
