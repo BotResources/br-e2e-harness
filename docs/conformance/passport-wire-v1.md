@@ -18,9 +18,9 @@ only the **two faces the G1 battery asserts** — the KV storage shape and the
 resolved `Passport` shape — and defers elsewhere, so there is **one** source of
 truth, not a second drifting one.
 
-The schemas below are the **real Rust types** (`br-auth-contract` / `br-core-auth`,
-tag `v1.0.2`); the Go vectors are pinned in the anchor's `wire_test.go`. Nothing
-here is hand-written wire shape.
+The schemas below are the **real Rust types** (`br-auth-contract` at `svc-auth`
+`v1.0.3` / `br-core-auth` at `br-rust-common` `v1.1.0`); the Go vectors are pinned
+in the anchor's `wire_test.go`. Nothing here is hand-written wire shape.
 
 ---
 

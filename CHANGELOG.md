@@ -7,6 +7,24 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.1.1 - 2026-07-12
+
+### Changed
+
+- **`conformance-passport` re-enters the workspace and its CI battery step.** It
+  was temporarily excluded in 1.1.0 because it bridges the `svc-auth`
+  `br-auth-contract` / `br-auth-identity-util` crates (then pinned to
+  `br-rust-common` `v1.0.2`) with the now-`v1.1.0` `br-test-harness`, and Cargo
+  cannot resolve two git tags of one `br-rust-common` to a single source.
+  `svc-auth` has since shipped `v1.0.3`, which pins `br-rust-common` `v1.1.0` and
+  `br-test-harness` `v1.1.0` — so the whole tree now resolves to a single
+  `br-rust-common` source. The battery's manifest moves to `br-rust-common`
+  `v1.1.0` (`br-core-auth`, `br-core-kernel`, `br-util-nats-fabric`) and to
+  `svc-auth` `v1.0.3` (`br-auth-contract` / `br-auth-identity-util`, both crate
+  version `0.2.0`). The frozen G1 bearer→`Passport` wire contract is unchanged;
+  only the pins move. The passport battery step is restored to
+  `.github/workflows/ci.yml`.
+
 ## 1.1.0 - 2026-07-12
 
 ### Changed

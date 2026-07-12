@@ -154,7 +154,7 @@ resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.1" }
 ```
 
 ## Why — the non-obvious bits
