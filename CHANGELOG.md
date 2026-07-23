@@ -7,6 +7,27 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.1.2 - 2026-07-22
+
+### Changed
+
+- Bump `br-rust-common` pins from `v1.1.0` to `v1.2.0` (dependency-only patch:
+  picks up the NoResponders-recoverable consumer fix and the supervised
+  `PublishedLanguageConsumer::run()`; no harness surface change). Note the
+  v1.2.0 `WatchHealth` semantics: the channel starts `Degraded` and only the
+  supervised loop writes it — a battery asserting health on a raw `watch()`
+  must drive `run()` instead.
+
+### Removed (temporary)
+
+- `conformance-passport` excluded from `[workspace] members` and its CI battery
+  step dropped — same maneuver as harness 1.1.0: the crate bridges svc-auth's
+  `br-auth-contract`/`br-auth-identity-util` (newest tag `v1.0.3`, transitively
+  pinning br-rust-common **v1.1.0**) with the now-v1.2.0 workspace, and cargo
+  cannot unify two git tags of one package. The crate stays in-tree with its
+  pins frozen (br-rust-common v1.1.0 / svc-auth v1.0.3); it re-enters once
+  svc-auth ships its v1.2.0-aligned tag.
+
 ## 1.1.1 - 2026-07-12
 
 ### Changed
