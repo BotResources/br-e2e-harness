@@ -7,6 +7,18 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.1.3 - 2026-07-23
+
+### Changed
+
+- `conformance-passport` re-enters `[workspace] members` and its CI battery step
+  is restored in its original slot — closing the temporary exclusion of 1.1.2.
+  svc-auth has shipped `v1.0.4` (br-rust-common v1.2.0 aligned), so the whole
+  tree resolves to a single br-rust-common source again. Its pins move to
+  br-rust-common `v1.2.0` and svc-auth `v1.0.4` (crate versions unchanged);
+  README/docs example pins de-frozen. The frozen G1 bearer→Passport wire
+  contract is untouched — only the pins move.
+
 ## 1.1.2 - 2026-07-22
 
 ### Changed

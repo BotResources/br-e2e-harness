@@ -19,7 +19,7 @@ resolved `Passport` shape — and defers elsewhere, so there is **one** source o
 truth, not a second drifting one.
 
 The schemas below are the **real Rust types** (`br-auth-contract` at `svc-auth`
-`v1.0.3` / `br-core-auth` at `br-rust-common` `v1.1.0`); the Go vectors are pinned
+`v1.0.4` / `br-core-auth` at `br-rust-common` `v1.2.0`); the Go vectors are pinned
 in the anchor's `wire_test.go`. Nothing here is hand-written wire shape.
 
 ---
