@@ -8,13 +8,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v1.1.0", version = "1.1.0", features = [
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v1.2.0", version = "1.2.0", features = [
     "test-support",
 ] }
-br-core-kernel = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-kernel", tag = "v1.1.0", version = "1.1.0" }
-br-auth-contract = { git = "https://github.com/BotResources/svc-auth", package = "br-auth-contract", tag = "v1.0.3", version = "0.2.0" }
-br-auth-identity-util = { git = "https://github.com/BotResources/svc-auth", package = "br-auth-identity-util", tag = "v1.0.3", version = "0.2.0" }
-br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.1.0", version = "1.1.0" }
+br-core-kernel = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-kernel", tag = "v1.2.0", version = "1.2.0" }
+br-auth-contract = { git = "https://github.com/BotResources/svc-auth", package = "br-auth-contract", tag = "v1.0.4", version = "0.2.0" }
+br-auth-identity-util = { git = "https://github.com/BotResources/svc-auth", package = "br-auth-identity-util", tag = "v1.0.4", version = "0.2.0" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.2.0", version = "1.2.0" }
 
 br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
     "nats-fabric",
