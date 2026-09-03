@@ -467,14 +467,19 @@ absent infra and never widens a durable:
 - **`.withhold_event_stream()` / `.withhold_command_stream()`** replace the
   binding by a placeholder (`integration.evt.__withheld__.>` /
   `integration.cmd.__withheld__.>`) so **every** coordinate on that stream fails;
-  the other fixed stream is untouched.
+  the other fixed stream is untouched. This is the practical form for a
+  best-effort-delivery scenario (svc-charter's `s19`): the `_subject` form
+  requires the caller to enumerate every coordinate the scenario must keep. The
+  two `_stream` methods go beyond #97's "toggle on a given subject" and are a
+  deliberate addition, overlapping `withhold_*_subject(&c, &[])`.
 - **`DeliveryOutage`** is `#[must_use]`. `.restore()` puts the **pre-outage**
   binding back (the one read at `withhold_*` time — *not* a pristine
   `integration.evt.>`), so nested outages must be restored **LIFO**; it fails
   loud if the broker refuses. There is **no `Drop` net**, so a guard dropped
-  without `restore()` leaves the stream narrowed for the rest of the run — a
-  test bug, not a recoverable state, and nothing repairs it (see the
-  parallel-safety warning below). The assertion surface: `.stream()`,
+  without `restore()` leaves the stream narrowed — for the rest of the run on a
+  `start()` server, and **beyond the run** on a persistent broker, until gitops
+  re-declares the stream — a test bug, not a recoverable state, and nothing
+  repairs it (see the parallel-safety warning below). The assertion surface: `.stream()`,
   `.live_subjects()` (what the stream binds during the outage) and
   `.withheld_subjects()` — the **one concrete coordinate** for
   `withhold_*_subject`, the **previous binding patterns** (e.g.
@@ -484,9 +489,10 @@ absent infra and never widens a durable:
   inside another), the same coordinate in both `withheld` and `keep`, the same
   coordinate twice in `keep` (the broker would reject it as duplicate subjects),
   and a `withhold_*_stream` on a stream already bound to the placeholder. The
-  coverage check mirrors the lib's own `subject_covered` semantics: an inner `>`
-  is a literal token, `*` stands for exactly one token, and an empty pattern or
-  subject covers nothing.
+  coverage check is a copy of the lib's `subject_covered` semantics **as of
+  br-rust-common v1.3.0** (the lib's function is crate-private, so nothing gates
+  the mirror): an inner `>` is a literal token, `*` stands for exactly one
+  token, and an empty pattern or subject covers nothing.
 - **A durable is never touched** — it keeps its filter *and* its position across
   the outage: a message stored before the narrowing is still stored during it and
   is delivered after `restore()`, ahead of anything published since.
@@ -494,9 +500,11 @@ absent infra and never widens a durable:
   A `DeliveryOutage` rewrites `INTEGRATION_CMD` / `INTEGRATION_EVT` themselves —
   on a shared `connect(url)` broker it makes **every concurrent scenario's**
   publishes fail, and because `get_or_create_fixed_stream` returns early when the
-  stream exists, a *lost* guard is never repaired for the rest of the run. Give a
-  scenario that withholds its **own `start()` server**, or serialize the whole
-  `connect(url)` group around it.
+  stream exists, a *lost* guard is never repaired — on a persistent broker the
+  fixed stream stays narrowed **beyond the run**, until gitops re-declares it.
+  Give a scenario that withholds its **own `start()` server**, or serialize the
+  whole `connect(url)` group around it; never run an outage against a broker
+  whose streams gitops declares for anything but tests.
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
 suffix + KV prefix, both derived from the stable `run_id`), so independent
