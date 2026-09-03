@@ -88,16 +88,22 @@ single git tag `v{version}` releases the set. Format follows
   Postgres, and pins five properties of br-rust-common v1.3.0's transactional
   sink: (a) **atomicity** — a committed roster write and its impacts are durable
   together, and the stager reads the still-uncommitted roster row through its own
-  `conn`; (b) **rollback** — a stager that refuses one key leaves that key's
-  `known_users` row exactly as it was, while a lower-ordered sibling key stays
-  converged and the refused value converges on the next accepting reconcile;
-  (c) the **impact set** of each roster write — a user upsert stages that user, a
-  group upsert that *adds* members stages the group only, one that *drops* a
-  member stages the group **plus** the removed member, and a user delete stages
-  that user **plus** every group it still belonged to; (d) a converged mirror
-  stages nothing; (e) a projector with **no** stager registered converges the
-  roster and stages nothing at all. `StagedImpact` and `IMPACT_TABLE` are exported
-  beside the check. Runs under the crate's existing `--test-threads=1` mode.
+  `conn`; (b) **rollback** — a stager that refuses one key leaves **every column**
+  of that key's `known_users` row exactly as it was, while a lower-ordered sibling
+  key stays converged and the refused value converges on the next accepting
+  reconcile; (c) the **impact set** of the six roster writes the Go anchor can
+  drive — user upsert stages that user; a group upsert that *adds* members stages
+  the group only; one that *drops* a member stages the group **plus** the removed
+  member; a name-only group upsert stages the group; a user delete stages that
+  user **plus** every group still holding it; a group delete stages the group
+  **plus** every member the cascade unlinks (the stager-only `GroupSink::retract`
+  branch); (d) a converged mirror stages nothing; (e) a projector with **no**
+  stager registered converges the roster and stages nothing at all. The
+  service-account sink is **not** exercised — the anchor publishes no
+  service-account key. `RecordingStager`, `StagerFault`, `StagedImpact`,
+  `IMPACT_TABLE` and the `create_impact_table` / `staged_impacts` /
+  `clear_impacts` helpers are exported beside the check, so an adopter can wire
+  its own impact table. Runs under the crate's existing `--test-threads=1` mode.
 - `tests/fabric_nats_cli.rs` — real-infra coverage of the `verify` subcommand:
   it fails loud without creating the fixed streams it probes or the KV bucket the
   manifest declares, reports every failing entry, fails while the durable is

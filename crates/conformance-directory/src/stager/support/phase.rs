@@ -1,19 +1,7 @@
-use br_core_directory::{PublishedGroup, PublishedUser};
-use br_util_directory::{DirectoryError, GROUP_NAMESPACE, USER_NAMESPACE};
-use uuid::Uuid;
+use br_util_directory::DirectoryError;
 
-use crate::error::{ConformanceError, Result};
 use crate::outcome::{CheckId, CheckOutcome};
-use crate::pg::ConsumerDb;
 use crate::stager::recording::StagedImpact;
-
-pub(crate) fn user_ref(user_id: Uuid) -> String {
-    format!("{USER_NAMESPACE}/{user_id}")
-}
-
-pub(crate) fn group_ref(group_id: Uuid) -> String {
-    format!("{GROUP_NAMESPACE}/{group_id}")
-}
 
 pub(crate) struct Phase<'a> {
     pub(crate) id: CheckId,
@@ -97,54 +85,18 @@ impl Phase<'_> {
         }
         Some(self.fail(
             name,
-            format!("known_users row {projected:?}, expected {want:?}"),
+            format!("known_users first_name {projected:?}, expected {want:?}"),
             detail,
         ))
     }
 }
 
-pub(crate) fn with_first_name(
-    base: &PublishedUser,
-    first_name: Option<&str>,
-) -> Result<PublishedUser> {
-    PublishedUser::new(
-        base.email.clone(),
-        first_name.map(str::to_string),
-        base.last_name.clone(),
-        base.extensions().clone(),
-    )
-    .map_err(|e| ConformanceError::Directory(format!("rebuild user: {e}")))
-}
-
-pub(crate) fn without_member(base: &PublishedGroup, member: Uuid) -> Result<PublishedGroup> {
-    PublishedGroup::new(
-        base.name.clone(),
-        base.member_ids
-            .iter()
-            .copied()
-            .filter(|id| *id != member)
-            .collect(),
-        base.extensions().clone(),
-    )
-    .map_err(|e| ConformanceError::Directory(format!("rebuild group: {e}")))
-}
-
-pub(crate) async fn projected_first_name(
-    db: &ConsumerDb,
-    user_id: Uuid,
-) -> Result<Option<Option<String>>> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT first_name FROM known_users WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(db.pool())
-            .await
-            .map_err(|e| ConformanceError::Postgres(format!("read first_name: {e}")))?;
-    Ok(row.map(|(first_name,)| first_name))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::stager::support::{group_ref, user_ref};
+    use uuid::Uuid;
 
     fn phase() -> Phase<'static> {
         Phase {

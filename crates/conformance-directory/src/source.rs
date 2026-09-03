@@ -64,6 +64,10 @@ impl AnchorSource {
         self.groups.insert(group_id, group);
     }
 
+    pub fn drop_group(&mut self, group_id: &Uuid) {
+        self.groups.remove(group_id);
+    }
+
     pub fn first_user(&self) -> Option<(Uuid, PublishedUser)> {
         self.users
             .iter()

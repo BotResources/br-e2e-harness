@@ -250,8 +250,11 @@ infra:
   `UsersOnly` consumer reconciles and watches against a schema lacking the group
   tables, emitting no group DML. **C6:** a registered `ImpactStager` runs on the
   sink's own connection inside the roster transaction — impacts and roster write
-  commit or roll back together, and each write stages exactly the entities it
-  makes unnameable.
+  commit or roll back together, and the six roster writes the anchor can drive
+  (user upsert, group upsert adding a member, group upsert dropping a member,
+  group rename, user delete, group delete) each stage exactly the entities they
+  make unnameable. The service-account sink is not exercised: the anchor
+  publishes no service-account key.
 
 ---
 
