@@ -9,6 +9,7 @@ pub enum CheckId {
     DistinctTokensDistinctPassports,
     WrongSealKeyFailsClosed,
     TamperedEnvelopeFailsClosed,
+    UnreadableEnvelopeFailsClosed,
     KvErrorFailsLoud,
     ScopesClaimRoundTrip,
 }
@@ -23,6 +24,7 @@ impl CheckId {
             CheckId::DistinctTokensDistinctPassports => "p5",
             CheckId::WrongSealKeyFailsClosed => "p6",
             CheckId::TamperedEnvelopeFailsClosed => "p7",
+            CheckId::UnreadableEnvelopeFailsClosed => "p9",
             CheckId::KvErrorFailsLoud => "p8",
             CheckId::ScopesClaimRoundTrip => "g4",
         }
@@ -38,6 +40,7 @@ impl CheckId {
             "p6" => Some(CheckId::WrongSealKeyFailsClosed),
             "p7" => Some(CheckId::TamperedEnvelopeFailsClosed),
             "p8" => Some(CheckId::KvErrorFailsLoud),
+            "p9" => Some(CheckId::UnreadableEnvelopeFailsClosed),
             "g4" => Some(CheckId::ScopesClaimRoundTrip),
             _ => None,
         }

@@ -11,7 +11,7 @@ pub async fn run_kv_error(ctx: &CheckContext<'_>) -> CheckOutcome {
     let id = CheckId::KvErrorFailsLoud;
     let expected = "with the PUBLISHED_LANGUAGE bucket destroyed, resolution fails loudly (5xx or the resolver becomes unreachable), never a silent 200";
 
-    let seed = match ctx.seeder.seed(ctx.namespace, "kv_error").await {
+    let seed = match ctx.seed("kv_error").await {
         Ok(seed) => seed,
         Err(e) => return CheckOutcome::fail(id, expected, "seeding failed", format!("{e}")),
     };

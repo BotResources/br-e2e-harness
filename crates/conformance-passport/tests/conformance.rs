@@ -20,7 +20,7 @@ struct Fixture {
 impl Fixture {
     async fn start() -> Self {
         let harness = PassportHarness::start().await.expect("harness");
-        let seeder = harness.seeder().await.expect("sealed seeder");
+        let seeder = harness.seeder();
         let config = SubjectConfig::new(&harness.nats_url());
         let subject = Subject::spawn(harness.binary(), &config);
         let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
@@ -113,6 +113,12 @@ async fn p7_tampered_envelope_fails_closed() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn p9_unreadable_envelope_fails_closed() {
+    assert_scenario(Scenario::UnreadableEnvelopeFailsClosed).await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn p8_kv_error_fails_loud() {
     assert_scenario(Scenario::KvErrorFailsLoud).await;
 }
@@ -127,11 +133,11 @@ async fn full_battery_is_conformant_via_run_spawn() {
         .expect("run_spawn");
     assert!(
         report.is_conformant(),
-        "the full P1..P8 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
+        "the full P1..P9 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
         report.passed(),
         report.failed(),
         report.skipped(),
         report.outcomes,
     );
-    assert_eq!(report.passed(), 8, "all eight checks must pass");
+    assert_eq!(report.passed(), ALL.len(), "every spawn check must pass");
 }

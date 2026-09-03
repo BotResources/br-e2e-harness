@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use br_test_harness::FabricTestNats;
-use br_util_nats_fabric::{Fabric, KvKey};
+use br_util_nats_fabric::{Fabric, KvKey, PublishedLanguagePublisher};
 
 use crate::build::build_subject;
-use crate::error::Result;
-use crate::seal::{SealedSeeder, seal_key, wrong_seal_key};
+use crate::error::{ConformanceError, Result};
+use crate::seal::{SealedSeeder, seal_key_b64, wrong_seal_key_b64};
 
 pub struct PassportHarness {
     nats: FabricTestNats,
@@ -36,12 +36,12 @@ impl PassportHarness {
         self.nats.fabric()
     }
 
-    pub async fn seeder(&self) -> Result<SealedSeeder> {
-        SealedSeeder::open(self.nats.fabric(), seal_key()).await
+    pub fn seeder(&self) -> SealedSeeder {
+        SealedSeeder::new(self.binary.clone(), seal_key_b64())
     }
 
-    pub async fn wrong_key_seeder(&self) -> Result<SealedSeeder> {
-        SealedSeeder::open(self.nats.fabric(), wrong_seal_key()).await
+    pub fn wrong_key_seeder(&self) -> SealedSeeder {
+        SealedSeeder::new(self.binary.clone(), wrong_seal_key_b64())
     }
 
     pub async fn pl_get_raw(&self, key: &KvKey) -> Option<Vec<u8>> {
@@ -50,6 +50,16 @@ impl PassportHarness {
 
     pub async fn pl_put_raw(&self, key: &KvKey, bytes: &[u8]) {
         self.nats.pl_put_raw(key, bytes).await
+    }
+
+    pub async fn pl_retract(&self, key: &KvKey) -> Result<()> {
+        let publisher = PublishedLanguagePublisher::<serde_json::Value>::open(self.nats.fabric())
+            .await
+            .map_err(|e| ConformanceError::Seed(e.to_string()))?;
+        publisher
+            .retract(key)
+            .await
+            .map_err(|e| ConformanceError::Seed(e.to_string()))
     }
 
     pub async fn delete_published_language(&self) {

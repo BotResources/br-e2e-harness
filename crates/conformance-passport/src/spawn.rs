@@ -30,7 +30,7 @@ pub async fn run_spawn(
         ));
     }
     let harness = PassportHarness::start_with_binary(target.binary.clone()).await?;
-    let seeder = harness.seeder().await?;
+    let seeder = harness.seeder();
     let config = SubjectConfig::new(&harness.nats_url());
     let subject = Subject::spawn(harness.binary(), &config);
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;

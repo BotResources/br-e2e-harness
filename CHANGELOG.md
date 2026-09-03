@@ -7,6 +7,44 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`conformance-passport` no longer depends on `svc-auth`.** The crate imported
+  `br-auth-contract` + `br-auth-identity-util` for one job — seeding — which
+  transitively pinned br-rust-common and made every lib bump break the crate (the
+  1.1.2 exclude / 1.1.3 re-enter dance). Its only BotResources dependencies are now
+  `br-rust-common` (`br-core-auth`, `br-util-nats-fabric`) and the sibling
+  `br-test-harness`. The unused `br-core-kernel` dep is dropped with them.
+- **The seal side of the bearer wire is frozen in the Go anchor.** A contract that
+  must stay constant is frozen by an independent implementation, never by a Rust
+  contract crate — otherwise Rust and the wire evolve together silently. The
+  `identity-passport` subject gains a one-shot `seal` subcommand (`--key`,
+  `--token`, `--actor human:<uuid>|service:<uuid>`, `--token-id`, plus
+  `--tamper ciphertext|nonce` and `--unreadable`) printing one JSON line
+  (`kv_key` + `value_b64`); serving stays the default mode, so the spawn path is
+  unchanged. `SealedSeeder` invokes it and writes the bytes verbatim through
+  `pl_put_raw` — Rust never builds, parses or byte-flips an envelope. `seal_test.go`
+  freezes the cleartext bytes, the envelope bytes, a fixed-nonce ciphertext, and
+  every CLI rejection.
+- **`PassportHarness::seeder()` / `wrong_key_seeder()` are now synchronous and
+  infallible** (they no longer open a NATS publisher); `SealedSeeder::seed`,
+  `overwrite` and `revoke` take the harness. `SealedSeed` carries the `kv_key` the
+  anchor emitted. `seal_key()` / `wrong_seal_key()` are replaced by
+  `seal_key_b64()` / `wrong_seal_key_b64()`.
+- Bump every `br-rust-common` pin to `v1.3.0`, and drop the now-unused `svc-auth`
+  entry from `deny.toml`'s git source allow-list.
+- `cargo update -p chacha20` off the yanked `0.10.0` (it reaches the tree through
+  `async-nats` → `rand`, unrelated to the svc-auth removal): `cargo deny check`
+  advisories pass again.
+
+### Added
+
+- **P9 — an unreadable envelope fails closed.** The frozen contract already
+  required it; nothing covered it. A bearer that resolves is overwritten at the
+  same KV key with a genuine, openable seal carrying one unknown field, so only the
+  strict parse can reject it → anonymous. P6 and P7 gain the same
+  resolved-then-corrupted framing, making the corruption the only difference.
+
 ## 1.1.3 - 2026-07-23
 
 ### Changed

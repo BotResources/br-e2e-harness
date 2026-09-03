@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -15,9 +16,19 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-const publishedLanguageBucket = "PUBLISHED_LANGUAGE"
+const (
+	publishedLanguageBucket = "PUBLISHED_LANGUAGE"
+	sealSubcommand          = "seal"
+)
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == sealSubcommand {
+		if err := runSeal(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "seal: %v\n", err)
+			os.Exit(2)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatalf("fatal: %v", err)
 	}

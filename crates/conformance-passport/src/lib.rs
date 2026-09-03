@@ -21,6 +21,9 @@ pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
 pub use readyz::ReadyzProbe;
 pub use scenario::{ALL, Scenario, parse_scenarios};
 pub use scopes::g4_scopes_claim_round_trips_through_the_header;
-pub use seal::{SEAL_KEY, SealedSeed, SealedSeeder, seal_key, seal_key_b64, wrong_seal_key};
+pub use seal::{
+    BEARER_SEAL_KEY_LEN, SEAL_KEY, SealVariant, SealedSeed, SealedSeeder, WRONG_SEAL_KEY,
+    seal_key_b64, wrong_seal_key_b64,
+};
 pub use spawn::{DEFAULT_TIMEOUT, SpawnTarget, run_spawn};
 pub use subject::{Subject, SubjectConfig};

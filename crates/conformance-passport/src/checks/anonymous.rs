@@ -31,8 +31,8 @@ pub async fn run_anonymous_scenario(scenario: Scenario, ctx: &CheckContext<'_>) 
 async fn resolve(scenario: Scenario, ctx: &CheckContext<'_>) -> Result<Resolution> {
     match scenario {
         Scenario::RevokedBearerIsAnonymous => {
-            let seed = ctx.seeder.seed(ctx.namespace, "revoked").await?;
-            ctx.seeder.revoke(&seed).await?;
+            let seed = ctx.seed("revoked").await?;
+            ctx.seeder.revoke(ctx.harness, &seed).await?;
             ctx.endpoint.resolve_bearer(&seed.raw).await
         }
         Scenario::UnknownBearerIsAnonymous => ctx.endpoint.resolve_bearer(&unknown_bearer()).await,
