@@ -106,7 +106,7 @@ the subject's `BEARER_SEAL_KEY`, and `wrong_seal_key_b64`) plus one entry per ca
 | `actor_kind` / `actor_id` / `token_id` | the sealed cleartext identity |
 | `sealed_with` | `seal_key` or `wrong_seal_key` |
 | `corruption` | `none` \| `ciphertext` \| `nonce` \| `unreadable` |
-| `resolves` | `human` or `anonymous` — the expected endpoint outcome |
+| `resolves` | `human` \| `anonymous` \| `unasserted` — the expected endpoint outcome, or `unasserted` where this contract deliberately freezes none (the service actor, §4) |
 | `value_b64` | the **exact bytes** to store in `PUBLISHED_LANGUAGE` |
 
 Twelve entries: two distinct faithful humans, a faithful **service** actor (freezing
@@ -121,7 +121,8 @@ Two anchors keep it honest:
 
 - **Anti-drift, anti-hand-edit.** `vectors_test.go` regenerates the whole file in
   memory and asserts **byte-equality** with the committed one. A change in the Go
-  seal, or a hand edit of the JSON, fails `make check` / CI. Regenerating is
+  seal, or a hand edit of the JSON, fails `make check` and the `identity-passport
+  anchor tests` step of the `infra-e2e` CI job. Regenerating is
   `make -C conformance-subjects/identity-passport vectors`.
 - **Anti-nonsense.** `vectors_test.go` also opens every faithful vector and asserts
   it yields its declared identity, and asserts every `resolves: anonymous` vector
@@ -145,6 +146,15 @@ Seal and open are one Go implementation, frozen together — deliberately, so th
 cannot move in lockstep with a Rust crate. What the battery proves is the *endpoint
 behaviour* against a frozen wire: resolution, determinism, no cross-talk, and
 fail-closed on every unopenable or unparseable input.
+
+**The service actor's resolution is deliberately NOT frozen.** The `faithful-service`
+vector pins the `{"kind":"service","id":…}` *cleartext* — that is wire, and it is
+frozen. What a subject then *returns* for it is not: the Go anchor emits a
+`Passport::Human` carrying the service-account id, but a real `svc-identity` may
+legitimately answer with a `Passport::Service`. So the vector carries
+`"resolves": "unasserted"`, no P-scenario drives it over HTTP, and `vectors_test.go`
+asserts only that it opens to its declared identity — plus that no *human* vector is
+ever left unasserted, and that a service vector is never given an asserted outcome.
 
 The **cross-language guarantee belongs in `svc-auth`**, next to the crate that owns
 the Rust seal: `br_auth_contract::open` must open the Go-produced vectors, and
@@ -178,7 +188,9 @@ Consumer seams or future work — do not infer them:
   this contract takes the key as `BEARER_SEAL_KEY`.
 - **The `{"control": …}` response body** the real svc-identity adds — the gateway
   reads only the status + the `X-Passport` header.
-- **`claims` content** beyond "empty in the sealed PAT path" — per-project seam.
+- **`claims` content** beyond **"no `email`"** — per-project seam. The guarantee is
+  email-absence (§2), not emptiness: a real subject MAY carry other claims (e.g.
+  `scopes`); only the Go anchor emits `{}`, because it has no scopes source.
 - **JIT-provisioning, cookie names** — consumer concerns.
 - **`attach` mode** (drive a live service's NATS + `/readyz`) — a future addition;
   G1 ships spawn-only.

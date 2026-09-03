@@ -23,9 +23,11 @@ single git tag `v{version}` releases the set. Format follows
   `identity-passport` anchor generates it deterministically (`make vectors`: fixed
   keys, fixed ids, one fixed nonce per entry), and `vectors_test.go` regenerates it
   in memory and asserts **byte-equality** with the committed file, so anchor drift
-  or a hand edit fails `make check`. `SealedSeeder` `include_str!`s the file and
-  writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or
-  mutates a sealed envelope.
+  or a hand edit fails `make check` and CI. `SealedSeeder` `include_str!`s the file
+  and writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or
+  mutates a sealed envelope. A vector may declare `resolves: unasserted` — used for
+  the service actor, whose *cleartext* is frozen but whose *resolution* this contract
+  deliberately leaves to the subject.
 - **The subject under test only ever serves.** The battery no longer asks any binary
   to seal, so a consuming service driven by `run_spawn` needs no credential-forging
   subcommand — `SubjectConfig` / `Subject::spawn` / `run_spawn` keep their contract,
@@ -47,6 +49,13 @@ single git tag `v{version}` releases the set. Format follows
 - `cargo update -p chacha20` off the yanked `0.10.0` (it reaches the tree through
   `async-nats` → `rand`, unrelated to the svc-auth removal): `cargo deny check`
   advisories pass again.
+- **CI now runs the Go anchor's tests** — a new `identity-passport anchor tests` step
+  in `infra-e2e` (`go vet` + `go test -count=1`), placed before the passport battery.
+  Without it the byte-equality guard on the committed vectors never executed in CI,
+  so the "a hand edit fails CI" claim in the READMEs was not yet true. The Makefile
+  `test` target gains `-count=1` (Go caches across edits of the out-of-package vector
+  file), and `check` no longer depends on `fmt` (which rewrote sources): it runs a
+  `fmt-check` instead, with `fmt` kept as its own target.
 - CI runs the passport battery with `--test-threads=1`, matching the README.
 
 ### Added
@@ -58,8 +67,11 @@ single git tag `v{version}` releases the set. Format follows
 - **P10 — a tampered nonce fails closed.** Same shape, with the identity re-sealed
   under a fresh nonce whose byte 0 is then flipped: the carried nonce no longer
   matches the tag → anonymous.
-- P6 and P7 gain the same *resolved-then-corrupted* framing, so the corruption is
-  provably the only difference between the two resolutions.
+- P7, P9 and P10 share one *resolved-then-corrupted* shape: the faithful vector must
+  resolve first, then its corrupted twin is written at the same KV key, so the
+  corruption is provably the only difference between the two resolutions. (P6 is not
+  of that shape — it seeds the wrong-key vector once and asserts the value is present
+  before checking the endpoint went anonymous.)
 
 ## 1.1.3 - 2026-07-23
 

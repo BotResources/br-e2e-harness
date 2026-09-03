@@ -97,8 +97,7 @@ binary serves (so the resolver path is unchanged). It prints **exactly one JSON
 line** on stdout and exits non-zero with a message on stderr for any bad input.
 
 ```sh
-identity-passport seal \
-  --key <base64-std of 32 bytes> \
+BEARER_SEAL_KEY=<base64-std of 32 bytes> identity-passport seal \
   --token <raw bearer token> \
   --actor human:<uuid> | service:<uuid> \
   --token-id <uuid> \
@@ -116,9 +115,13 @@ identity-passport seal \
 | `--tamper nonce` | seals faithfully, then flips the first nonce byte — parses, **never opens** |
 | `--unreadable` | a faithful envelope **plus an unknown field** — would open, but the parser must reject it first |
 
-`--key` is the key the seed is sealed **with**; the wrong-key case is simply a
-different `--key` than the resolver's `BEARER_SEAL_KEY`. The KV key never depends
-on the seal key. `--tamper` and `--unreadable` are mutually exclusive.
+The seed is sealed with `BEARER_SEAL_KEY` — the same variable, read the same way, as
+in serve mode; there is no `--key` flag. The KV key never depends on the seal key.
+`--tamper` and `--unreadable` are mutually exclusive.
+
+The committed **wrong-key** vector is not produced this way: `vectors.go` holds
+`frozenWrongSealKey` alongside `frozenSealKey` and seals that one entry with it, so
+the pair of keys is frozen in the file rather than supplied at generation time.
 
 ## Configuration (env only)
 

@@ -20,6 +20,7 @@ const (
 	corruptionNone     = "none"
 	resolvesHuman      = "human"
 	resolvesAnonymous  = "anonymous"
+	resolvesUnasserted = "unasserted"
 	wireVectorsVersion = 1
 )
 
@@ -90,7 +91,7 @@ func frozenVectorSpecs() []vectorSpec {
 			actorKind: actorService,
 			actorID:   "0190a1b2-0003-7e5f-8a9b-0c1d2e3f4a5b",
 			tokenID:   "0190c0de-0003-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
+			resolves:  resolvesUnasserted,
 		},
 		{
 			name:      "revoked",

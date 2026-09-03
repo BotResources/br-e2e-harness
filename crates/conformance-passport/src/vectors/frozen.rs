@@ -5,57 +5,11 @@ use base64::engine::general_purpose::STANDARD;
 use br_util_nats_fabric::KvKey;
 use uuid::Uuid;
 
-const FROZEN: &str = include_str!("../vectors/passport-wire-v1.json");
+use super::catalogue::Vector;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Vector {
-    FaithfulHuman,
-    FaithfulHumanSecond,
-    FaithfulService,
-    Revoked,
-    KvError,
-    WrongKey,
-    TamperedCiphertextFaithful,
-    TamperedCiphertextCorrupt,
-    TamperedNonceFaithful,
-    TamperedNonceCorrupt,
-    UnreadableFaithful,
-    UnreadableCorrupt,
-}
+const FROZEN: &str = include_str!("../../vectors/passport-wire-v1.json");
 
-pub const EVERY_VECTOR: [Vector; 12] = [
-    Vector::FaithfulHuman,
-    Vector::FaithfulHumanSecond,
-    Vector::FaithfulService,
-    Vector::Revoked,
-    Vector::KvError,
-    Vector::WrongKey,
-    Vector::TamperedCiphertextFaithful,
-    Vector::TamperedCiphertextCorrupt,
-    Vector::TamperedNonceFaithful,
-    Vector::TamperedNonceCorrupt,
-    Vector::UnreadableFaithful,
-    Vector::UnreadableCorrupt,
-];
-
-impl Vector {
-    pub fn name(self) -> &'static str {
-        match self {
-            Vector::FaithfulHuman => "faithful-human",
-            Vector::FaithfulHumanSecond => "faithful-human-second",
-            Vector::FaithfulService => "faithful-service",
-            Vector::Revoked => "revoked",
-            Vector::KvError => "kv-error",
-            Vector::WrongKey => "wrong-key",
-            Vector::TamperedCiphertextFaithful => "tampered-ciphertext-faithful",
-            Vector::TamperedCiphertextCorrupt => "tampered-ciphertext-corrupt",
-            Vector::TamperedNonceFaithful => "tampered-nonce-faithful",
-            Vector::TamperedNonceCorrupt => "tampered-nonce-corrupt",
-            Vector::UnreadableFaithful => "unreadable-faithful",
-            Vector::UnreadableCorrupt => "unreadable-corrupt",
-        }
-    }
-}
+const WIRE_VERSION: u64 = 1;
 
 #[derive(Debug, Clone)]
 pub struct WireVector {
@@ -67,6 +21,7 @@ pub struct WireVector {
     pub value: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct FrozenWire {
     seal_key_b64: String,
     vectors: Vec<WireVector>,
@@ -110,6 +65,15 @@ pub fn seal_key_b64() -> String {
 fn parse(raw: &str) -> std::result::Result<FrozenWire, String> {
     let root: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("the vector file is not JSON: {e}"))?;
+    match root.get("version").and_then(serde_json::Value::as_u64) {
+        Some(WIRE_VERSION) => {}
+        Some(other) => {
+            return Err(format!(
+                "the vector file declares wire version {other}, this battery reads {WIRE_VERSION}"
+            ));
+        }
+        None => return Err("the vector file declares no integer \"version\"".to_string()),
+    }
     let seal_key_b64 = string_at(&root, "seal_key_b64")?;
     let entries = root
         .get("vectors")
@@ -182,6 +146,20 @@ fn assert_kv_key_carries_the_lib_digest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vectors::catalogue::EVERY_VECTOR;
+
+    #[test]
+    fn a_vector_file_of_another_wire_version_is_rejected() {
+        let other = FROZEN.replacen(
+            "\"version\": 1",
+            &format!("\"version\": {}", WIRE_VERSION + 1),
+            1,
+        );
+        assert_ne!(other, FROZEN);
+        let err = parse(&other).expect_err("a foreign wire version must be rejected");
+        assert!(err.contains("wire version"), "{err}");
+        assert!(parse(&FROZEN.replacen("\"version\": 1", "\"nope\": 1", 1)).is_err());
+    }
 
     #[test]
     fn the_embedded_file_parses_and_every_kv_key_matches_the_lib_digest() {

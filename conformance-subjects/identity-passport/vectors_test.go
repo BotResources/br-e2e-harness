@@ -108,8 +108,11 @@ func TestEveryFaithfulVectorOpensAndCarriesItsDeclaredIdentity(t *testing.T) {
 			if !reflect.DeepEqual(opened, want) {
 				t.Fatalf("opened = %#v, want %#v", opened, want)
 			}
-			if v.Resolves != resolvesHuman {
-				t.Fatalf("a faithful vector must declare resolves=%s, got %s", resolvesHuman, v.Resolves)
+			switch {
+			case v.ActorKind == actorHuman && v.Resolves != resolvesHuman:
+				t.Fatalf("a faithful human vector must declare resolves=%s, got %s", resolvesHuman, v.Resolves)
+			case v.ActorKind != actorHuman && v.Resolves != resolvesUnasserted:
+				t.Fatalf("a non-human faithful vector must declare resolves=%s (the battery freezes no resolution policy for it), got %s", resolvesUnasserted, v.Resolves)
 			}
 		})
 	}
@@ -208,6 +211,18 @@ func TestEveryVectorHasItsOwnNonceAndDistinctTokensHaveDistinctKeys(t *testing.T
 			t.Fatalf("kv key collision between tokens %q and %q", previous, v.Token)
 		}
 		keysByToken[v.KvKey] = v.Token
+	}
+}
+
+func TestOnlyTheServiceActorIsLeftUnasserted(t *testing.T) {
+	parsed := decodeVectors(t, committedVectors(t))
+	for _, v := range parsed.Vectors {
+		if v.Resolves == resolvesUnasserted && v.ActorKind == actorHuman {
+			t.Fatalf("vector %q is a human actor: its resolution must be asserted", v.Name)
+		}
+		if v.ActorKind == actorService && v.Resolves != resolvesUnasserted {
+			t.Fatalf("vector %q is a service actor: the battery must not freeze its resolution", v.Name)
+		}
 	}
 }
 
