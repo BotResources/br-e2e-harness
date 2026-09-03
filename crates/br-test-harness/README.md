@@ -366,7 +366,8 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   `fabric().verify_*_durable` proves stream coverage only, never the durable).
   (`provision_*_durable`
   take a **literal** durable name, bypassing the run namespace — the CLI path,
-  where the name is deterministic across processes.)
+  where the name is deterministic across processes; `provision_*_durable_with`
+  is their adversarial-config sibling, below.)
 - **`.fabric()` / `.fabric_owned()` / `.url()`** — the live **typed** handles.
   `fabric_owned()` clones the inner `Fabric` so a test never re-wraps a raw
   JetStream context by hand. The raw `async-nats` JetStream / client handles are
@@ -452,6 +453,51 @@ absent infra and never widens a durable:
   genuinely absent afterwards, and `.published_language_absent()` proves the PL
   bucket is not silently created. `BareFabricNats` exposes **no** raw JetStream
   handle either.
+
+**Adversarial provisioning, observation and purge** — the four operations a
+service e2e used to hand-roll on a retained raw `jetstream::Context` (#87):
+
+- **`.provision_command_durable_with(&coords, durable, &DurableConfig)` /
+  `.provision_event_durable_with(&coords, durable, &DurableConfig)`** — the same
+  coord-rendered durable as `provision_*_durable`, with the **tunable** part of
+  the consumer config supplied by the test.
+  `#[non_exhaustive] DurableConfig { ack_wait: Duration, max_deliver: Option<i64>,
+  max_ack_pending: i64 }` is built from `DurableConfig::default()` (mirrors the
+  lib's `ConsumerTuning`: `ack_wait = 30s`, `max_ack_pending = 256`, unlimited
+  deliver) or `DurableConfig::harness()` (what `provision_*_durable` has always
+  used: `ack_wait = 2s`, server-default `max_ack_pending`, unlimited deliver),
+  then narrowed with `.ack_wait(d)` / `.max_deliver(n)` / `.unlimited_deliver()` /
+  `.max_ack_pending(n)`. The **frozen-as-contract** part is not reachable:
+  `ack_policy = Explicit`, `deliver_policy = All`, `replay_policy = Instant` and
+  the coordinate filter are always what the lib binds. `provision_*_durable` and
+  `with_*_durable` now delegate here with `DurableConfig::harness()`, unchanged.
+- **`.tap_durable(FixedStream::Cmd, durable) -> DurableTap`** — pulls from an
+  **already-provisioned** durable and **never acks**, so an unacked frame is
+  redelivered after `ack_wait` until the budget runs out. That is the only way to
+  observe a finite `max_deliver`: every lib `ensure_*` / `run_*` entry point
+  create-or-**updates** the durable back to the lib's own config, which would
+  erase the budget under test. `.next_within(timeout) -> Option<TappedDelivery
+  { subject, payload, delivered_count }>` and
+  `.deliveries_within(timeout, cap) -> Vec<TappedDelivery>` (stops on the first
+  timeout); `.drain()` drops the pull stream.
+- **Counters** (read-only `consumer_info` / stream state, no handle exposed):
+  `.consumer_pending(FixedStream, durable) -> u64`,
+  `.consumer_delivered(FixedStream, durable) -> u64` (the consumer sequence —
+  counts redeliveries), `.consumer_redelivered(FixedStream, durable) -> u64`,
+  `.command_stream_len()` / `.event_stream_len()` / `.stream_len(FixedStream)`.
+  `FixedStream::{Cmd, Evt}` is the typed stand-in for the two fixed stream names;
+  `.name()` yields `INTEGRATION_CMD` / `INTEGRATION_EVT` for the `&str`-taking
+  negative-path helpers.
+- **Purge** — `.purge_command_stream()` / `.purge_event_stream()` empty a whole
+  fixed stream, `.purge_command_subject(&coords)` / `.purge_event_subject(&coords)`
+  purge only the rendered coordinate; each returns the **purged count**. Purge is
+  the between-scenarios reset on a shared `connect(url)` NATS — it never deletes
+  a stream, so the gitops-declared topology survives.
+- **`.publish_command_raw(&coords, bytes)`** — the command-side sibling of
+  `.publish_event_envelope`, and the **only** intentional malformed-wire command
+  publisher: it puts arbitrary bytes on the coordinate so a lib consumer's
+  `payload()` fails to decode and the handler's `Term` fail-closed path is
+  actually reachable. Typed `fabric().publish_command` stays the default.
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
 suffix + KV prefix, both derived from the stable `run_id`), so independent
@@ -733,6 +779,8 @@ here, synthetically:
 | `FabricTestNats` namespaces durables/keys; isolation is per-`SpawnedNats` **or** per-`connect(url)` serial group | Durable suffix + KV prefix + correlation isolate *non-competing* scenarios on one server. But the two **fixed** streams and the shared `PUBLISHED_LANGUAGE` bucket are frozen global names — two real competing consumers on one fixed stream race for the same messages, which no namespacing can fix. So a competing-consumer scenario is isolated by **process** — its own `start()` server — or, on a shared `connect(url)` NATS, by a `#[serial]` group. |
 | `verify` attaches through `attach_without_provisioning`, every other path through `connect(url)` | `connect(url)` get-or-creates the two fixed streams, which is right for `provision` and for a test that wants a usable fabric — but it would make `fabric-nats verify` create the very streams it claims to check, turning a missing-infra run into a silent pass. `attach_without_provisioning` binds the client and nothing else, so the verdict is about the NATS as found. |
 | `verify` re-checks the durable filter harness-side instead of trusting the lib probe | Since br-rust-common v1.3.0 `verify_*_durable` proves stream presence + subject coverage and **nothing else** — it creates no consumer and does not read one. On the fixed streams (`integration.cmd.>` / `integration.evt.>`) coverage is satisfied by construction, so the probe alone would report `ok` for a topology with no durables at all. The durable-filter read (`consumer_info` via `durable_filter_subjects_if_present`) is what makes the verdict mean something. |
+| `max_deliver` is settable raw in the harness though the lib freezes it | `br-util-nats-fabric`'s `ConsumerTuning` exposes only `ack_wait` + `max_ack_pending`; `max_deliver` is frozen at unlimited because a service's poison handling is an explicit `term()`, never a silent drop-on-budget. But `max_deliver` **is** deployment-declared on the real `INTEGRATION_CMD`, so a service e2e must be able to reproduce budget exhaustion. Adversarial provisioning is the harness's job — it is the one sanctioned home of raw `async-nats` — so `DurableConfig` sets it directly. It stays out of the lib. |
+| `tap_durable` never acks, and exists at all | A finite `max_deliver` only shows up as *redelivery stopping*, which needs a consumer that leaves frames unacked. It cannot be the lib's consumer: every `ensure_*` / `run_*` path create-or-updates the durable back to the lib's config and would reset the budget before the first pull. The tap binds the durable **as provisioned** and never mutates it. |
 | `FabricTestNats::start()` *vs* `connect(url)`, and `shutdown()` only kills an `Owned` backing | `start()` owns a `SpawnedNats` (per-process isolation); `connect(url)` attaches to a shared CI/local NATS (the cross-process case the `fabric-nats` CLI drives). All provisioning is **get-or-create** so attaching to a NATS that already carries the fixed streams/bucket neither errors nor wipes — the structural #73 never-wipe fix. `shutdown()` tears down an `Owned` server but is a **no-op when `Attached`**: the harness never kills a NATS it did not start. |
 | Fabric get-or-create absorbs the create-already-exists race (#74) | `get` then `create` is a TOCTOU on a shared NATS: two processes both see "absent", both create, the loser would panic. Create now matches the **typed** JetStream code `ErrorCode::STREAM_NAME_EXIST` (10058) — for streams on the `CreateStreamErrorKind::JetStream` kind, for KV by walking the error source chain to the wrapped `CreateStreamError` — and treats it as success (re-`get`ting the KV handle). Typed code, not a string match, so it can't drift with a server message. Wipe-free is preserved: an existing object is reused, never recreated. |
 | `pl_put_raw` is the only raw-bytes KV write, and `publish_dead_subject` the only raw subject | The typed surface (`pl_publisher`/`pl_reader`, coord-driven durables) is drift-proof by construction. Two adversarial holes are kept deliberately and named loud: `pl_put_raw` injects a poison value to prove fail-closed decode, `publish_dead_subject` publishes to a hand-written subject to prove the dead grammar lands on no fixed stream. Both exist *to test the failure*, never as a convenient bypass. |

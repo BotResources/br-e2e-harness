@@ -348,6 +348,7 @@ dependencies = [
  "br-scope-declaration-contract",
  "br-util-nats-fabric",
  "bytes",
+ "chrono",
  "clap",
  "dotenvy",
  "futures-util",

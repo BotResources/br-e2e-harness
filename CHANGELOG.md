@@ -9,6 +9,48 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+#### `br-test-harness` — `FabricTestNats` adversarial provisioning, observation and purge
+
+- **`DurableConfig` + `provision_command_durable_with` /
+  `provision_event_durable_with`.** `#[non_exhaustive] DurableConfig { ack_wait,
+  max_deliver: Option<i64>, max_ack_pending }` — `Default` mirrors the lib's
+  `ConsumerTuning` (`30s` / `256` / unlimited deliver), `DurableConfig::harness()`
+  is what `provision_*_durable` has always used (`2s`, server-default
+  `max_ack_pending`, unlimited deliver), and `.ack_wait` / `.max_deliver` /
+  `.unlimited_deliver` / `.max_ack_pending` narrow it. The frozen-as-contract
+  config stays frozen (`ack_policy = Explicit`, `deliver_policy = All`,
+  `replay_policy = Instant`, filter = the rendered coordinate). `max_deliver` is
+  settable here — and only here — because a finite redelivery budget is
+  deployment-declared on the real `INTEGRATION_CMD` while the lib freezes it at
+  unlimited; adversarial provisioning is the harness's job. `provision_*_durable`
+  and `with_*_durable` delegate with `DurableConfig::harness()`, behaviour
+  unchanged.
+- **`tap_durable(FixedStream, durable) -> DurableTap`** — pulls from an
+  already-provisioned durable and **never acks**, so a frame redelivers until its
+  budget is exhausted; `next_within(timeout) -> Option<TappedDelivery { subject,
+  payload, delivered_count }>`, `deliveries_within(timeout, cap)`, `drain()`. It
+  exists because every lib `ensure_*` / `run_*` path create-or-updates the durable
+  back to the lib's config, erasing the budget under test.
+- **Typed read-only counters.** `consumer_pending(FixedStream, durable)`,
+  `consumer_delivered(FixedStream, durable)`,
+  `consumer_redelivered(FixedStream, durable)`, `command_stream_len()`,
+  `event_stream_len()`, `stream_len(FixedStream)` — `consumer_info` / stream state
+  without exposing a JetStream handle. `FixedStream::{Cmd, Evt}` is the typed
+  stand-in for the two fixed stream names (`.name()` bridges to the `&str`-taking
+  negative-path helpers).
+- **Purge.** `purge_command_stream()` / `purge_event_stream()` and
+  `purge_command_subject(&coords)` / `purge_event_subject(&coords)`, each
+  returning the purged count — the between-scenarios reset on a shared
+  `connect(url)` NATS; a purge never deletes the gitops-declared stream.
+- **`publish_command_raw(&coords, bytes)`** — the command-side sibling of
+  `publish_event_envelope` and the only intentional malformed-wire command
+  publisher, so a lib consumer's decode failure and its handler's `Term`
+  fail-closed path are reachable from a test. Typed `fabric().publish_command`
+  stays the default.
+
+  Together these are the four operations a service e2e had to hand-roll on a
+  retained raw `jetstream::Context`; that `Context` can now leave `tests/common`.
+
 #### `br-test-harness` — SSE and WS subscription handles
 
 - **`SseOutcome` — the SSE handle says why it went quiet.**
