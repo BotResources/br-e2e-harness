@@ -297,27 +297,6 @@ surfacing, not a regression.**
    (P9 and P10). A consumer asserting `report.passed() == ALL.len()` picks them
    up automatically; one pinning the literal `8` must move to `ALL.len()`.
 
-**Migration.** Every `br-rust-common` pin in a consuming repo must move to
-`v1.3.0` in the same change that takes this tag: two refs of one git URL are two
-distinct sources and duplicate `br-core-*` in the graph. No harness signature
-changed, so a suite on 1.1.x compiles untouched — what it may hit is the class-B
-false passes above surfacing as new failures (a vacuous `expect_silence` on a
-closed stream, a drain-to-quiet loop over an ended stream). Those are the bug the
-release exists to expose; budget for the assertions, not for the edits. A
-consumer pinning `conformance-passport`'s scenario count as a literal moves to
-`ALL.len()`; one driving a subject through `run_spawn` needs no change (the
-battery no longer asks any binary to seal, and needs no `go` on `PATH`).
-
-**Deferred.** The consumer-side follow-ups this release enables stay in their own
-repos and are not part of it: svc-jobs dropping the `Budget` / `ended_early`
-heuristic now that `Closed` is readable, svc-notifier's drain loops, the deletion
-of the gateway's duplicated `crates/e2e/src/ws.rs` in favour of `WsCredential`,
-and un-ignoring svc-charter `s19` on `DeliveryOutage`. The Rust-side guard for
-svc-auth's `br-auth-contract` — the pin `conformance-passport` dropped — belongs
-to the svc-auth repo. Migrating br-rust-common's own `fabric_e2e.rs` off an
-ambient `NATS_URL` onto `SpawnedNats` is a br-rust-common change (the harness
-side of it ships here, see Added).
-
 #### `br-test-harness` — SSE and WS subscription handles
 
 Non-behavioural, text only:
@@ -385,6 +364,31 @@ Non-behavioural, text only:
   file), and `check` no longer depends on `fmt` (which rewrote sources): it runs a
   `fmt-check` instead, with `fmt` kept as its own target.
 - CI runs the passport battery with `--test-threads=1`, matching the README.
+
+**Migration.** Every `br-rust-common` pin in a consuming repo must move to
+`v1.3.0` in the same change that takes this tag: two refs of one git URL are two
+distinct sources and duplicate `br-core-*` in the graph. No harness signature
+changed, so a suite on 1.1.x compiles untouched — what it may hit is the class-B
+false passes above surfacing as new failures (a vacuous `expect_silence` on a
+closed stream, a drain-to-quiet loop over an ended stream). Those are the bug the
+release exists to expose; budget for the assertions, not for the edits. A
+consumer pinning `conformance-passport`'s scenario count as a literal moves to
+`ALL.len()`; one driving a subject through `run_spawn` needs no change (the
+battery no longer asks any binary to seal, and needs no `go` on `PATH`).
+
+**Deferred.** The consumer-side follow-ups this release enables stay in their own
+repos and are not part of it: svc-jobs dropping the `Budget` / `ended_early`
+heuristic now that `Closed` is readable, svc-notifier's drain loops, bma-identity's
+five drain-to-quiet loops and its `assert_stream_stays_open` helper (now
+redundant), be-botresources.ai's svc-identity / svc-tasks helpers (optional:
+better panic messages), the deletion of the gateway's duplicated
+`crates/e2e/src/ws.rs` in favour of `WsCredential`, and un-ignoring svc-charter
+`s19` on `DeliveryOutage`. The Rust-side guard for
+svc-auth's `br-auth-contract` — the pin `conformance-passport` dropped — belongs
+to the svc-auth repo. Migrating br-rust-common's own `fabric_e2e.rs` off an
+ambient `NATS_URL` onto `SpawnedNats` is a br-rust-common change (the harness
+side of it ships here, see Added).
+
 
 ### Fixed
 

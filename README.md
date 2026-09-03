@@ -96,7 +96,8 @@ depends on its kind:
 1. In your PR, bump the workspace `version` in the root `Cargo.toml`, add a
    matching `## X.Y.Z - YYYY-MM-DD` section to the root `CHANGELOG.md` — plain
    heading, ASCII hyphen, no brackets: `check-changelog.sh` and `release-tags`
-   both match on `^## {version}` — and move every README pin of this repo to
+   both accept `## {version}` followed by a space or the end of the line — and
+   move every README pin of this repo to
    `tag = "v{version}"`.
 2. CI gates the PR (fmt, clippy, tests, deny, machete, semver-checks, changelog
    entry, README pins).
