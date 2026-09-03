@@ -30,7 +30,8 @@ a **sealed** bearer credential into a `Passport` exactly as the platform require
   bucket `PUBLISHED_LANGUAGE` → **200** with response header `X-Passport` =
   base64-std of a `br_core_auth::Passport`.
 - token absent / revoked, no `Authorization`, a non-Bearer credential, an
-  **unreadable envelope**, a **wrong seal key**, or a **tampered ciphertext** →
+  **unreadable envelope**, a **wrong seal key**, a **tampered ciphertext**, or a
+  **tampered nonce** →
   **200, no `X-Passport`** (anonymous, fail-closed).
 - a backend (KV) error → it **fails loud** (a **5xx**, or the resolver becomes
   unreachable), never a silent 200.

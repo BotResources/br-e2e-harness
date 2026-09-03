@@ -61,8 +61,8 @@ On boot:
      (`{"actor":{"kind","id"},"token_id"}`); it builds a `Passport::Human`,
      base64-encodes its JSON, and returns **200** with header `X-Passport`.
    - **Not found** (revoked/absent), **no `Authorization`**, **not a Bearer**,
-     **empty token**, **unreadable envelope**, **wrong key**, or **tampered
-     ciphertext** → **200 with no `X-Passport`** (anonymous, fail-closed).
+     **empty token**, **unreadable envelope**, **wrong key**, **tampered
+     ciphertext**, or **tampered nonce** → **200 with no `X-Passport`** (anonymous, fail-closed).
    - **KV backend failure** (e.g. the bucket vanished) → **500**.
 
 `/livez` is always **200**. The endpoint **resolves**, it does not **gate**: an

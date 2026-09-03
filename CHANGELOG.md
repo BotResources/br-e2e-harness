@@ -170,10 +170,10 @@ Non-behavioural, text only:
 #### Workspace re-pin to `br-rust-common` v1.3.0
 
 - **Every `br-rust-common` pin in the workspace moves from `v1.2.0` to
-  `v1.3.0`** — 22 declarations across the 5 workspace-member `Cargo.toml`
-  (`{ tag, version }` both bumped; no workspace-level pin introduced). The 3
-  remaining declarations stay on `v1.2.0` in `conformance-passport`, which leaves
-  the workspace in this release (see below) and keeps its pins frozen.
+  `v1.3.0`** — 25 declarations across the 6 workspace-member `Cargo.toml`
+  carrying one (`{ tag, version }` both bumped; no workspace-level pin
+  introduced). `conformance-passport` is among them: it now pins
+  `br-rust-common` alone (see its own entry above).
   `conformance-directory` C1–C5 therefore re-run against 1.3.0 on the
   **no-stager** path — where a single-statement projection still runs on a pooled
   connection, exactly as in 1.2.0 — and the new **C6** below covers the stager

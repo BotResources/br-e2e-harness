@@ -48,7 +48,7 @@ envelope.
 | Condition | Response |
 |---|---|
 | `Authorization: Bearer <raw>` whose `bearer_token_kv_key(<raw>)` exists in `PUBLISHED_LANGUAGE` **and opens** under the seal key | **200** + header `X-Passport` = `base64.Std(JSON(Passport))` |
-| key absent / revoked, no `Authorization`, non-Bearer, empty token, unreadable envelope, **wrong key**, or **tampered ciphertext** | **200 with NO `X-Passport`** (anonymous, fail-closed) |
+| key absent / revoked, no `Authorization`, non-Bearer, empty token, unreadable envelope, **wrong key**, **tampered ciphertext**, or **tampered nonce** | **200 with NO `X-Passport`** (anonymous, fail-closed) |
 | backend (KV) error — bucket/stream lost under a live subject | **fails loud**: a **5xx**, or the resolver becomes **unreachable** (drops its NATS connection / exits) — never a silent 200 |
 
 The resolved `Passport` is the real `br_core_auth::Passport`
