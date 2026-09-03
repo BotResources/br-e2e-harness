@@ -9,6 +9,52 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Added
 
+#### `br-test-harness` — `FabricTestNats` adversarial provisioning, observation and purge
+
+- **`DurableConfig` + `provision_command_durable_with` /
+  `provision_event_durable_with`.** `#[non_exhaustive] DurableConfig { ack_wait,
+  max_deliver: Option<i64>, max_ack_pending }` — `Default` reads the lib's
+  `ConsumerTuning::default()` through `From<ConsumerTuning>` (plus unlimited
+  deliver), so the lib's own defaults cannot drift away from it;
+  `DurableConfig::harness()` is what `provision_*_durable` has always used (`2s`,
+  server-default `max_ack_pending`, unlimited deliver), and `.ack_wait` /
+  `.max_deliver` /
+  `.unlimited_deliver` / `.max_ack_pending` narrow it. The frozen-as-contract
+  config stays frozen (`ack_policy = Explicit`, `deliver_policy = All`,
+  `replay_policy = Instant`, filter = the rendered coordinate). `max_deliver` is
+  settable here — and only here — because a finite redelivery budget is
+  deployment-declared on the durable bound to `INTEGRATION_CMD` — it is consumer
+  config, not a stream property — while the lib freezes it at unlimited;
+  adversarial provisioning is the harness's job. `provision_*_durable`
+  and `with_*_durable` delegate with `DurableConfig::harness()`, behaviour
+  unchanged.
+- **`tap_durable(FixedStream, durable) -> DurableTap`** — pulls from an
+  already-provisioned durable and **never acks**, so a frame redelivers until its
+  budget is exhausted; `next_within(timeout) -> Option<TappedDelivery { subject,
+  payload, delivered_count }>`, `deliveries_within(timeout, cap)`, `close()`. It
+  exists because every lib `ensure_*` / `run_*` path create-or-updates the durable
+  back to the lib's config, erasing the budget under test.
+- **Typed read-only counters.** `consumer_pending(FixedStream, durable)`,
+  `consumer_delivered(FixedStream, durable)`,
+  `consumer_redelivered(FixedStream, durable)` (deliveries past the first),
+  `command_stream_len()`,
+  `event_stream_len()`, `stream_len(FixedStream)` — `consumer_info` / stream state
+  without exposing a JetStream handle. `FixedStream::{Cmd, Evt}` is the typed
+  stand-in for the two fixed stream names (`.name()` bridges to the `&str`-taking
+  negative-path helpers).
+- **Purge.** `purge_command_stream()` / `purge_event_stream()` and
+  `purge_command_subject(&coords)` / `purge_event_subject(&coords)`, each
+  returning the purged count — the between-scenarios reset on a shared
+  `connect(url)` NATS; a purge never deletes the gitops-declared stream.
+- **`publish_command_raw(&coords, bytes)`** — the command-side sibling of
+  `publish_event_envelope` and the only intentional malformed-wire command
+  publisher, so a lib consumer's decode failure and its handler's `Term`
+  fail-closed path are reachable from a test. Typed `fabric().publish_command`
+  stays the default.
+
+  Together these are the four operations a service e2e had to hand-roll on a
+  retained raw `jetstream::Context`; that `Context` can now leave `tests/common`.
+
 #### `br-test-harness` — SSE and WS subscription handles
 
 - **`SseOutcome` — the SSE handle says why it went quiet.**
@@ -159,6 +205,21 @@ single git tag `v{version}` releases the set. Format follows
   absent and passes once provisioned, and rejects a durable whose filter is not
   the coordinate.
 
+#### `conformance-passport` — seal side frozen in the Go anchor (WP7)
+
+- **P9 — an unreadable envelope fails closed.** The frozen contract already required
+  it; nothing covered it. A bearer that resolves is replaced, at its own KV key, by a
+  genuine **openable** seal carrying one unknown field, so only the strict parse can
+  reject it → anonymous.
+- **P10 — a tampered nonce fails closed.** Same shape, with the identity re-sealed
+  under a fresh nonce whose byte 0 is then flipped: the carried nonce no longer
+  matches the tag → anonymous.
+- P7, P9 and P10 share one *resolved-then-corrupted* shape: the faithful vector must
+  resolve first, then its corrupted twin is written at the same KV key, so the
+  corruption is provably the only difference between the two resolutions. (P6 is not
+  of that shape — it seeds the wrong-key vector once and asserts the value is present
+  before checking the endpoint went anonymous.)
+
 ### Changed
 
 #### `br-test-harness` — SSE and WS subscription handles
@@ -204,10 +265,10 @@ Non-behavioural, text only:
 #### Workspace re-pin to `br-rust-common` v1.3.0
 
 - **Every `br-rust-common` pin in the workspace moves from `v1.2.0` to
-  `v1.3.0`** — 22 declarations across the 5 workspace-member `Cargo.toml`
-  (`{ tag, version }` both bumped; no workspace-level pin introduced). The 3
-  remaining declarations stay on `v1.2.0` in `conformance-passport`, which leaves
-  the workspace in this release (see below) and keeps its pins frozen.
+  `v1.3.0`** — 25 declarations across the 6 workspace-member `Cargo.toml`
+  carrying one (`{ tag, version }` both bumped; no workspace-level pin
+  introduced). `conformance-passport` is among them: it now pins
+  `br-rust-common` alone (see its own entry above).
   `conformance-directory` C1–C5 therefore re-run against 1.3.0 on the
   **no-stager** path — where a single-statement projection still runs on a pooled
   connection, exactly as in 1.2.0 — and the new **C6** below covers the stager
@@ -242,6 +303,57 @@ Non-behavioural, text only:
 - Lockfile: `chacha20` `0.10.0` → `0.10.2` (the resolved version was yanked;
   `cargo deny check` advisories were failing on it).
 
+#### `conformance-passport` — seal side frozen in the Go anchor (WP7)
+
+- **`conformance-passport` no longer depends on `svc-auth`.** The crate imported
+  `br-auth-contract` + `br-auth-identity-util` for one job — seeding — which
+  transitively pinned br-rust-common and made every lib bump break the crate (the
+  1.1.2 exclude / 1.1.3 re-enter dance). Its only BotResources dependencies are now
+  `br-rust-common` (`br-core-auth`, `br-util-nats-fabric`) and the sibling
+  `br-test-harness`. The unused `br-core-kernel` dep is dropped with them.
+- **The sealed wire is frozen as committed vectors produced by the Go anchor.** A
+  contract that must stay constant is frozen by an independent implementation, never
+  by a Rust contract crate — otherwise Rust and the wire evolve together silently.
+  `crates/conformance-passport/vectors/passport-wire-v1.json` carries, per case, the
+  token, the KV key, the sealed identity and the exact `value_b64` bytes; the
+  `identity-passport` anchor generates it deterministically (`make vectors`: fixed
+  keys, fixed ids, one fixed nonce per entry), and `vectors_test.go` regenerates it
+  in memory and asserts **byte-equality** with the committed file, so anchor drift
+  or a hand edit fails `make check` and CI. `SealedSeeder` `include_str!`s the file
+  and writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or
+  mutates a sealed envelope. A vector may declare `resolves: unasserted` — used for
+  the service actor, whose *cleartext* is frozen but whose *resolution* this contract
+  deliberately leaves to the subject.
+- **The subject under test only ever serves.** The battery no longer asks any binary
+  to seal, so a consuming service driven by `run_spawn` needs no credential-forging
+  subcommand — `SubjectConfig` / `Subject::spawn` / `run_spawn` keep their contract,
+  and `BEARER_SEAL_KEY` now comes straight out of the vector file. The anchor's
+  `seal` subcommand remains a dev-time generator only and takes its key from
+  `BEARER_SEAL_KEY`, exactly as serve mode does.
+- **`ALL` grows from 8 to 10 mandatory scenarios** (P9 and P10 below). A consumer
+  asserting `report.passed() == ALL.len()` picks them up automatically; one pinning
+  the literal `8` must move to `ALL.len()`.
+- `PassportHarness::seeder()` is now synchronous and infallible, and
+  `wrong_key_seeder()` is gone (the wrong-key case is a vector, not a second
+  publisher). `SealedSeeder::seed` takes a `Vector` and the harness; `SealedSeed`
+  carries its `kv_key`. `CheckContext` loses its `namespace` field — vector tokens
+  are fixed, so per-run namespacing no longer exists. `SEAL_KEY` / `WRONG_SEAL_KEY`
+  / `seal_key()` / `wrong_seal_key()` are replaced by the vector file plus
+  `vectors::seal_key_b64()`.
+- Bump every `br-rust-common` pin to `v1.3.0`, and drop the now-unused `svc-auth`
+  entry from `deny.toml`'s git source allow-list.
+- `cargo update -p chacha20` off the yanked `0.10.0` (it reaches the tree through
+  `async-nats` → `rand`, unrelated to the svc-auth removal): `cargo deny check`
+  advisories pass again.
+- **CI now runs the Go anchor's tests** — a new `identity-passport anchor tests` step
+  in `infra-e2e` (`go vet` + `go test -count=1`), placed before the passport battery.
+  Without it the byte-equality guard on the committed vectors never executed in CI,
+  so the "a hand edit fails CI" claim in the READMEs was not yet true. The Makefile
+  `test` target gains `-count=1` (Go caches across edits of the out-of-package vector
+  file), and `check` no longer depends on `fmt` (which rewrote sources): it runs a
+  `fmt-check` instead, with `fmt` kept as its own target.
+- CI runs the passport battery with `--test-threads=1`, matching the README.
+
 ### Fixed
 
 - **`fabric-nats verify` no longer provisions the topology it is checking.** It
@@ -251,22 +363,6 @@ Non-behavioural, text only:
   get-or-creates the two fixed streams — not a consequence of the v1.3.0 re-pin;
   the re-pin only made it visible by turning the durable probe read-only.
 
-### Removed (temporary)
-
-- `conformance-passport` is out of `[workspace] members` and its CI `infra-e2e`
-  step is dropped, per the 1.1.2 precedent: it bridges svc-auth's
-  `br-auth-contract` / `br-auth-identity-util` (tag `v1.0.4`, transitively
-  pinning br-rust-common **v1.2.0**) with the now-v1.3.0 workspace, and cargo
-  cannot unify two git tags of one package — the build fails on two
-  `br_core_kernel::Actor` / two `Fabric` types in the graph. The crate stays
-  in-tree with its pins untouched — but **untouched is also ungated**: a crate
-  outside `[workspace] members` is built by nothing, so `cargo fmt --check`,
-  `cargo clippy`, `cargo test`, `cargo doc`, the MSRV build and `cargo deny` all
-  stop seeing it. For the length of this release the crate is **fully ungated
-  in-tree** — nothing builds or lints it; only WP7's re-entry restores those
-  gates. It re-enters **in
-  this same release** with WP7, which drops its svc-auth crate pins in favour of
-  the Go anchor on the seal side and re-pins it on br-rust-common alone.
 
 ## 1.1.3 - 2026-07-23
 

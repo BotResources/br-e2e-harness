@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use br_test_harness::wait_until;
-use uuid::Uuid;
 
 use crate::checks::{CheckContext, run_scenario};
 use crate::endpoint::PassportEndpoint;
@@ -30,7 +29,7 @@ pub async fn run_spawn(
         ));
     }
     let harness = PassportHarness::start_with_binary(target.binary.clone()).await?;
-    let seeder = harness.seeder().await?;
+    let seeder = harness.seeder();
     let config = SubjectConfig::new(&harness.nats_url());
     let subject = Subject::spawn(harness.binary(), &config);
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
@@ -45,12 +44,10 @@ pub async fn run_spawn(
     }
 
     let endpoint = PassportEndpoint::new(subject.base_url())?;
-    let namespace = Uuid::now_v7().simple().to_string();
     let ctx = CheckContext {
         harness: &harness,
         seeder: &seeder,
         endpoint: &endpoint,
-        namespace: &namespace,
     };
 
     let mut report = ConformanceReport::default();
