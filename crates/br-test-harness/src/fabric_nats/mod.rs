@@ -22,7 +22,7 @@ pub use namespace::RunNamespace;
 pub use negative::{BareFabricNats, WidenedDurable};
 pub use observe::FixedStream;
 pub use outage::DeliveryOutage;
-pub use tap::{DurableTap, TappedDelivery};
+pub use tap::{DurableTap, TapOutcome, TapStop, TappedDelivery};
 pub use tuning::DurableConfig;
 
 use std::collections::{BTreeMap, BTreeSet};
