@@ -13,22 +13,25 @@ single git tag `v{version}` releases the set. Format follows
 
 - **`DurableConfig` + `provision_command_durable_with` /
   `provision_event_durable_with`.** `#[non_exhaustive] DurableConfig { ack_wait,
-  max_deliver: Option<i64>, max_ack_pending }` — `Default` mirrors the lib's
-  `ConsumerTuning` (`30s` / `256` / unlimited deliver), `DurableConfig::harness()`
-  is what `provision_*_durable` has always used (`2s`, server-default
-  `max_ack_pending`, unlimited deliver), and `.ack_wait` / `.max_deliver` /
+  max_deliver: Option<i64>, max_ack_pending }` — `Default` reads the lib's
+  `ConsumerTuning::default()` through `From<ConsumerTuning>` (plus unlimited
+  deliver), so the lib's own defaults cannot drift away from it;
+  `DurableConfig::harness()` is what `provision_*_durable` has always used (`2s`,
+  server-default `max_ack_pending`, unlimited deliver), and `.ack_wait` /
+  `.max_deliver` /
   `.unlimited_deliver` / `.max_ack_pending` narrow it. The frozen-as-contract
   config stays frozen (`ack_policy = Explicit`, `deliver_policy = All`,
   `replay_policy = Instant`, filter = the rendered coordinate). `max_deliver` is
   settable here — and only here — because a finite redelivery budget is
-  deployment-declared on the real `INTEGRATION_CMD` while the lib freezes it at
-  unlimited; adversarial provisioning is the harness's job. `provision_*_durable`
+  deployment-declared on the durable bound to `INTEGRATION_CMD` — it is consumer
+  config, not a stream property — while the lib freezes it at unlimited;
+  adversarial provisioning is the harness's job. `provision_*_durable`
   and `with_*_durable` delegate with `DurableConfig::harness()`, behaviour
   unchanged.
 - **`tap_durable(FixedStream, durable) -> DurableTap`** — pulls from an
   already-provisioned durable and **never acks**, so a frame redelivers until its
   budget is exhausted; `next_within(timeout) -> Option<TappedDelivery { subject,
-  payload, delivered_count }>`, `deliveries_within(timeout, cap)`, `drain()`. It
+  payload, delivered_count }>`, `deliveries_within(timeout, cap)`, `close()`. It
   exists because every lib `ensure_*` / `run_*` path create-or-updates the durable
   back to the lib's config, erasing the budget under test.
 - **Typed read-only counters.** `consumer_pending(FixedStream, durable)`,

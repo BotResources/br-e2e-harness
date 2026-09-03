@@ -7,6 +7,7 @@ use futures_util::StreamExt as _;
 use super::FabricTestNats;
 use super::observe::FixedStream;
 
+#[non_exhaustive]
 pub struct TappedDelivery {
     pub subject: String,
     pub payload: Vec<u8>,
@@ -64,7 +65,7 @@ impl DurableTap {
         seen
     }
 
-    pub async fn drain(self) {
+    pub fn close(self) {
         drop(self.messages);
     }
 }

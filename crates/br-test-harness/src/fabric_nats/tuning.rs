@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use async_nats::jetstream::consumer;
+use br_util_nats_fabric::ConsumerTuning;
 
-pub const LIB_ACK_WAIT: Duration = Duration::from_secs(30);
-pub const LIB_MAX_ACK_PENDING: i64 = 256;
 pub const HARNESS_ACK_WAIT: Duration = Duration::from_secs(2);
 pub const SERVER_DEFAULT_MAX_ACK_PENDING: i64 = 0;
 const UNLIMITED_MAX_DELIVER: i64 = -1;
@@ -18,10 +17,16 @@ pub struct DurableConfig {
 
 impl Default for DurableConfig {
     fn default() -> Self {
+        Self::from(ConsumerTuning::default())
+    }
+}
+
+impl From<ConsumerTuning> for DurableConfig {
+    fn from(tuning: ConsumerTuning) -> Self {
         Self {
-            ack_wait: LIB_ACK_WAIT,
+            ack_wait: tuning.ack_wait,
             max_deliver: None,
-            max_ack_pending: LIB_MAX_ACK_PENDING,
+            max_ack_pending: tuning.max_ack_pending,
         }
     }
 }
@@ -79,18 +84,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_default_mirrors_the_lib_consumer_tuning() {
+    fn the_default_tracks_the_lib_consumer_tuning() {
+        let tuning = ConsumerTuning::default();
         let config = DurableConfig::default();
-        assert_eq!(config.ack_wait, Duration::from_secs(30));
-        assert_eq!(config.max_ack_pending, 256);
+        assert_eq!(config.ack_wait, tuning.ack_wait);
+        assert_eq!(config.max_ack_pending, tuning.max_ack_pending);
+        assert_eq!(config.max_deliver, None);
+    }
+
+    #[test]
+    fn a_custom_lib_tuning_converts_leaving_the_budget_unlimited() {
+        let tuning = ConsumerTuning {
+            ack_wait: Duration::from_secs(120),
+            max_ack_pending: 32,
+        };
+        let config = DurableConfig::from(tuning);
+        assert_eq!(config.ack_wait, Duration::from_secs(120));
+        assert_eq!(config.max_ack_pending, 32);
         assert_eq!(config.max_deliver, None);
     }
 
     #[test]
     fn the_harness_constructor_keeps_the_shipped_provisioner_values() {
         let config = DurableConfig::harness();
-        assert_eq!(config.ack_wait, Duration::from_secs(2));
-        assert_eq!(config.max_ack_pending, 0);
+        assert_eq!(config.ack_wait, HARNESS_ACK_WAIT);
+        assert_eq!(config.max_ack_pending, SERVER_DEFAULT_MAX_ACK_PENDING);
         assert_eq!(config.max_deliver, None);
     }
 

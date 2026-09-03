@@ -67,7 +67,7 @@ async fn a_finite_delivery_budget_stops_redelivering_once_exhausted() {
 
     let mut tap = harness.tap_durable(FixedStream::Cmd, &durable).await;
     let deliveries = tap.deliveries_within(Duration::from_secs(3), 5).await;
-    tap.drain().await;
+    tap.close();
 
     assert_eq!(
         deliveries
@@ -140,7 +140,7 @@ async fn the_counters_move_from_pending_to_delivered() {
         "delivery without ack never removes a message from the stream"
     );
 
-    tap.drain().await;
+    tap.close();
     harness.shutdown().await;
 }
 
