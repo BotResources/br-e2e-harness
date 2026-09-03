@@ -57,7 +57,12 @@ impl DurableTap {
                 MessagesErrorKind::ConsumerDeleted | MessagesErrorKind::PushBasedConsumer => {
                     TapOutcome::Closed
                 }
-                _ => panic!("{}: the pull stream errored: {e}", self.observer()),
+                MessagesErrorKind::MissingHeartbeat
+                | MessagesErrorKind::Pull
+                | MessagesErrorKind::NoResponders
+                | MessagesErrorKind::Other => {
+                    panic!("{}: the pull stream errored: {e}", self.observer())
+                }
             },
             Ok(Some(Ok(message))) => {
                 let info = message.info().unwrap_or_else(|e| {

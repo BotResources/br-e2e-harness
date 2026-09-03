@@ -37,9 +37,14 @@ single git tag `v{version}` releases the set. Format follows
   under test. The tap says **why** it went quiet:
   `next_within(timeout) -> TapOutcome::{ Delivery(TappedDelivery { subject,
   payload, delivered_count }), Timeout, Closed }` — only `Timeout` is "the
-  observer is alive and saw nothing", while a deleted durable or an ended pull
-  stream reads as `Closed`; any other pull-stream error panics naming the
-  durable, since it is neither. `deliveries_within(timeout, cap) ->
+  observer is alive and saw nothing". A durable deleted while the tap holds a
+  pull request in flight — always, on its `messages()` stream — is terminated by
+  the server and reads as `Closed`, as does an ended pull stream; a request
+  issued *after* the deletion comes back no-responders, and that (like every
+  other pull-stream error kind) panics naming the durable, since it is neither
+  quiet nor a clean close. Known limit: the idle heartbeat is 15s, so a quiet
+  window longer than 30s panics `MissingHeartbeat` instead of reading
+  `Timeout`. `deliveries_within(timeout, cap) ->
   (Vec<TappedDelivery>, TapStop::{ Limit, Timeout, Closed })` reports the stop
   reason, so an exhaustion assertion proves the redeliveries stopped **while the
   tap still observed** instead of certifying the loss of its own observer.

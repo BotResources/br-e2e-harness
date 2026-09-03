@@ -204,3 +204,71 @@ async fn a_tap_that_lost_its_consumer_reads_as_closed_never_as_quiet() {
     tap.close();
     harness.shutdown().await;
 }
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn expect_quiet_passes_on_a_live_tap_and_panics_once_the_consumer_is_gone() {
+    let harness = FabricTestNats::start().await;
+    let coords = declare_command_coords().expect("declare command coords");
+    let durable = harness.durable("quiet_then_gone");
+    harness.provision_command_durable(&coords, &durable).await;
+
+    let mut tap = harness.tap_durable(FixedStream::Cmd, &durable).await;
+    tap.expect_quiet("nothing published yet", Duration::from_millis(500))
+        .await;
+
+    harness.delete_durable(FixedStream::Cmd, &durable).await;
+    let message = panic_message(async move {
+        tap.expect_quiet("nothing published yet", Duration::from_secs(5))
+            .await;
+    })
+    .await;
+
+    assert!(
+        message.contains(&durable) && message.contains("not quiet"),
+        "a tap that lost its consumer must fail loud naming the durable, got: {message}"
+    );
+
+    harness.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn expect_delivery_names_the_expectation_and_the_durable_on_timeout() {
+    let harness = FabricTestNats::start().await;
+    let coords = declare_command_coords().expect("declare command coords");
+    let durable = harness.durable("awaited");
+    harness.provision_command_durable(&coords, &durable).await;
+
+    let tap = harness.tap_durable(FixedStream::Cmd, &durable).await;
+    let message = panic_message(async move {
+        let mut tap = tap;
+        tap.expect_delivery("the command nobody published", Duration::from_millis(500))
+            .await;
+    })
+    .await;
+
+    assert!(
+        message.contains("the command nobody published")
+            && message.contains("got Timeout")
+            && message.contains(&durable),
+        "a missed delivery must name the expectation and the durable, got: {message}"
+    );
+
+    harness.shutdown().await;
+}
+
+async fn panic_message<F>(future: F) -> String
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let payload = tokio::spawn(future)
+        .await
+        .expect_err("the future under test was expected to panic")
+        .into_panic();
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .expect("the panic payload must be a string")
+}
