@@ -1,6 +1,7 @@
 use br_core_integration::{CommandCoords, EventCoords};
 use br_util_nats_fabric::{INTEGRATION_CMD, INTEGRATION_EVT, command_subject, event_subject};
 
+use super::observe::FixedStream;
 use super::tuning::{DurableConfig, pull_config};
 use super::{FabricTestNats, WidenedDurable};
 
@@ -47,6 +48,17 @@ impl FabricTestNats {
     ) {
         self.create_durable_with(INTEGRATION_EVT, durable, &event_subject(coords), config)
             .await;
+    }
+
+    pub async fn delete_durable(&self, stream: FixedStream, durable: &str) {
+        let name = stream.name();
+        self.js
+            .get_stream(name)
+            .await
+            .unwrap_or_else(|e| panic!("get fixed stream {name} to delete durable {durable}: {e}"))
+            .delete_consumer(durable)
+            .await
+            .unwrap_or_else(|e| panic!("delete durable {durable} on {name}: {e}"));
     }
 
     pub async fn with_widened_durable(
