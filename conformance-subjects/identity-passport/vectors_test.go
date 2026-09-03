@@ -168,50 +168,40 @@ func TestUnreadableVectorWouldOpenWithoutItsUnknownField(t *testing.T) {
 	}
 }
 
-func TestCorruptedPairsShareTheirTokenAndKvKey(t *testing.T) {
+func TestDistinctTokensHaveDistinctNoncesAndTwinsShareTheirs(t *testing.T) {
 	parsed := decodeVectors(t, committedVectors(t))
-	pairs := [][2]string{
-		{"tampered-ciphertext-faithful", "tampered-ciphertext-corrupt"},
-		{"tampered-nonce-faithful", "tampered-nonce-corrupt"},
-		{"unreadable-faithful", "unreadable-corrupt"},
+	nonceByToken := make(map[string]string, len(parsed.Vectors))
+	tokenByNonce := make(map[string]string, len(parsed.Vectors))
+	for _, v := range parsed.Vectors {
+		if v.KvKey != kvKey(v.Token) {
+			t.Fatalf("vector %q carries a kv key that is not the digest of its token", v.Name)
+		}
+		nonce := sealingNonce(t, v)
+		if previous, seen := nonceByToken[v.Token]; seen && previous != nonce {
+			t.Fatalf("token %q was sealed under two nonces: twins must share theirs", v.Token)
+		}
+		nonceByToken[v.Token] = nonce
+		if previous, seen := tokenByNonce[nonce]; seen && previous != v.Token {
+			t.Fatalf("distinct tokens %q and %q reuse a nonce", previous, v.Token)
+		}
+		tokenByNonce[nonce] = v.Token
 	}
-	for _, pair := range pairs {
-		t.Run(pair[0], func(t *testing.T) {
-			faithful := vectorByName(t, parsed, pair[0])
-			corrupt := vectorByName(t, parsed, pair[1])
-			if faithful.Token != corrupt.Token || faithful.KvKey != corrupt.KvKey {
-				t.Fatalf("a resolved-then-corrupted pair must share one token and one kv key")
-			}
-			if faithful.ValueB64 == corrupt.ValueB64 {
-				t.Fatalf("the corrupted half must differ from the faithful one")
-			}
-		})
+	if len(nonceByToken) != len(tokenByNonce) {
+		t.Fatalf("the token/nonce mapping is not one-to-one")
 	}
 }
 
-func TestEveryVectorHasItsOwnNonceAndDistinctTokensHaveDistinctKeys(t *testing.T) {
-	parsed := decodeVectors(t, committedVectors(t))
-	nonces := make(map[string]string, len(parsed.Vectors))
-	keysByToken := make(map[string]string, len(parsed.Vectors))
-	for _, v := range parsed.Vectors {
-		raw, err := base64.StdEncoding.DecodeString(v.ValueB64)
-		if err != nil {
-			t.Fatalf("value_b64: %v", err)
-		}
-		var loose sealedBearer
-		if err := json.Unmarshal(raw, &loose); err != nil {
-			t.Fatalf("%s: %v", v.Name, err)
-		}
-		if previous, dup := nonces[loose.Nonce]; dup {
-			t.Fatalf("vectors %q and %q reuse a nonce", previous, v.Name)
-		}
-		nonces[loose.Nonce] = v.Name
-
-		if previous, seen := keysByToken[v.KvKey]; seen && previous != v.Token {
-			t.Fatalf("kv key collision between tokens %q and %q", previous, v.Token)
-		}
-		keysByToken[v.KvKey] = v.Token
+func sealingNonce(t *testing.T, v wireVector) string {
+	t.Helper()
+	nonce := looseEnvelope(t, v).Nonce
+	if v.Corruption != tamperNonce {
+		return nonce
 	}
+	restored, err := flipFirstByte(nonce)
+	if err != nil {
+		t.Fatalf("%s: undoing the nonce flip: %v", v.Name, err)
+	}
+	return restored
 }
 
 func TestOnlyTheServiceActorIsLeftUnasserted(t *testing.T) {

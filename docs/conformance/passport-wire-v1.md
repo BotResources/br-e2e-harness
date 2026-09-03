@@ -111,11 +111,17 @@ the subject's `BEARER_SEAL_KEY`, and `wrong_seal_key_b64`) plus one entry per ca
 
 Twelve entries: two distinct faithful humans, a faithful **service** actor (freezing
 the `{"kind":"service",…}` cleartext), `revoked`, `kv-error`, `wrong-key`, and three
-**resolved-then-corrupted pairs** — `tampered-ciphertext`, `tampered-nonce`,
-`unreadable` — each pair sharing one token and one KV key so the corruption is the
-only difference between two resolutions. Every nonce is fixed per entry
-(`sha256("identity-passport/vector-nonce/" + name)[..12]`), so regeneration is
-byte-stable.
+**controlled twin pairs** — `tampered-ciphertext`, `tampered-nonce`, `unreadable`.
+A corrupt entry is never sealed on its own: the generator takes its faithful twin's
+**exact sealed bytes** and applies only the declared mutation (flip byte 0 of the
+base64-decoded ciphertext or nonce, or add one unknown key to the same envelope), so
+the pair shares one token, one KV key, one identity, one nonce and one ciphertext,
+and the mutation is the only difference between the two resolutions.
+
+Nonces are fixed **per token** (`sha256("identity-passport/vector-nonce/" + token)[..12]`),
+so regeneration is byte-stable and the rule is: **distinct tokens have distinct
+nonces; twins share theirs** (the `tampered-nonce` corrupt half carries that shared
+nonce with byte 0 flipped).
 
 Two anchors keep it honest:
 
@@ -127,7 +133,10 @@ Two anchors keep it honest:
 - **Anti-nonsense.** `vectors_test.go` also opens every faithful vector and asserts
   it yields its declared identity, and asserts every `resolves: anonymous` vector
   never opens (the `unreadable` one must fail the *parse*, and would open without
-  its unknown field). The Go-internal `wire_test.go` vectors (`kvKey`, `aad`, the
+  its unknown field). `vector_twins_test.go` re-applies each declared mutation to the
+  faithful bytes and byte-compares the result with the committed corrupt half, then
+  asserts the difference is exactly the declared one; the Rust side re-checks the
+  same rule when it parses the file, so neither language can accept a non-twin. The Go-internal `wire_test.go` vectors (`kvKey`, `aad`, the
   fixed-nonce frozen ciphertext, the golden `Passport`) still pin the primitives.
 
 ---
