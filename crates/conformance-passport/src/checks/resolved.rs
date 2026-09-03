@@ -4,6 +4,7 @@ use uuid::Uuid;
 use crate::endpoint::Resolution;
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::seal::SealedSeed;
+use crate::vectors::Vector;
 
 use super::CheckContext;
 
@@ -11,10 +12,7 @@ pub async fn run_valid_bearer(ctx: &CheckContext<'_>) -> CheckOutcome {
     let id = CheckId::ValidBearerResolvesToPassport;
     let expected =
         "human passport with pat(token_id)+user_id matching the sealed entry, no email claim";
-    let seed = match ctx.seeder.seed(ctx.namespace, "valid").await {
-        Ok(seed) => seed,
-        Err(e) => return CheckOutcome::fail(id, expected, "seeding failed", format!("{e}")),
-    };
+    let seed = ctx.seed(Vector::FaithfulHuman).await;
     let resolution = match ctx.endpoint.resolve_bearer(&seed.raw).await {
         Ok(resolution) => resolution,
         Err(e) => {
@@ -80,14 +78,8 @@ fn human_identity(resolution: &Resolution) -> std::result::Result<(Uuid, AuthMet
 pub async fn run_distinct_tokens(ctx: &CheckContext<'_>) -> CheckOutcome {
     let id = CheckId::DistinctTokensDistinctPassports;
     let expected = "each bearer resolves to its own passport, no cross-talk";
-    let first = match ctx.seeder.seed(ctx.namespace, "distinct_a").await {
-        Ok(seed) => seed,
-        Err(e) => return CheckOutcome::fail(id, expected, "seeding first failed", format!("{e}")),
-    };
-    let second = match ctx.seeder.seed(ctx.namespace, "distinct_b").await {
-        Ok(seed) => seed,
-        Err(e) => return CheckOutcome::fail(id, expected, "seeding second failed", format!("{e}")),
-    };
+    let first = ctx.seed(Vector::FaithfulHuman).await;
+    let second = ctx.seed(Vector::FaithfulHumanSecond).await;
 
     let first_resolution = match ctx.endpoint.resolve_bearer(&first.raw).await {
         Ok(resolution) => resolution,

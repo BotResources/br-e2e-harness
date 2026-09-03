@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -15,12 +16,34 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-const publishedLanguageBucket = "PUBLISHED_LANGUAGE"
+const (
+	publishedLanguageBucket = "PUBLISHED_LANGUAGE"
+	sealSubcommand          = "seal"
+	vectorsSubcommand       = "vectors"
+)
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case sealSubcommand:
+			exitOnError(sealSubcommand, runSeal(os.Args[2:], osLookupEnv, os.Stdout))
+			return
+		case vectorsSubcommand:
+			exitOnError(vectorsSubcommand, runVectors(os.Args[2:], os.Stdout))
+			return
+		}
+	}
 	if err := run(); err != nil {
 		log.Fatalf("fatal: %v", err)
 	}
+}
+
+func exitOnError(subcommand string, err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand, err)
+	os.Exit(2)
 }
 
 func run() error {

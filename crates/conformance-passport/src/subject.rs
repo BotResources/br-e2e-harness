@@ -3,7 +3,7 @@ use std::path::Path;
 
 use br_test_harness::SpawnedProcess;
 
-use crate::seal::seal_key_b64;
+use crate::vectors::seal_key_b64;
 
 pub struct SubjectConfig {
     pub nats_url: String,

@@ -78,6 +78,12 @@ jobs:
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
       - name: nats-fabric conformance battery
         run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
+      - name: identity-passport anchor tests (freezes the committed wire vectors)
+        run: |
+          go -C conformance-subjects/identity-passport vet ./...
+          go -C conformance-subjects/identity-passport test -count=1 ./...
+      - name: passport conformance battery
+        run: cargo test -p conformance-passport --test conformance --locked -- --ignored --test-threads=1
       - name: directory conformance battery
         run: cargo test -p conformance-directory --test conformance --locked -- --ignored --test-threads=1
 
