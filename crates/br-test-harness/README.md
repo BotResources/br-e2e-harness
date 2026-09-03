@@ -45,7 +45,7 @@ for one; that the workspace compiles with the handles unexposed is the proof.
 | A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
 | Verdict helpers over a GraphQL response — ack / rejection / stable-code | `verdict::*` | `graphql` |
 | A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` | `ws` |
-| A live GraphQL Server-Sent-Events subscription | `SseSubscription` | `sse` |
+| A live GraphQL Server-Sent-Events subscription (typed quiet-reason) | `SseSubscription`, `SseOutcome`, `DrainStop` | `sse` |
 | Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
 | A pilotable in-process OIDC IdP (discovery, JWKS, mint, rotate) | `oidc` | `oidc` |
 
@@ -62,7 +62,7 @@ nothing else is a legitimate window into the running service:
 |---|---|---|---|
 | 1 | **Mutation ack / error** | a mutation returns a *verdict*, never state: an ack on success, or a structured error carrying a **stable code** on rejection | `verdict::{expect_ack, is_ack, expect_rejected, expect_code_shaped, is_code_shaped, mutation_error_code}` over a `GraphqlClient` response |
 | 2 | **Query + affordances** | the authoritative current state *and* the `{ action, allowed, reasonCode }` affordances the service computes for the caller's Passport | `GraphqlClient::query` + the same `verdict` helpers (the affordance-skip guarantee keeps an affordance `reasonCode` from reading as a mutation error) |
-| 3 | **Subscriptions** | the near-unfiltered domain-event stream the frontend folds — every transition, with its code | `SseSubscription::{next_event, expect_event, expect_event_on, expect_silence, drain}` |
+| 3 | **Subscriptions** | the near-unfiltered domain-event stream the frontend folds — every transition, with its code | `SseSubscription::{next_outcome, next_event, expect_event, expect_event_on, expect_silence, drain, drain_outcome}` |
 | 4 | **Published contract** (KV + integration events) | the service's *published language* — its integration events on a named, GitOps-provisioned JetStream stream, and the KV mirror it writes for downstream consumers | `await_integration_event(js, stream, subject, deadline)` + `recreate_stream` / `recreate_kv` to reset the named bus clean per scenario |
 
 The non-negotiable rule that makes a scenario a *spec* and not a *fixture*: **state
@@ -533,11 +533,21 @@ Three helpers exist specifically to kill the classic e2e flakes:
   A scenario that has already asserted the push it cares about often needs to
   flush the *rest* of a known burst before opening the next leg, so a stale
   earlier-transition frame can't satisfy a later `expect_event`. `drain` pulls
-  up to `max` events, stopping at the first that doesn't arrive within `timeout`
-  (a clean stream end or genuine silence), and returns the count it drained. It
-  reuses `next_event`, so a broken stream still panics — it never swallows an
-  error frame. (`next_event` / `expect_event` / `expect_silence` remain, for the
-  single-push and silence cases.)
+  up to `max` events, stopping at the first that doesn't arrive within `timeout`,
+  and returns the count it drained. It reuses `next_outcome`, so a broken stream
+  still panics — it never swallows an error frame. `drain_outcome(max, timeout)`
+  is the same walk plus the reason it stopped
+  (`DrainStop::{Limit, Timeout, Closed}`), so a drain-to-quiet loop can tell a
+  quiet stream from one the server ended.
+- **`SseSubscription::next_outcome(timeout) -> SseOutcome`** — why the stream
+  went quiet. `SseOutcome::{Event(Value), Timeout, Closed}` splits the two cases
+  `next_event` collapses into `None`: `Closed` is the server ending the stream,
+  `Timeout` is an open stream with nothing to say. `expect_silence` passes only
+  on `Timeout`; `expect_event` / `expect_event_on` name which one they got.
+  `next_event` is unchanged, so a suite migrates on its own schedule.
+- **`SseSubscription::with_logs(&SpawnedProcess)`** — attach the spawned
+  service's captured output, so a `Closed` panic carries the last 80 lines the
+  service printed before it hung up.
 - **`SseSubscription::expect_event_on(field, timeout) -> Value`** — the channel-3
   ergonomic. `next_event` / `expect_event` already unwrap the SSE frame to the
   GraphQL `data` object (failing loud on an `errors` payload); `expect_event_on`
@@ -627,7 +637,9 @@ here, synthetically:
 | `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test`). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
 | `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. |
 | `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
-| Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_event` returns `None` **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
+| Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_outcome` returns a quiet outcome **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
+| `expect_silence` panics on `Closed`, and `next_event` still flattens it | A closed stream is not silence: every `expect_silence` and drain-to-quiet loop on a subscription the service had hung up on passed **vacuously**, because a timeout and a stream end were the same `None`. `expect_silence` therefore rejects `Closed` — the one deliberate behaviour change of 1.2.0. `next_event` keeps flattening both to `None` so no consumer's signature breaks; a suite that wants the distinction reads `next_outcome` / `drain_outcome` when it migrates. |
+| Log attachment is `with_logs(&SpawnedProcess)`, cloning the process's log handle | A `Closed` is almost always the service dying or refusing the subscription, and the answer is in *its* stderr — but `SseSubscription` is opened from a URL and knows nothing about the process behind it. `with_logs` clones the `Arc<Mutex<String>>` the `SpawnedProcess` drain tasks already write into, so the panic reads the tail **live**, at panic time, not a snapshot taken at attach time (and it recovers a poisoned mutex rather than panicking while formatting a panic). One opt-in mechanism, no global state: unattached, the panic still names `Closed`. |
 | `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
 | `SpawnedProcess` has both `wait_for_http_ok` and `await_boot` | A nominal scenario wants "ready or fail the test" (`wait_for_http_ok` → `Result`); a fail-loud scenario wants to **assert** the boot *did not* succeed and inspect *why* (`await_boot` → `BootOutcome::{Ready, Exited(status), TimedOut}`). Both are kept — the classifier adds the three-outcome verdict, it does not replace the happy-path checker. |
 | `await_boot` drains the pipes to EOF before returning `Exited` | The drain runs as background tasks, so `try_wait()` can observe the exit before those tasks have read the binary's final stderr/stdout. Awaiting them on `Exited` guarantees `proc.logs()` holds the full tail — the line naming the missing declared resource an S0-style scenario asserts on. The continuous-drain model means no kill-before-drain dance (the prod-side reference used a sync `std::process` and had to). |

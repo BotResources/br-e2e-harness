@@ -7,6 +7,34 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`SseOutcome` — the SSE handle says why it went quiet.**
+  `SseSubscription::next_outcome(timeout) -> SseOutcome::{ Event(Value), Timeout, Closed }`
+  splits the two cases `next_event` collapsed into a single `None`: a server that
+  ended the stream now reads as `Closed`, a stream held open with nothing to say
+  as `Timeout`. `next_event` is unchanged (`Event(v) => Some(v)`, otherwise
+  `None`), so every existing suite compiles as-is and migrates on its own
+  schedule. `expect_event` / `expect_event_on` panic messages now name which of
+  the two they got.
+- **`SseSubscription::drain_outcome(max, timeout) -> (usize, DrainStop)`** — the
+  drain reports why it stopped (`DrainStop::{ Limit, Timeout, Closed }`);
+  `drain(max, timeout) -> usize` keeps its signature and delegates.
+- **`SseSubscription::with_logs(&SpawnedProcess)`** — opt-in attachment of the
+  spawned service's captured output. When attached, a `Closed` panic from
+  `expect_event` / `expect_event_on` / `expect_silence` carries the last 80 lines
+  of the service log, so "the server closed the subscription" arrives with the
+  reason the service printed. Unattached, the panic still names `Closed`.
+
+### Changed
+
+- **`SseSubscription::expect_silence` now panics when the server closed the
+  stream** — a closed stream is not silence. This is the one deliberate
+  behaviour change: because a timeout and a stream end were both `None`, every
+  `expect_silence` (and every drain-to-quiet loop) on a subscription the service
+  had hung up on passed **vacuously**. A suite that newly fails after this bump
+  is a false pass surfacing, not a regression.
+
 ## 1.1.3 - 2026-07-23
 
 ### Changed
