@@ -18,34 +18,12 @@ const (
 	sealedWithSealKey  = "seal_key"
 	sealedWithWrongKey = "wrong_seal_key"
 	corruptionNone     = "none"
+	mutationNone       = ""
 	resolvesHuman      = "human"
 	resolvesAnonymous  = "anonymous"
 	resolvesUnasserted = "unasserted"
 	wireVectorsVersion = 1
 )
-
-var (
-	frozenSealKey = []byte{
-		0x1f, 0x2e, 0x3d, 0x4c, 0x5b, 0x6a, 0x79, 0x88, 0x97, 0xa6, 0xb5, 0xc4, 0xd3, 0xe2, 0xf1, 0x00,
-		0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a, 0x69, 0x78, 0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0,
-	}
-	frozenWrongSealKey = []byte{
-		0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-		0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
-	}
-)
-
-type vectorSpec struct {
-	name       string
-	token      string
-	actorKind  string
-	actorID    string
-	tokenID    string
-	wrongKey   bool
-	tamper     string
-	unreadable bool
-	resolves   string
-}
 
 type wireVector struct {
 	Name       string `json:"name"`
@@ -67,119 +45,14 @@ type wireVectors struct {
 	Vectors         []wireVector `json:"vectors"`
 }
 
-func frozenVectorSpecs() []vectorSpec {
-	return []vectorSpec{
-		{
-			name:      "faithful-human",
-			token:     "brk_conformance_faithful_human",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0001-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0001-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:      "faithful-human-second",
-			token:     "brk_conformance_faithful_human_second",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0002-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0002-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:      "faithful-service",
-			token:     "brk_conformance_faithful_service",
-			actorKind: actorService,
-			actorID:   "0190a1b2-0003-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0003-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesUnasserted,
-		},
-		{
-			name:      "revoked",
-			token:     "brk_conformance_revoked",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0004-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0004-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:      "kv-error",
-			token:     "brk_conformance_kv_error",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0005-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0005-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:      "wrong-key",
-			token:     "brk_conformance_wrong_key",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0006-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0006-7e5f-8a9b-0c1d2e3f4a5b",
-			wrongKey:  true,
-			resolves:  resolvesAnonymous,
-		},
-		{
-			name:      "tampered-ciphertext-faithful",
-			token:     "brk_conformance_tampered_ciphertext",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0007-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0007-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:      "tampered-ciphertext-corrupt",
-			token:     "brk_conformance_tampered_ciphertext",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0007-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0007-7e5f-8a9b-0c1d2e3f4a5b",
-			tamper:    tamperCiphertext,
-			resolves:  resolvesAnonymous,
-		},
-		{
-			name:      "tampered-nonce-faithful",
-			token:     "brk_conformance_tampered_nonce",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0008-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0008-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:      "tampered-nonce-corrupt",
-			token:     "brk_conformance_tampered_nonce",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0008-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0008-7e5f-8a9b-0c1d2e3f4a5b",
-			tamper:    tamperNonce,
-			resolves:  resolvesAnonymous,
-		},
-		{
-			name:      "unreadable-faithful",
-			token:     "brk_conformance_unreadable",
-			actorKind: actorHuman,
-			actorID:   "0190a1b2-0009-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:   "0190c0de-0009-7e5f-8a9b-0c1d2e3f4a5b",
-			resolves:  resolvesHuman,
-		},
-		{
-			name:       "unreadable-corrupt",
-			token:      "brk_conformance_unreadable",
-			actorKind:  actorHuman,
-			actorID:    "0190a1b2-0009-7e5f-8a9b-0c1d2e3f4a5b",
-			tokenID:    "0190c0de-0009-7e5f-8a9b-0c1d2e3f4a5b",
-			unreadable: true,
-			resolves:   resolvesAnonymous,
-		},
-	}
-}
-
-func frozenNonce(name string) []byte {
-	digest := sha256.Sum256([]byte("identity-passport/vector-nonce/" + name))
+func frozenNonce(token string) []byte {
+	digest := sha256.Sum256([]byte("identity-passport/vector-nonce/" + token))
 	return digest[:chacha20poly1305.NonceSize]
 }
 
 func buildWireVectors() (wireVectors, error) {
 	specs := frozenVectorSpecs()
-	seen := make(map[string]struct{}, len(specs))
+	built := make(map[string]wireVector, len(specs))
 	out := wireVectors{
 		Version:         wireVectorsVersion,
 		SealKeyB64:      base64.StdEncoding.EncodeToString(frozenSealKey),
@@ -187,53 +60,98 @@ func buildWireVectors() (wireVectors, error) {
 		Vectors:         make([]wireVector, 0, len(specs)),
 	}
 	for _, spec := range specs {
-		if _, dup := seen[spec.name]; dup {
+		if _, dup := built[spec.name]; dup {
 			return wireVectors{}, fmt.Errorf("duplicate vector name %q", spec.name)
 		}
-		seen[spec.name] = struct{}{}
-
-		key := frozenSealKey
-		sealedWith := sealedWithSealKey
-		if spec.wrongKey {
-			key = frozenWrongSealKey
-			sealedWith = sealedWithWrongKey
-		}
-		result, err := sealOnce(sealRequest{
-			key:        key,
-			token:      spec.token,
-			actor:      spec.actorKind + ":" + spec.actorID,
-			tokenID:    spec.tokenID,
-			tamper:     spec.tamper,
-			unreadable: spec.unreadable,
-			nonce:      frozenNonce(spec.name),
-		})
+		vector, err := buildVector(spec, built)
 		if err != nil {
-			return wireVectors{}, fmt.Errorf("sealing vector %q: %w", spec.name, err)
+			return wireVectors{}, err
 		}
-		out.Vectors = append(out.Vectors, wireVector{
-			Name:       spec.name,
-			Token:      spec.token,
-			KvKey:      result.KvKey,
-			ActorKind:  spec.actorKind,
-			ActorID:    spec.actorID,
-			TokenID:    spec.tokenID,
-			SealedWith: sealedWith,
-			Corruption: corruptionOf(spec),
-			Resolves:   spec.resolves,
-			ValueB64:   result.ValueB64,
-		})
+		built[spec.name] = vector
+		out.Vectors = append(out.Vectors, vector)
 	}
 	return out, nil
 }
 
-func corruptionOf(spec vectorSpec) string {
-	if spec.unreadable {
-		return corruptUnreadable
+func buildVector(spec vectorSpec, built map[string]wireVector) (wireVector, error) {
+	if spec.mutation != mutationNone {
+		return buildTwinVector(spec, built)
 	}
-	if spec.tamper == tamperNone {
-		return corruptionNone
+	if spec.twinOf != "" {
+		return wireVector{}, fmt.Errorf("vector %q declares a twin but no mutation", spec.name)
 	}
-	return spec.tamper
+	key := frozenSealKey
+	sealedWith := sealedWithSealKey
+	if spec.wrongKey {
+		key = frozenWrongSealKey
+		sealedWith = sealedWithWrongKey
+	}
+	result, err := sealOnce(sealRequest{
+		key:     key,
+		token:   spec.token,
+		actor:   spec.actorKind + ":" + spec.actorID,
+		tokenID: spec.tokenID,
+		nonce:   frozenNonce(spec.token),
+	})
+	if err != nil {
+		return wireVector{}, fmt.Errorf("sealing vector %q: %w", spec.name, err)
+	}
+	return renderVector(spec, sealedWith, result.KvKey, result.ValueB64), nil
+}
+
+func buildTwinVector(spec vectorSpec, built map[string]wireVector) (wireVector, error) {
+	faithful, ok := built[spec.twinOf]
+	if !ok {
+		return wireVector{}, fmt.Errorf("vector %q names an unbuilt twin %q", spec.name, spec.twinOf)
+	}
+	if err := assertTwinIdentity(spec, faithful); err != nil {
+		return wireVector{}, err
+	}
+	value, err := base64.StdEncoding.DecodeString(faithful.ValueB64)
+	if err != nil {
+		return wireVector{}, fmt.Errorf("vector %q: twin %q is not base64-std: %w", spec.name, spec.twinOf, err)
+	}
+	mutated, err := mutateStoredValue(value, spec.mutation)
+	if err != nil {
+		return wireVector{}, fmt.Errorf("vector %q: %w", spec.name, err)
+	}
+	return renderVector(spec, faithful.SealedWith, faithful.KvKey, base64.StdEncoding.EncodeToString(mutated)), nil
+}
+
+func assertTwinIdentity(spec vectorSpec, faithful wireVector) error {
+	if faithful.Corruption != corruptionNone {
+		return fmt.Errorf("vector %q must be the twin of a faithful vector, %q is %s", spec.name, faithful.Name, faithful.Corruption)
+	}
+	if spec.wrongKey {
+		return fmt.Errorf("vector %q cannot both be a twin and be sealed under the wrong key", spec.name)
+	}
+	sameIdentity := spec.token == faithful.Token &&
+		spec.actorKind == faithful.ActorKind &&
+		spec.actorID == faithful.ActorID &&
+		spec.tokenID == faithful.TokenID
+	if !sameIdentity {
+		return fmt.Errorf("vector %q must carry the exact identity of its twin %q", spec.name, faithful.Name)
+	}
+	return nil
+}
+
+func renderVector(spec vectorSpec, sealedWith, kvKey, valueB64 string) wireVector {
+	corruption := corruptionNone
+	if spec.mutation != mutationNone {
+		corruption = spec.mutation
+	}
+	return wireVector{
+		Name:       spec.name,
+		Token:      spec.token,
+		KvKey:      kvKey,
+		ActorKind:  spec.actorKind,
+		ActorID:    spec.actorID,
+		TokenID:    spec.tokenID,
+		SealedWith: sealedWith,
+		Corruption: corruption,
+		Resolves:   spec.resolves,
+		ValueB64:   valueB64,
+	}
 }
 
 func renderWireVectors() ([]byte, error) {

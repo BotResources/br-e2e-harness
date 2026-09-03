@@ -243,14 +243,24 @@ single git tag `v{version}` releases the set. Format follows
   it; nothing covered it. A bearer that resolves is replaced, at its own KV key, by a
   genuine **openable** seal carrying one unknown field, so only the strict parse can
   reject it → anonymous.
-- **P10 — a tampered nonce fails closed.** Same shape, with the identity re-sealed
-  under a fresh nonce whose byte 0 is then flipped: the carried nonce no longer
-  matches the tag → anonymous.
-- P7, P9 and P10 share one *resolved-then-corrupted* shape: the faithful vector must
-  resolve first, then its corrupted twin is written at the same KV key, so the
-  corruption is provably the only difference between the two resolutions. (P6 is not
-  of that shape — it seeds the wrong-key vector once and asserts the value is present
-  before checking the endpoint went anonymous.)
+- **P10 — a tampered nonce fails closed.** Same shape, with byte 0 of the envelope's
+  nonce flipped: the carried nonce no longer matches the tag → anonymous.
+- P7, P9 and P10 share one *resolved-then-corrupted* shape, and their corrupt vectors
+  are **controlled twins**: each is generated from the exact sealed bytes of its
+  faithful vector — same token, same key, same nonce, same ciphertext — with only the
+  declared mutation applied (flip byte 0 of the base64-decoded ciphertext or nonce,
+  or add one unknown field to the same envelope). The faithful half must resolve
+  first, then the twin is written at the same KV key, so the mutation is provably the
+  only difference between the two resolutions rather than one of many. Both languages
+  enforce it: `vector_twins_test.go` re-applies each mutation to the faithful bytes
+  and byte-compares the result with the committed corrupt half, and Rust re-checks
+  the same rule while parsing the vector file, so a non-twin file panics before any
+  scenario runs. The check closes the table rather than a hard-coded list of three:
+  any entry declaring a `corruption` must be named as a corrupt half by the twin
+  table, and a corrupt half must declare its own mutation. (P6's `wrong-key` is the
+  one negative vector with no twin — a KV key holds a single value — so it rests on
+  a `pl_get_raw` presence assertion instead.) (P6 is not of that shape — it seeds the wrong-key vector once and
+  asserts the value is present before checking the endpoint went anonymous.)
 
 ### Changed
 
@@ -352,7 +362,8 @@ Non-behavioural, text only:
   `crates/conformance-passport/vectors/passport-wire-v1.json` carries, per case, the
   token, the KV key, the sealed identity and the exact `value_b64` bytes; the
   `identity-passport` anchor generates it deterministically (`make vectors`: fixed
-  keys, fixed ids, one fixed nonce per entry), and `vectors_test.go` regenerates it
+  keys, fixed ids, one fixed nonce per **token** — so distinct tokens have distinct
+  nonces and a corrupted twin shares its faithful half's), and `vectors_test.go` regenerates it
   in memory and asserts **byte-equality** with the committed file, so anchor drift
   or a hand edit fails `make check` and CI. `SealedSeeder` `include_str!`s the file
   and writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or

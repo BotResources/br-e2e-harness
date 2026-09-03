@@ -119,9 +119,19 @@ The seed is sealed with `BEARER_SEAL_KEY` — the same variable, read the same w
 in serve mode; there is no `--key` flag. The KV key never depends on the seal key.
 `--tamper` and `--unreadable` are mutually exclusive.
 
-The committed **wrong-key** vector is not produced this way: `vectors.go` holds
+The committed **wrong-key** vector is not produced this way: `vector_specs.go` holds
 `frozenWrongSealKey` alongside `frozenSealKey` and seals that one entry with it, so
 the pair of keys is frozen in the file rather than supplied at generation time.
+
+The committed **corrupt** vectors are not sealed at all: each one is a **controlled
+twin** of a faithful entry. `vectors.go` takes the faithful entry's exact stored
+bytes and calls `mutateStoredValue` with the declared mutation — the same code path
+the `--tamper` / `--unreadable` flags use — so the two halves share one token, one
+KV key, one identity, one nonce and one ciphertext, and differ only by the flipped
+byte or the added unknown key. A spec whose twin carries another identity is refused
+at generation time. Nonces are derived from the **token**
+(`sha256("identity-passport/vector-nonce/" + token)[..12]`), so distinct tokens have
+distinct nonces and twins share theirs by construction.
 
 ## Configuration (env only)
 
@@ -145,7 +155,9 @@ The offline tests pin the KV-key/AAD vectors, the frozen cleartext and envelope
 bytes, a fixed-nonce seal that reproduces a frozen ciphertext, the `seal` CLI
 contract (round-trip, service actor, fresh nonce per seal, wrong key, both tamper
 modes, unreadable, and every rejected input), the committed vector file's
-byte-equality with a live regeneration, and the `Passport` golden shape. The full
+byte-equality with a live regeneration, the twin rule (each corrupt vector is its
+faithful twin's bytes plus exactly the declared mutation), and the `Passport` golden
+shape. The full
 G1 e2e (found / revoked / unknown / no-credential / wrong-key / tampered ciphertext
 / tampered nonce / unreadable / KV-failure / readiness) is the Rust conformance
 runner's job; it brings the real `PUBLISHED_LANGUAGE` bucket and the real

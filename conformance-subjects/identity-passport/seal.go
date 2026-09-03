@@ -190,18 +190,41 @@ func sealOnce(req sealRequest) (sealResult, error) {
 }
 
 func renderStoredValue(sealed sealedBearer, req sealRequest) ([]byte, error) {
+	faithful, err := json.Marshal(sealed)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling the sealed envelope: %w", err)
+	}
+	mutation := req.tamper
 	if req.unreadable {
+		mutation = corruptUnreadable
+	}
+	if mutation == mutationNone {
+		return faithful, nil
+	}
+	return mutateStoredValue(faithful, mutation)
+}
+
+func mutateStoredValue(faithful []byte, mutation string) ([]byte, error) {
+	sealed, err := parseSealed(faithful)
+	if err != nil {
+		return nil, fmt.Errorf("the envelope to mutate must parse faithfully first: %w", err)
+	}
+	switch mutation {
+	case corruptUnreadable:
 		return json.Marshal(map[string]any{
 			"nonce":      sealed.Nonce,
 			"ciphertext": sealed.Ciphertext,
 			"evil":       true,
 		})
+	case tamperCiphertext, tamperNonce:
+		tampered, err := applyTamper(sealed, mutation)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(tampered)
+	default:
+		return nil, fmt.Errorf("unknown mutation %q", mutation)
 	}
-	tampered, err := applyTamper(sealed, req.tamper)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(tampered)
 }
 
 func applyTamper(sealed sealedBearer, tamper string) (sealedBearer, error) {

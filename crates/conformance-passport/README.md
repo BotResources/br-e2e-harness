@@ -73,7 +73,11 @@ Two roles, never conflated:
   writes it **verbatim** through the `br-test-harness` `pl_put_raw` seam. Rust parses
   only the vector file's own JSON envelope; it never parses, builds, or mutates a
   *sealed* envelope. The adversarial cases (wrong key, flipped ciphertext, flipped
-  nonce, unknown field) are **pre-generated entries**, not Rust byte-flipping.
+  nonce, unknown field) are **pre-generated entries**, not Rust byte-flipping. Each
+  corrupt entry — every entry whose `corruption` is not `none` — is a **controlled
+  twin**: the Go anchor builds it from the exact sealed bytes of its faithful entry
+  and applies only the declared mutation. `wrong-key` is not a corrupt entry: it is a
+  faithful seal under another key, and it has no twin (see P6).
 - **Decoding** the returned `X-Passport` is `PassportHeader::from_header(&str)`
   into the real `br_core_auth::Passport`. Deserialization succeeding **is** the
   wire-shape check — `Passport` is `#[serde(deny_unknown_fields)]`, so a stale
@@ -86,10 +90,19 @@ CI job, so anchor drift or a hand edit of the JSON fails CI. Because the seal is
 a dev-time generator and never runs during a conformance run, the **subject under
 test only serves** — no consuming binary has to ship a way to forge a credential.
 
-One lib-oracle cross-check runs at parse time: every `kv_key` in the file must end
-in `br_core_auth::bearer_token_key(<token>)`, so the digest derivation stays pinned
-to the real lib and a bare digest with no prefix is rejected. The prefix is the
-anchor's.
+Two cross-checks run at parse time, so an unusable file panics before any scenario.
+First, the lib oracle: every `kv_key` in the file must end in
+`br_core_auth::bearer_token_key(<token>)`, so the digest derivation stays pinned to
+the real lib and a bare digest with no prefix is rejected — the prefix is the
+anchor's. Second, the twin rule, applied to **every** entry: a vector may declare a
+`corruption` only if the twin table names it as the corrupt half of a pair (and a
+corrupt half may not declare `none` or another pair's mutation), and each corrupt
+vector must then be its faithful vector's envelope with exactly the declared
+mutation — **byte 0 xor `0xff`** in the named field with the other field
+byte-identical, or the same envelope plus one unknown key. A pair that drifted apart
+(another nonce, a flip away from byte 0, a partial flip, a re-seal, a split
+identity), a corrupt vector smuggled in outside the table, or an unknown `corruption`
+label is rejected here, so `run_corrupted_envelope` proves what it claims.
 
 > **The Rust-side interop guard belongs where the Rust seal lives.** Opening a
 > Go-produced vector through `br_auth_contract::open` proves Rust↔Go interop, and it
@@ -114,10 +127,10 @@ runs last**, whatever its number:
 | **P3** | A bearer that was **never seeded** resolves to **200, no `X-Passport`**. |
 | **P4** | A request with **no `Authorization`** resolves to **200, no `X-Passport`**. |
 | **P5** | Two distinct sealed entries (distinct `user_id` + `token_id`) resolve, **each to its own passport**, no cross-talk. |
-| **P6** | The `wrong-key` vector — the same cleartext sealed under a **different 32-byte key** — is stored, and the subject (correct key) AEAD-open fails → **anonymous**, never a wrong identity. The value is asserted **present** in the bucket first, so the anonymity is an open failure and not a missing key. |
-| **P7** | A bearer that **resolved** is then replaced, at its own KV key, by the `tampered-ciphertext-corrupt` vector: the same identity **re-sealed under a fresh nonce with byte 0 of the ciphertext flipped**. The AEAD tag fails → **anonymous**. The before/after at one key is what makes the corruption the only difference. |
-| **P10** | Same shape as P7 with the `tampered-nonce-corrupt` vector: **re-sealed under a fresh nonce whose byte 0 is then flipped**, so the carried nonce no longer matches the tag → **anonymous**. |
-| **P9** | A bearer that **resolved** is then replaced, at its own KV key, by the `unreadable-corrupt` vector: a genuine, **openable** seal plus one unknown field. The strict parse rejects it **before** the AEAD → **anonymous**. `vectors_test.go` proves it would open without that field, so the parse is the only thing failing. |
+| **P6** | The `wrong-key` vector — its own identity, sealed under a **different 32-byte key** — is stored, and the subject (correct key) AEAD-open fails → **anonymous**, never a wrong identity. It is the **one negative vector with no twin**: a KV key holds a single value, so an entry sealed under the wrong key cannot also be the faithful entry that resolves at that key. Its guarantee therefore rests on a `pl_get_raw` **presence** assertion — the value is proven in the bucket before the endpoint is called, so the anonymity is an open failure and not a missing key — not on a prior resolution. |
+| **P7** | A bearer that **resolved** is then replaced, at its own KV key, by the `tampered-ciphertext-corrupt` vector: the **exact envelope that just resolved** — same nonce, same ciphertext — with **byte 0 of the ciphertext flipped**, and nothing else. The AEAD tag fails → **anonymous**. The proven-resolving twin is what makes the flip the only difference. |
+| **P10** | Same shape as P7 with the `tampered-nonce-corrupt` vector: the exact resolving envelope with **byte 0 of its nonce flipped**, so the carried nonce no longer matches the tag → **anonymous**. |
+| **P9** | A bearer that **resolved** is then replaced, at its own KV key, by the `unreadable-corrupt` vector: the exact resolving envelope **plus one unknown field**, byte-identical otherwise. The strict parse rejects it **before** the AEAD → **anonymous**. `vectors_test.go` proves it would open without that field, so the parse is the only thing failing. |
 | **P8** | With the `PUBLISHED_LANGUAGE` bucket **destroyed** under the live subject, resolution **fails loud** — a **5xx** *or* the resolver becoming **unreachable** (transport error) — never a silent **200** (anonymous or resolved). A pre-deletion health guard first confirms the subject resolves the seed, so a later unreachability is attributable to the infra loss alone. Destructive → `run_spawn` always runs it **last**. |
 | **G4** | A `Passport` carrying a `scopes` claim survives the `X-Passport` base64 round-trip identically, and the typed-scopes API holds (`scopes()` / `has_scope` / absent = empty / malformed skipped). |
 

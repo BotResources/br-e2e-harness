@@ -41,7 +41,7 @@ pub async fn run_tampered_ciphertext(ctx: &CheckContext<'_>) -> CheckOutcome {
     run_corrupted_envelope(
         ctx,
         CheckId::TamperedEnvelopeFailsClosed,
-        "a bearer that resolved, then replaced at its own key by a re-seal with byte 0 of the ciphertext flipped, resolves to anonymous (200)",
+        "a bearer that resolved, then replaced at its own key by that exact envelope with byte 0 of its ciphertext flipped, resolves to anonymous (200)",
         Vector::TamperedCiphertextFaithful,
         Vector::TamperedCiphertextCorrupt,
         "the subject opened a flipped ciphertext — the AEAD tag must fail closed to anonymous",
@@ -53,7 +53,7 @@ pub async fn run_tampered_nonce(ctx: &CheckContext<'_>) -> CheckOutcome {
     run_corrupted_envelope(
         ctx,
         CheckId::TamperedNonceFailsClosed,
-        "a bearer that resolved, then replaced at its own key by a re-seal with byte 0 of the nonce flipped, resolves to anonymous (200)",
+        "a bearer that resolved, then replaced at its own key by that exact envelope with byte 0 of its nonce flipped, resolves to anonymous (200)",
         Vector::TamperedNonceFaithful,
         Vector::TamperedNonceCorrupt,
         "the subject opened an envelope whose nonce no longer matches the tag — the AEAD must fail closed to anonymous",
@@ -65,7 +65,7 @@ pub async fn run_unreadable_envelope(ctx: &CheckContext<'_>) -> CheckOutcome {
     run_corrupted_envelope(
         ctx,
         CheckId::UnreadableEnvelopeFailsClosed,
-        "a bearer that resolved, then replaced at its own key by an envelope carrying an unknown field, resolves to anonymous (200)",
+        "a bearer that resolved, then replaced at its own key by that exact envelope plus one unknown field, resolves to anonymous (200)",
         Vector::UnreadableFaithful,
         Vector::UnreadableCorrupt,
         "the subject accepted an envelope carrying an unknown field — the parse must fail closed to anonymous",
@@ -89,7 +89,7 @@ async fn run_corrupted_envelope(
                 id,
                 expected,
                 "the faithful vector already resolved to anonymous",
-                "the corruption must be the only difference — a seed that never resolved proves nothing",
+                "the declared mutation must be the only difference — a seed that never resolved proves nothing",
             );
         }
         Err(e) => {

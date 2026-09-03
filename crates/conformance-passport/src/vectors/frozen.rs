@@ -6,8 +6,9 @@ use br_util_nats_fabric::KvKey;
 use uuid::Uuid;
 
 use super::catalogue::Vector;
+use super::mutation::{Mutation, corruption_from_wire};
 
-const FROZEN: &str = include_str!("../../vectors/passport-wire-v1.json");
+pub(super) const FROZEN: &str = include_str!("../../vectors/passport-wire-v1.json");
 
 const WIRE_VERSION: u64 = 1;
 
@@ -19,6 +20,7 @@ pub struct WireVector {
     pub actor_id: Uuid,
     pub token_id: Uuid,
     pub value: Vec<u8>,
+    pub(crate) corruption: Option<Mutation>,
 }
 
 #[derive(Debug)]
@@ -62,7 +64,7 @@ pub fn seal_key_b64() -> String {
     frozen_wire().seal_key_b64().to_string()
 }
 
-fn parse(raw: &str) -> std::result::Result<FrozenWire, String> {
+pub(super) fn parse(raw: &str) -> std::result::Result<FrozenWire, String> {
     let root: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| format!("the vector file is not JSON: {e}"))?;
     match root.get("version").and_then(serde_json::Value::as_u64) {
@@ -87,6 +89,7 @@ fn parse(raw: &str) -> std::result::Result<FrozenWire, String> {
     for entry in entries {
         vectors.push(parse_vector(entry)?);
     }
+    super::twins::assert_every_corrupt_vector_is_a_controlled_twin(&vectors)?;
     Ok(FrozenWire {
         seal_key_b64,
         vectors,
@@ -105,6 +108,8 @@ fn parse_vector(entry: &serde_json::Value) -> std::result::Result<WireVector, St
     let value = STANDARD
         .decode(string_at(entry, "value_b64")?)
         .map_err(|e| format!("vector {name}: value_b64 is not base64-std: {e}"))?;
+    let corruption = corruption_from_wire(&string_at(entry, "corruption")?)
+        .map_err(|detail| format!("vector {name}: {detail}"))?;
     Ok(WireVector {
         name,
         token,
@@ -112,6 +117,7 @@ fn parse_vector(entry: &serde_json::Value) -> std::result::Result<WireVector, St
         actor_id,
         token_id,
         value,
+        corruption,
     })
 }
 
@@ -191,25 +197,6 @@ mod tests {
             );
         }
         assert_eq!(declared.len(), frozen_wire().names().len());
-    }
-
-    #[test]
-    fn resolved_then_corrupted_pairs_share_one_key_and_differ_in_bytes() {
-        let pairs = [
-            (
-                Vector::TamperedCiphertextFaithful,
-                Vector::TamperedCiphertextCorrupt,
-            ),
-            (Vector::TamperedNonceFaithful, Vector::TamperedNonceCorrupt),
-            (Vector::UnreadableFaithful, Vector::UnreadableCorrupt),
-        ];
-        for (faithful, corrupt) in pairs {
-            let faithful = frozen_wire().get(faithful);
-            let corrupt = frozen_wire().get(corrupt);
-            assert_eq!(faithful.kv_key, corrupt.kv_key);
-            assert_eq!(faithful.token, corrupt.token);
-            assert_ne!(faithful.value, corrupt.value);
-        }
     }
 
     #[test]
