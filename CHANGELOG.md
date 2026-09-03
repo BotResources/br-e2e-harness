@@ -30,20 +30,29 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
-- **`SseSubscription::expect_silence` now panics when the server closed the
-  stream** — a closed stream is not silence. This is the one deliberate
-  behaviour change: because a timeout and a stream end were both `None`, every
-  `expect_silence` (and every drain-to-quiet loop) on a subscription the service
-  had hung up on passed **vacuously**. A suite that newly fails after this bump
-  is a false pass surfacing, not a regression.
+**Two deliberate behaviour changes. A suite that newly fails is a false pass
+surfacing, not a regression.**
+
+1. **`SseSubscription::expect_silence` now panics when the server closed the
+   stream** — the deliberate *semantic* change: a closed stream is not silence.
+   In 1.1.3 a quiet window and a stream end were the same `next_event() -> None`,
+   so every `expect_silence` (and every drain-to-quiet loop) on a subscription
+   the service had hung up on passed **vacuously** — a test that asserted
+   nothing now fails.
+2. **A block left unterminated when the stream ends now fails loud.** The reader
+   frames on `\n\n` **only**, so anything still buffered when the server hangs
+   up is a truncated push — and a CRLF-framed (`\r\n\r\n`) body, though legal
+   SSE, is *entirely* residual because the splitter never cuts it. In 1.1.3 both
+   vanished into a `next_event() -> None` a scenario read as silence.
+   `next_outcome` panics naming the residual bytes instead. Deliberately **not**
+   CRLF support: the harness refuses to certify a silence it did not observe
+   rather than guess at a framing it does not implement.
+
+Non-behavioural, text only:
+
 - `expect_event` / `expect_event_on` panic messages name the outcome they got
   (`got Timeout: …` / `got Closed: …`) instead of `got none`. Observable only to
   a consumer asserting on the old text (`#[should_panic(expected = "got none")]`).
-- **A block left unterminated when the stream ends now fails loud.** The harness
-  frames on `\n\n` only; a body that ends mid-block, or a CRLF-framed
-  (`\r\n\r\n`) stream, was dropped silently and reported as a clean `Closed`.
-  `next_outcome` panics naming the residual bytes instead — a truncated push is
-  a defect, not a quiet stream.
 
 ## 1.1.3 - 2026-07-23
 
