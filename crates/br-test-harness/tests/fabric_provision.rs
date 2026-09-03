@@ -5,7 +5,9 @@ mod fabric_support;
 use std::time::Duration;
 
 use br_scope_declaration_contract::{accepted_event_coords, declare_command_coords};
-use br_test_harness::{DurableConfig, FabricTestNats, FixedStream, wait_until};
+use br_test_harness::{
+    DurableConfig, FabricTestNats, FixedStream, TapOutcome, TapStop, wait_until,
+};
 use br_util_nats_fabric::event_subject;
 use fabric_support::{command, event};
 
@@ -32,9 +34,14 @@ async fn a_finite_delivery_budget_stops_redelivering_once_exhausted() {
         .expect("publish the command the budgeted durable will keep redelivering");
 
     let mut tap = harness.tap_durable(FixedStream::Cmd, &durable).await;
-    let deliveries = tap.deliveries_within(Duration::from_secs(3), 5).await;
+    let (deliveries, stop) = tap.deliveries_within(Duration::from_secs(3), 5).await;
     tap.close();
 
+    assert_eq!(
+        stop,
+        TapStop::Timeout,
+        "the tap must still hold a live consumer when the redeliveries stop, or the absence of a third delivery proves nothing"
+    );
     assert_eq!(
         deliveries
             .iter()
@@ -96,9 +103,8 @@ async fn the_counters_move_from_pending_to_delivered() {
     );
 
     let mut tap = harness.tap_durable(FixedStream::Cmd, &durable).await;
-    tap.next_within(Duration::from_secs(3))
-        .await
-        .expect("the tap must pull the first command");
+    tap.expect_delivery("the first command", Duration::from_secs(3))
+        .await;
 
     assert!(
         wait_until(Duration::from_secs(3), || async {
@@ -144,9 +150,8 @@ async fn an_event_durable_taps_the_coordinate_it_was_provisioned_with() {
 
     let mut tap = harness.tap_durable(FixedStream::Evt, &durable).await;
     let delivery = tap
-        .next_within(Duration::from_secs(3))
-        .await
-        .expect("the event tap must pull the published event");
+        .expect_delivery("the published event", Duration::from_secs(3))
+        .await;
     tap.close();
 
     assert_eq!(delivery.subject, event_subject(&coords));
@@ -163,5 +168,39 @@ async fn an_event_durable_taps_the_coordinate_it_was_provisioned_with() {
         "a first delivery is not a redelivery"
     );
 
+    harness.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_tap_that_lost_its_consumer_reads_as_closed_never_as_quiet() {
+    let harness = FabricTestNats::start().await;
+    let coords = declare_command_coords().expect("declare command coords");
+    let durable = harness.durable("vanishing");
+    harness.provision_command_durable(&coords, &durable).await;
+
+    let mut tap = harness.tap_durable(FixedStream::Cmd, &durable).await;
+    assert_eq!(
+        tap.next_within(Duration::from_millis(500)).await,
+        TapOutcome::Timeout,
+        "a live tap on an empty coordinate is quiet"
+    );
+
+    harness.delete_durable(FixedStream::Cmd, &durable).await;
+
+    assert_eq!(
+        tap.next_within(Duration::from_secs(5)).await,
+        TapOutcome::Closed,
+        "a tap whose durable was deleted has stopped observing and must not read as quiet"
+    );
+    let (deliveries, stop) = tap.deliveries_within(Duration::from_secs(1), 5).await;
+    assert!(deliveries.is_empty());
+    assert_eq!(
+        stop,
+        TapStop::Closed,
+        "a collection loop on a dead tap reports Closed, never a successful exhaustion"
+    );
+
+    tap.close();
     harness.shutdown().await;
 }

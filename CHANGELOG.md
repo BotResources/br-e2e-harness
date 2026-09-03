@@ -32,10 +32,21 @@ single git tag `v{version}` releases the set. Format follows
   unchanged.
 - **`tap_durable(FixedStream, durable) -> DurableTap`** — pulls from an
   already-provisioned durable and **never acks**, so a frame redelivers until its
-  budget is exhausted; `next_within(timeout) -> Option<TappedDelivery { subject,
-  payload, delivered_count }>`, `deliveries_within(timeout, cap)`, `close()`. It
-  exists because every lib `ensure_*` / `run_*` path create-or-updates the durable
-  back to the lib's config, erasing the budget under test.
+  budget is exhausted. It exists because every lib `ensure_*` / `run_*` path
+  create-or-updates the durable back to the lib's config, erasing the budget
+  under test. The tap says **why** it went quiet:
+  `next_within(timeout) -> TapOutcome::{ Delivery(TappedDelivery { subject,
+  payload, delivered_count }), Timeout, Closed }` — only `Timeout` is "the
+  observer is alive and saw nothing", while a deleted durable or an ended pull
+  stream reads as `Closed`; any other pull-stream error panics naming the
+  durable, since it is neither. `deliveries_within(timeout, cap) ->
+  (Vec<TappedDelivery>, TapStop::{ Limit, Timeout, Closed })` reports the stop
+  reason, so an exhaustion assertion proves the redeliveries stopped **while the
+  tap still observed** instead of certifying the loss of its own observer.
+  `expect_delivery(what, timeout)` / `expect_quiet(what, quiet)` are the
+  panicking forms (`expect_quiet` rejects `Closed`), `close()` drops the pull
+  stream, and `delete_durable(FixedStream, durable)` tears the consumer away so a
+  suite can prove the tap detects it.
 - **Typed read-only counters.** `consumer_pending(FixedStream, durable)`,
   `consumer_delivered(FixedStream, durable)`,
   `consumer_redelivered(FixedStream, durable)` (deliveries past the first),
