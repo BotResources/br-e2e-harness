@@ -31,9 +31,9 @@ pub async fn assert_widened_durable_converges(harness: &FabricTestNats, marker: 
     let coords = sample_event_coords();
     harness
         .fabric()
-        .verify_event_durable(&coords, &marker.durable)
+        .ensure_event_durable(&coords, &marker.durable)
         .await
-        .expect("create-or-bind converges a widened durable back to the coordinate filter");
+        .expect("ensure_event_durable converges a widened durable back to the coordinate filter");
 
     let filters = harness
         .durable_filter_subjects(marker.stream, &marker.durable)
@@ -52,6 +52,35 @@ pub async fn assert_widened_durable_converges(harness: &FabricTestNats, marker: 
 pub async fn assert_missing_stream_fails_loud(bare: &BareFabricNats) -> FabricError {
     let coords = sample_event_coords();
     let err = bare.assert_missing_stream(&coords, "any-durable").await;
+    assert_no_stream(&err, "the coverage probe");
+    err
+}
+
+pub async fn assert_missing_stream_fails_loud_on_bind(bare: &BareFabricNats) -> FabricError {
+    let coords = sample_event_coords();
+    let err = bare
+        .assert_missing_stream_on_bind(&coords, "any-durable")
+        .await;
+    assert_no_stream(&err, "the event durable bind");
+    assert!(
+        bare.event_stream_absent().await,
+        "the failed bind must not have created the fixed event stream"
+    );
+
+    let command = sample_command_coords();
+    let command_err = bare
+        .assert_missing_command_stream_on_bind(&command, "any-durable")
+        .await;
+    assert_no_stream(&command_err, "the command durable bind");
+    assert!(
+        bare.command_stream_absent().await,
+        "the failed bind must not have created the fixed command stream"
+    );
+
+    err
+}
+
+fn assert_no_stream(err: &FabricError, what: &str) {
     assert!(
         matches!(
             err,
@@ -60,9 +89,8 @@ pub async fn assert_missing_stream_fails_loud(bare: &BareFabricNats) -> FabricEr
                 ..
             }
         ),
-        "expected Consume(NoStream), got {err:?}"
+        "{what} must fail with Consume(NoStream), got {err:?}"
     );
-    err
 }
 
 pub async fn assert_dead_grammar_fails_loud(
@@ -91,6 +119,15 @@ pub async fn assert_no_fixed_stream_captured(
         );
     }
     Ok(())
+}
+
+fn sample_command_coords() -> CommandCoords {
+    CommandCoords {
+        receiver: Bc::new("identity").expect("valid bc"),
+        aggregate: Aggregate::new("service_scope").expect("valid aggregate"),
+        verb: Verb::new("declare").expect("valid verb"),
+        version: 1,
+    }
 }
 
 fn sample_event_coords() -> EventCoords {
