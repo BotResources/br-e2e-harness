@@ -7,6 +7,53 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`SseOutcome` — the SSE handle says why it went quiet.**
+  `SseSubscription::next_outcome(timeout) -> SseOutcome::{ Event(Value), Timeout, Closed }`
+  splits the two cases `next_event` collapsed into a single `None`: a server that
+  ended the stream now reads as `Closed`, a stream held open with nothing to say
+  as `Timeout`. `next_event` is unchanged (`Event(v) => Some(v)`, otherwise
+  `None`), so every existing suite compiles as-is and migrates on its own
+  schedule.
+- **`SseSubscription::drain_outcome(max, timeout) -> (usize, DrainStop)`** — the
+  drain reports why it stopped (`DrainStop::{ Limit, Timeout, Closed }`);
+  `drain(max, timeout) -> usize` keeps its signature and delegates.
+- **`SseSubscription::with_logs(&SpawnedProcess)`** — opt-in attachment of the
+  spawned service's captured output. When attached, a `Closed` panic from
+  `expect_event` / `expect_event_on` / `expect_silence` carries the last 80 lines
+  of the service log, so "the server closed the subscription" arrives with the
+  reason the service printed — read **at panic time**, so a line the service
+  prints after the attach still lands in the message. `Timeout` carries the tail
+  too ("alive but pushed nothing" is the frequent diagnosis). Unattached, the
+  panic still names the outcome.
+
+### Changed
+
+**Two deliberate behaviour changes. A suite that newly fails is a false pass
+surfacing, not a regression.**
+
+1. **`SseSubscription::expect_silence` now panics when the server closed the
+   stream** — the deliberate *semantic* change: a closed stream is not silence.
+   In 1.1.3 a quiet window and a stream end were the same `next_event() -> None`,
+   so every `expect_silence` (and every drain-to-quiet loop) on a subscription
+   the service had hung up on passed **vacuously** — a test that asserted
+   nothing now fails.
+2. **A block left unterminated when the stream ends now fails loud.** The reader
+   frames on `\n\n` **only**, so anything still buffered when the server hangs
+   up is a truncated push — and a CRLF-framed (`\r\n\r\n`) body, though legal
+   SSE, is *entirely* residual because the splitter never cuts it. In 1.1.3 both
+   vanished into a `next_event() -> None` a scenario read as silence.
+   `next_outcome` panics naming the residual bytes instead. Deliberately **not**
+   CRLF support: the harness refuses to certify a silence it did not observe
+   rather than guess at a framing it does not implement.
+
+Non-behavioural, text only:
+
+- `expect_event` / `expect_event_on` panic messages name the outcome they got
+  (`got Timeout: …` / `got Closed: …`) instead of `got none`. Observable only to
+  a consumer asserting on the old text (`#[should_panic(expected = "got none")]`).
+
 ## 1.1.3 - 2026-07-23
 
 ### Changed
