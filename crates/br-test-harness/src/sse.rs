@@ -1,4 +1,8 @@
+mod outcome;
+mod parse;
+
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use br_core_auth::{Passport, PassportHeader};
@@ -6,9 +10,18 @@ use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 
+use crate::spawned_process::SpawnedProcess;
+use parse::{event_field, parse_block, take_block};
+
+pub use outcome::{DrainStop, SseOutcome};
+
+const LOG_TAIL_LINES: usize = 80;
+
 pub struct SseSubscription {
     stream: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
     buffer: String,
+    closed: bool,
+    logs: Option<Arc<Mutex<String>>>,
 }
 
 impl SseSubscription {
@@ -34,37 +47,71 @@ impl SseSubscription {
         Self {
             stream: Box::pin(resp.bytes_stream()),
             buffer: String::new(),
+            closed: false,
+            logs: None,
         }
     }
 
-    pub async fn next_event(&mut self, timeout: Duration) -> Option<Value> {
+    #[must_use]
+    pub fn with_logs(mut self, process: &SpawnedProcess) -> Self {
+        self.logs = Some(process.logs_handle());
+        self
+    }
+
+    pub async fn next_outcome(&mut self, timeout: Duration) -> SseOutcome {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            if let Some(block) = self.take_block() {
-                if let Some(data) = Self::parse_block(&block) {
-                    return Some(data);
+            if let Some(block) = take_block(&mut self.buffer) {
+                if let Some(data) = parse_block(&block) {
+                    return SseOutcome::Event(data);
                 }
                 continue;
+            }
+            if self.closed {
+                assert!(
+                    self.buffer.trim().is_empty(),
+                    "subscription stream closed with an unterminated block: {:?}{}",
+                    self.buffer,
+                    self.log_tail()
+                );
+                return SseOutcome::Closed;
             }
 
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return None;
+                return SseOutcome::Timeout;
             }
             match tokio::time::timeout(remaining, self.stream.next()).await {
                 Ok(Some(Ok(bytes))) => {
                     self.buffer.push_str(&String::from_utf8_lossy(&bytes));
                 }
                 Ok(Some(Err(e))) => panic!("subscription stream errored: {e}"),
-                Ok(None) | Err(_) => return None,
+                Ok(None) => self.closed = true,
+                Err(_) => return SseOutcome::Timeout,
             }
         }
     }
 
+    pub async fn next_event(&mut self, timeout: Duration) -> Option<Value> {
+        match self.next_outcome(timeout).await {
+            SseOutcome::Event(data) => Some(data),
+            SseOutcome::Timeout | SseOutcome::Closed => None,
+        }
+    }
+
     pub async fn expect_event(&mut self, what: &str, timeout: Duration) -> Value {
-        self.next_event(timeout)
-            .await
-            .unwrap_or_else(|| panic!("expected subscription event ({what}), got none"))
+        let outcome = self.next_outcome(timeout).await;
+        match outcome {
+            SseOutcome::Event(data) => data,
+            SseOutcome::Timeout => panic!(
+                "expected subscription event ({what}), got Timeout: nothing arrived within {timeout:?}{}",
+                self.log_tail()
+            ),
+            SseOutcome::Closed => panic!(
+                "expected subscription event ({what}), got Closed: the server closed the stream{}",
+                self.log_tail()
+            ),
+        }
     }
 
     pub async fn expect_event_on(&mut self, field: &str, timeout: Duration) -> Value {
@@ -73,96 +120,45 @@ impl SseSubscription {
     }
 
     pub async fn expect_silence(&mut self, what: &str, quiet: Duration) {
-        if let Some(event) = self.next_event(quiet).await {
-            panic!("expected no subscription event ({what}), got: {event}");
+        let outcome = self.next_outcome(quiet).await;
+        match outcome {
+            SseOutcome::Timeout => {}
+            SseOutcome::Event(event) => {
+                panic!("expected no subscription event ({what}), got: {event}")
+            }
+            SseOutcome::Closed => panic!(
+                "expected no subscription event ({what}), got Closed: the server closed the stream, which is not silence{}",
+                self.log_tail()
+            ),
         }
     }
 
     pub async fn drain(&mut self, max: usize, timeout: Duration) -> usize {
+        self.drain_outcome(max, timeout).await.0
+    }
+
+    pub async fn drain_outcome(&mut self, max: usize, timeout: Duration) -> (usize, DrainStop) {
         let mut drained = 0;
-        while drained < max && self.next_event(timeout).await.is_some() {
-            drained += 1;
-        }
-        drained
-    }
-
-    fn take_block(&mut self) -> Option<String> {
-        let block_end = self.buffer.find("\n\n")?;
-        let block = self.buffer[..block_end].to_string();
-        self.buffer = self.buffer[block_end + 2..].to_string();
-        Some(block)
-    }
-
-    fn parse_block(block: &str) -> Option<Value> {
-        let mut event_type = None;
-        let mut data = None;
-        for line in block.lines() {
-            if let Some(val) = line.strip_prefix("event:") {
-                event_type = Some(val.trim().to_string());
-            } else if let Some(val) = line.strip_prefix("data:") {
-                data = Some(val.trim().to_string());
+        while drained < max {
+            match self.next_outcome(timeout).await {
+                SseOutcome::Event(_) => drained += 1,
+                SseOutcome::Timeout => return (drained, DrainStop::Timeout),
+                SseOutcome::Closed => return (drained, DrainStop::Closed),
             }
         }
-        if event_type.as_deref() != Some("next") {
-            return None;
-        }
-        let payload: Value = serde_json::from_str(&data?).ok()?;
-        if payload["errors"] != Value::Null {
-            panic!("subscription stream returned errors: {}", payload["errors"]);
-        }
-        let data = payload["data"].clone();
-        (data != Value::Null).then_some(data)
-    }
-}
-
-fn event_field(event: &Value, field: &str) -> Value {
-    let payload = &event[field];
-    if payload.is_null() {
-        panic!("expected subscription event to carry field '{field}', got: {event}");
-    }
-    payload.clone()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn parse_block_unwraps_data_on_a_next_frame() {
-        let block = "event: next\ndata: {\"data\":{\"charterProposalChanged\":{\"id\":\"p1\"}}}";
-        let data = SseSubscription::parse_block(block).expect("next frame yields data");
-        assert_eq!(data["charterProposalChanged"]["id"], "p1");
+        (drained, DrainStop::Limit)
     }
 
-    #[test]
-    fn parse_block_ignores_non_next_frames() {
-        assert!(SseSubscription::parse_block("event: complete\ndata: {}").is_none());
-        assert!(SseSubscription::parse_block(": keep-alive comment").is_none());
-    }
-
-    #[test]
-    fn parse_block_skips_a_null_data_payload() {
-        assert!(SseSubscription::parse_block("event: next\ndata: {\"data\":null}").is_none());
-    }
-
-    #[test]
-    #[should_panic(expected = "subscription stream returned errors")]
-    fn parse_block_fails_loud_on_an_errors_payload() {
-        SseSubscription::parse_block("event: next\ndata: {\"errors\":[{\"message\":\"boom\"}]}");
-    }
-
-    #[test]
-    fn event_field_pulls_the_named_subscription_root() {
-        let event = json!({ "charterProposalChanged": { "id": "p1", "revision": 1 } });
-        let pulled = event_field(&event, "charterProposalChanged");
-        assert_eq!(pulled["id"], "p1");
-        assert_eq!(pulled["revision"], 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "carry field 'missing'")]
-    fn event_field_fails_loud_when_the_named_root_is_absent() {
-        event_field(&json!({ "charterTenetChanged": {} }), "missing");
+    fn log_tail(&self) -> String {
+        let Some(logs) = self.logs.as_ref() else {
+            return String::new();
+        };
+        let captured = logs.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut tail: Vec<&str> = captured.lines().rev().take(LOG_TAIL_LINES).collect();
+        tail.reverse();
+        format!(
+            "\n--- service log tail (last {LOG_TAIL_LINES} lines) ---\n{}",
+            tail.join("\n")
+        )
     }
 }

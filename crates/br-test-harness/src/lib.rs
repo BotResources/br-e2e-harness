@@ -53,9 +53,9 @@ pub use passport::PassportBuilder;
 #[cfg(feature = "server")]
 pub use server::TestServer;
 #[cfg(feature = "sse")]
-pub use sse::SseSubscription;
+pub use sse::{DrainStop, SseOutcome, SseSubscription};
 #[cfg(feature = "ws")]
-pub use ws::WsSubscription;
+pub use ws::{WsCredential, WsError, WsSubscription};
 
 #[cfg(feature = "oidc")]
 pub use oidc_test_idp as oidc;
