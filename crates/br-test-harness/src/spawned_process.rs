@@ -131,6 +131,11 @@ impl SpawnedProcess {
         self.logs.lock().expect("logs mutex poisoned").clone()
     }
 
+    #[cfg(feature = "sse")]
+    pub(crate) fn logs_handle(&self) -> Arc<Mutex<String>> {
+        self.logs.clone()
+    }
+
     pub async fn shutdown(mut self) {
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
