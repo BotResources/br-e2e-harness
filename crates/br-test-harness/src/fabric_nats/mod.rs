@@ -5,7 +5,12 @@ mod connect;
 mod kv;
 mod namespace;
 mod negative;
+mod observe;
 mod provision;
+mod purge;
+mod raw_publish;
+mod tap;
+mod tuning;
 
 pub use bearer::{BEARER_BUCKET, BearerSeedError, BearerSeeder, SeededToken, unknown_bearer};
 pub use capture::{CapturedMessage, CommandAwaiter, CommandCapture, EventCapture, FabricAwaiter};
@@ -14,6 +19,9 @@ pub use connect::NatsBacking;
 pub use kv::FabricKvError;
 pub use namespace::RunNamespace;
 pub use negative::{BareFabricNats, WidenedDurable};
+pub use observe::FixedStream;
+pub use tap::{DurableTap, TappedDelivery};
+pub use tuning::DurableConfig;
 
 use std::collections::{BTreeMap, BTreeSet};
 
