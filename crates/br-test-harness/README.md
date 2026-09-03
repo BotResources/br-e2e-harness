@@ -357,8 +357,10 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   `.ephemeral_auth_present()` observes it.
 - **`.with_command_durable(&coords, name)` / `.with_event_durable(&coords, name)`**
   — a durable whose single filter is the rendered coord subject, namespaced
-  `{name}_{run_id}`; assert it with the lib's own
-  `fabric().verify_*_durable(&coords, &durable(name))`. (`provision_*_durable`
+  `{name}_{run_id}`; assert the filter with
+  `.durable_filter_subjects(stream, &durable(name))` (the lib's
+  `fabric().verify_*_durable` proves stream coverage only, never the durable).
+  (`provision_*_durable`
   take a **literal** durable name, bypassing the run namespace — the CLI path,
   where the name is deterministic across processes.)
 - **`.fabric()` / `.fabric_owned()` / `.url()`** — the live **typed** handles.
@@ -412,15 +414,17 @@ handle:
   `run_id` / `key_prefix`. Call it once per logical exchange and reuse the
   returned id across that exchange; do not expect two calls to match.
 
-**Negative-path helpers are first-class** — they prove the lib fails loud, never
-auto-provisions:
+**Negative-path helpers are first-class** — they prove the lib fails loud on
+absent infra and never widens a durable:
 
 - **`.with_widened_durable(stream, name, "integration.evt.>")`** returns a
-  `WidenedDurable` marker; feeding its `durable` to `verify_event_durable`
-  create-or-binds it and **narrows it back** to the exact coordinate filter
+  `WidenedDurable` marker; feeding its `durable` to `ensure_event_durable`
+  create-or-updates it and **narrows it back** to the exact coordinate filter
   (the anti-over-delivery guarantee), returning `Ok`. Read the effective filter
   back with **`.durable_filter_subjects(stream, durable) -> Vec<String>`** to prove
-  the widening was undone.
+  the widening was undone; **`.durable_filter_subjects_if_present(stream, durable)
+  -> Option<Vec<String>>`** is the non-panicking sibling for "does this durable
+  exist at all".
 - **`.assert_missing_stream(&coords, durable) -> FabricError`** binds against an
   absent fixed stream and returns the `Consume(NoStream)` it fails with;
   **`.publish_dead_subject(subject, bytes) -> PublishErrorKind`** is the one method
@@ -434,7 +438,7 @@ auto-provisions:
   bind against the absent stream fails with `FabricError::Consume`:
   `.assert_missing_stream(&event_coords, durable)` /
   `.assert_missing_command_stream(&command_coords, durable)` return that error
-  through the lib's own `verify_*_durable`, `.command_stream_absent()` proves the
+  through the lib's own `verify_*_durable` stream probe, `.command_stream_absent()` proves the
   command stream is genuinely absent, and `.published_language_absent()` proves the
   PL bucket is not silently created. `BareFabricNats` exposes **no** raw JetStream
   handle either.
@@ -479,7 +483,12 @@ fabric-nats print-subjects        --manifest <path.toml> [--run-id <id>]
 - `provision` attaches via `connect(url)`, get-or-creates the durables from coords
   + the PL and `bearer_tokens` buckets, prints the rendered subjects + durable names;
   idempotent.
-- `verify` binds only (`verify_*_durable`), creates nothing.
+- `verify` is **read-only and creates nothing** — not the streams, not the
+  durables: it attaches through `attach_without_provisioning`, then per manifest
+  entry checks (a) the fixed stream exists and its `subjects` cover the rendered
+  coordinate (the lib's `verify_*_durable`) and (b) the durable exists on that
+  stream filtering **exactly** that coordinate. Either miss exits **4** naming
+  the stream, the durable and the filter found; the `ok` line states both checks.
 - `print-subjects` renders coords → subjects with **no** NATS contact.
 - `--run-id` suffixes durables (`{durable}_{id}`) for the shared-NATS
   cross-process case; default is the literal manifest name.
@@ -619,6 +628,8 @@ here, synthetically:
 | `FabricTestNats` binds durables from typed coords, never a subject string | The hand-rolled `NatsEnv` it generalises wrote the declare subject as a `const &str`, so a drift in the lib's subject grammar slipped past the harness. Binding through `command_subject(&coords)` / `event_subject(&coords)` makes the durable's `filter_subjects` byte-identical to what the lib's `Fabric` binds at runtime — drift now breaks the bind, which is the point. |
 | `FabricTestNats::with_published_language()` is get-or-create, never wiped | The `PUBLISHED_LANGUAGE` bucket is **reconcile-no-wipe** state (the #73 fix): a directory consumer folds it and a wipe would replay-from-empty. It is created if absent and otherwise left exactly as found — unlike `recreate_*`, which delete-then-create per-scenario throwaway streams. |
 | `FabricTestNats` namespaces durables/keys; isolation is per-`SpawnedNats` **or** per-`connect(url)` serial group | Durable suffix + KV prefix + correlation isolate *non-competing* scenarios on one server. But the two **fixed** streams and the shared `PUBLISHED_LANGUAGE` bucket are frozen global names — two real competing consumers on one fixed stream race for the same messages, which no namespacing can fix. So a competing-consumer scenario is isolated by **process** — its own `start()` server — or, on a shared `connect(url)` NATS, by a `#[serial]` group. |
+| `verify` attaches through `attach_without_provisioning`, every other path through `connect(url)` | `connect(url)` get-or-creates the two fixed streams, which is right for `provision` and for a test that wants a usable fabric — but it would make `fabric-nats verify` create the very streams it claims to check, turning a missing-infra run into a silent pass. `attach_without_provisioning` binds the client and nothing else, so the verdict is about the NATS as found. |
+| `verify` re-checks the durable filter harness-side instead of trusting the lib probe | Since br-rust-common v1.3.0 `verify_*_durable` proves stream presence + subject coverage and **nothing else** — it creates no consumer and does not read one. On the fixed streams (`integration.cmd.>` / `integration.evt.>`) coverage is satisfied by construction, so the probe alone would report `ok` for a topology with no durables at all. The durable-filter read (`consumer_info` via `durable_filter_subjects_if_present`) is what makes the verdict mean something. |
 | `FabricTestNats::start()` *vs* `connect(url)`, and `shutdown()` only kills an `Owned` backing | `start()` owns a `SpawnedNats` (per-process isolation); `connect(url)` attaches to a shared CI/local NATS (the cross-process case the `fabric-nats` CLI drives). All provisioning is **get-or-create** so attaching to a NATS that already carries the fixed streams/bucket neither errors nor wipes — the structural #73 never-wipe fix. `shutdown()` tears down an `Owned` server but is a **no-op when `Attached`**: the harness never kills a NATS it did not start. |
 | Fabric get-or-create absorbs the create-already-exists race (#74) | `get` then `create` is a TOCTOU on a shared NATS: two processes both see "absent", both create, the loser would panic. Create now matches the **typed** JetStream code `ErrorCode::STREAM_NAME_EXIST` (10058) — for streams on the `CreateStreamErrorKind::JetStream` kind, for KV by walking the error source chain to the wrapped `CreateStreamError` — and treats it as success (re-`get`ting the KV handle). Typed code, not a string match, so it can't drift with a server message. Wipe-free is preserved: an existing object is reused, never recreated. |
 | `pl_put_raw` is the only raw-bytes KV write, and `publish_dead_subject` the only raw subject | The typed surface (`pl_publisher`/`pl_reader`, coord-driven durables) is drift-proof by construction. Two adversarial holes are kept deliberately and named loud: `pl_put_raw` injects a poison value to prove fail-closed decode, `publish_dead_subject` publishes to a hand-written subject to prove the dead grammar lands on no fixed stream. Both exist *to test the failure*, never as a convenient bypass. |
@@ -675,7 +686,7 @@ br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag 
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
 (its `test-support` feature, which ships `PassportBuilder`) pinned to
-`br-rust-common` `tag = "v1.2.0"`. A slim build that omits the
+`br-rust-common` `tag = "v1.3.0"`. A slim build that omits the
 passport-bearing features drops the dependency. If your service already pins
 `br-rust-common`, keep both on the **same ref** so Cargo resolves a single
 source (two refs of one git URL are two distinct sources and duplicate

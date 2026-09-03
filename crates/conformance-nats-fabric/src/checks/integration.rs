@@ -31,9 +31,9 @@ pub async fn assert_widened_durable_converges(harness: &FabricTestNats, marker: 
     let coords = sample_event_coords();
     harness
         .fabric()
-        .verify_event_durable(&coords, &marker.durable)
+        .ensure_event_durable(&coords, &marker.durable)
         .await
-        .expect("create-or-bind converges a widened durable back to the coordinate filter");
+        .expect("ensure_event_durable converges a widened durable back to the coordinate filter");
 
     let filters = harness
         .durable_filter_subjects(marker.stream, &marker.durable)

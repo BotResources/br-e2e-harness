@@ -7,6 +7,67 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Every `br-rust-common` pin moves from `v1.2.0` to `v1.3.0`** (25 declarations
+  across 5 workspace `Cargo.toml`, `{ tag, version }` both bumped; no
+  workspace-level pin introduced). `conformance-directory` C1–C5 therefore run
+  against 1.3.0's transactional directory sinks and the stager path, and the
+  whole tree resolves to a single br-rust-common source.
+
+- **`fabric-nats verify` is a genuine read-only check.** br-rust-common v1.3.0
+  turned `verify_command_durable` / `verify_event_durable` into a stream-coverage
+  probe that creates nothing, so the old `verify` would have printed
+  `ok cmd <durable>` for a NATS carrying no durable at all. It now checks, per
+  manifest entry, (a) the fixed stream exists and its `subjects` cover the
+  rendered coordinate (the lib probe, `Consume(NoStream)` / `SubjectNotCovered`)
+  **and** (b) the durable exists on that stream filtering **exactly** that
+  coordinate; either miss exits `4` naming the stream, the durable and the filter
+  found, and the `ok` line states both checks. It also attaches through the new
+  `FabricTestNats::attach_without_provisioning`, so `verify` no longer
+  get-or-creates the two fixed streams it is meant to be checking.
+
+- **The harness call sites that *assert* the anti-over-delivery narrow-back moved
+  to `ensure_event_durable`** (`conformance-nats-fabric`'s
+  `assert_widened_durable_converges` and the harness's own
+  `a_widened_durable_is_converged_back_to_the_exact_filter`): under 1.3.0 only
+  `ensure_*` converges a widened durable back to the coordinate filter. The
+  assertions are unchanged — they are the only black-box guard of that guarantee.
+  `start_provisions_the_two_fixed_streams_and_a_filter_identical_durable` keeps
+  `verify_command_durable` as the coverage probe and now proves the filter
+  identity through `durable_filter_subjects`. The two `BareFabricNats`
+  negative paths keep `verify_*` (the `Consume(NoStream)` fail-loud is unchanged)
+  with expect messages reworded to what they now prove.
+
+- Lockfile: `chacha20` `0.10.0` → `0.10.2` (the resolved version was yanked;
+  `cargo deny check` advisories were failing on it).
+
+### Added
+
+- **`FabricTestNats::attach_without_provisioning(url)`** — attaches to an
+  existing NATS without get-or-creating the two fixed streams, for a caller whose
+  job is to *observe* the topology rather than establish it.
+- **`FabricTestNats::durable_filter_subjects_if_present(stream, durable) ->
+  Option<Vec<String>>`** — the non-panicking sibling of
+  `durable_filter_subjects`, so "the durable is absent" is a value rather than a
+  panic.
+- `tests/fabric_nats_cli.rs` — real-infra coverage of the `verify` subcommand:
+  it fails loud without creating the fixed streams it probes, fails while the
+  durable is absent and passes once provisioned, and rejects a durable whose
+  filter is not the coordinate.
+
+### Removed (temporary)
+
+- `conformance-passport` is out of `[workspace] members` and its CI `infra-e2e`
+  step is dropped, per the 1.1.2 precedent: it bridges svc-auth's
+  `br-auth-contract` / `br-auth-identity-util` (tag `v1.0.4`, transitively
+  pinning br-rust-common **v1.2.0**) with the now-v1.3.0 workspace, and cargo
+  cannot unify two git tags of one package — the build fails on two
+  `br_core_kernel::Actor` / two `Fabric` types in the graph. The crate stays
+  in-tree with its pins untouched. It re-enters **in this same release** with
+  WP7, which drops its svc-auth crate pins in favour of the Go anchor on the seal
+  side and re-pins it on br-rust-common alone.
+
 ## 1.1.3 - 2026-07-23
 
 ### Changed

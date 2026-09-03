@@ -175,8 +175,10 @@ cargo test -p conformance-passport --test conformance -- --ignored --test-thread
 ## Install
 
 A **dev-dependency**, pinned to a release tag. Keep its `br-rust-common` pin
-identical to `br-test-harness`'s (`v1.2.0`) so Cargo resolves a single source of
-`br-core-*`:
+identical to `br-test-harness`'s so Cargo resolves a single source of
+`br-core-*`. The crate is **temporarily out of `[workspace] members`** while its
+own pins stay frozen on br-rust-common `v1.2.0` / svc-auth `v1.0.4` and the rest
+of the workspace moves to `v1.3.0`:
 
 ```toml
 [dev-dependencies]

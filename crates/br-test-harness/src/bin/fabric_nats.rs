@@ -1,7 +1,8 @@
+use std::future::Future;
 use std::process::ExitCode;
 
 use br_test_harness::{FabricTestNats, Manifest, ManifestError};
-use br_util_nats_fabric::FabricError;
+use br_util_nats_fabric::{FabricError, INTEGRATION_CMD, INTEGRATION_EVT};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -24,6 +25,9 @@ enum Command {
         #[arg(long)]
         run_id: Option<String>,
     },
+    #[command(
+        about = "Read-only check: each fixed stream covers its coordinate subject and carries the durable with exactly that filter. Creates nothing."
+    )]
     Verify {
         #[arg(long)]
         nats: String,
@@ -111,31 +115,82 @@ async fn provision(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(
 
 async fn verify(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
     let rendered = Manifest::parse(manifest)?.render(run_id)?;
-    let harness = connect(nats).await?;
+    let harness = attach_without_provisioning(nats).await?;
     let fabric = harness.fabric_owned();
     let mut result = Ok(());
     for command in &rendered.commands {
-        if let Err(e) = fabric
+        let coverage = fabric
             .verify_command_durable(&command.coords, &command.durable)
-            .await
-        {
-            result = result.and(Err(verify_exit(e, &command.durable)));
-        } else {
-            println!("ok cmd {} -> {}", command.durable, command.subject);
+            .await;
+        let checked = check_stream_and_durable(
+            &harness,
+            INTEGRATION_CMD,
+            &command.durable,
+            &command.subject,
+            coverage,
+        )
+        .await;
+        match checked {
+            Ok(()) => println!(
+                "ok cmd {} -> {} (stream covers the subject; durable filter is exactly it)",
+                command.durable, command.subject
+            ),
+            Err(e) => result = result.and(Err(e)),
         }
     }
     for event in &rendered.events {
-        if let Err(e) = fabric
+        let coverage = fabric
             .verify_event_durable(&event.coords, &event.durable)
-            .await
-        {
-            result = result.and(Err(verify_exit(e, &event.durable)));
-        } else {
-            println!("ok evt {} -> {}", event.durable, event.subject);
+            .await;
+        let checked = check_stream_and_durable(
+            &harness,
+            INTEGRATION_EVT,
+            &event.durable,
+            &event.subject,
+            coverage,
+        )
+        .await;
+        match checked {
+            Ok(()) => println!(
+                "ok evt {} -> {} (stream covers the subject; durable filter is exactly it)",
+                event.durable, event.subject
+            ),
+            Err(e) => result = result.and(Err(e)),
         }
     }
     harness.shutdown().await;
     result
+}
+
+async fn check_stream_and_durable(
+    harness: &FabricTestNats,
+    stream: &'static str,
+    durable: &str,
+    subject: &str,
+    coverage: Result<(), FabricError>,
+) -> Result<(), Exit> {
+    coverage.map_err(|e| Exit {
+        code: 4,
+        message: format!("{stream} does not cover '{subject}' (durable '{durable}'): {e}"),
+    })?;
+    match harness
+        .durable_filter_subjects_if_present(stream, durable)
+        .await
+    {
+        Some(filters) if filters == [subject] => Ok(()),
+        Some(filters) => Err(Exit {
+            code: 4,
+            message: format!(
+                "durable '{durable}' on {stream} filters {filters:?}, expected exactly [\"{subject}\"]"
+            ),
+        }),
+        None => Err(Exit {
+            code: 4,
+            message: format!(
+                "durable '{durable}' is absent from {stream} (expected filter '{subject}'); run `fabric-nats provision` first"
+            ),
+        }),
+    }
 }
 
 fn print_subjects(manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
@@ -157,20 +212,24 @@ fn print_subjects(manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
 
 async fn connect(nats: &str) -> Result<FabricTestNats, Exit> {
     let url = nats.to_string();
+    catch_connect_panic(nats, FabricTestNats::connect(&url)).await
+}
+
+async fn attach_without_provisioning(nats: &str) -> Result<FabricTestNats, Exit> {
+    let url = nats.to_string();
+    catch_connect_panic(nats, FabricTestNats::attach_without_provisioning(&url)).await
+}
+
+async fn catch_connect_panic(
+    nats: &str,
+    attempt: impl Future<Output = FabricTestNats>,
+) -> Result<FabricTestNats, Exit> {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    let attempt = std::panic::AssertUnwindSafe(FabricTestNats::connect(&url));
-    let result = futures_util::FutureExt::catch_unwind(attempt).await;
+    let result = futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(attempt)).await;
     std::panic::set_hook(previous);
     result.map_err(|_| Exit {
         code: 3,
         message: format!("failed to connect to NATS at {nats}"),
     })
-}
-
-fn verify_exit(err: FabricError, durable: &str) -> Exit {
-    Exit {
-        code: 4,
-        message: format!("verify mismatch on durable '{durable}': {err}"),
-    }
 }
