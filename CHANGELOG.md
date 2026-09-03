@@ -80,6 +80,24 @@ single git tag `v{version}` releases the set. Format follows
   (`a_missing_fixed_stream_fails_the_durable_bind_loud_and_provisions_nothing`)
   and a harness test, both asserting `Consume(NoStream)` **and** that the stream
   is still absent afterwards.
+- **`conformance-directory` C6 — the directory stager path, black-box**
+  (`stager_stages_in_the_projection_transaction`, `CheckId::ConsumerStagerTransaction`,
+  code `c6`). It registers a real `ImpactStager` that writes every
+  `Impact::ForeignChanged` into an **adopter-owned** `conformance_impacts`
+  table on the very `PgConnection` the sink hands it, over real NATS + real
+  Postgres, and pins five properties of br-rust-common v1.3.0's transactional
+  sink: (a) **atomicity** — a committed roster write and its impacts are durable
+  together, and the stager reads the still-uncommitted roster row through its own
+  `conn`; (b) **rollback** — a stager that refuses one key leaves that key's
+  `known_users` row exactly as it was, while a lower-ordered sibling key stays
+  converged and the refused value converges on the next accepting reconcile;
+  (c) the **impact set** of each roster write — a user upsert stages that user, a
+  group upsert that *adds* members stages the group only, one that *drops* a
+  member stages the group **plus** the removed member, and a user delete stages
+  that user **plus** every group it still belonged to; (d) a converged mirror
+  stages nothing; (e) a projector with **no** stager registered converges the
+  roster and stages nothing at all. `StagedImpact` and `IMPACT_TABLE` are exported
+  beside the check. Runs under the crate's existing `--test-threads=1` mode.
 - `tests/fabric_nats_cli.rs` — real-infra coverage of the `verify` subcommand:
   it fails loud without creating the fixed streams it probes or the KV bucket the
   manifest declares, reports every failing entry, fails while the durable is
@@ -135,8 +153,10 @@ Non-behavioural, text only:
   (`{ tag, version }` both bumped; no workspace-level pin introduced). The 3
   remaining declarations stay on `v1.2.0` in `conformance-passport`, which leaves
   the workspace in this release (see below) and keeps its pins frozen.
-  `conformance-directory` C1–C5 therefore run against 1.3.0's transactional
-  directory sinks and the stager path, and the workspace resolves to a single
+  `conformance-directory` C1–C5 therefore re-run against 1.3.0 on the
+  **no-stager** path — where a single-statement projection still runs on a pooled
+  connection, exactly as in 1.2.0 — and the new **C6** below covers the stager
+  path and the transactional sink. The workspace resolves to a single
   br-rust-common source.
 
 - **`fabric-nats verify` is a genuine read-only check.** br-rust-common v1.3.0
@@ -147,13 +167,10 @@ Non-behavioural, text only:
   rendered coordinate (the lib probe, `Consume(NoStream)` / `SubjectNotCovered`)
   **and** (b) the durable exists on that stream filtering **exactly** that
   coordinate; either miss exits `4` naming the stream, the durable and the filter
-  found, and the `ok` line states both checks. It also attaches through the new
-  `FabricTestNats::attach_without_provisioning`, so `verify` no longer
-  get-or-creates the two fixed streams it is meant to be checking. It now covers
-  the `[published_language]` / `[bearer_tokens]` manifest flags too (bucket
-  presence, read-only), reports **every** failing entry rather than only the
-  first, and discriminates an absent stream from an uncovered subject in the
-  message.
+  found, and the `ok` line states both checks. It now covers the
+  `[published_language]` / `[bearer_tokens]` manifest flags too (bucket presence,
+  read-only), reports **every** failing entry rather than only the first, and
+  discriminates an absent stream from an uncovered subject in the message.
 
 - **The harness call sites that *assert* the anti-over-delivery narrow-back moved
   to `ensure_event_durable`** (`conformance-nats-fabric`'s
@@ -170,6 +187,15 @@ Non-behavioural, text only:
 - Lockfile: `chacha20` `0.10.0` → `0.10.2` (the resolved version was yanked;
   `cargo deny check` advisories were failing on it).
 
+### Fixed
+
+- **`fabric-nats verify` no longer provisions the topology it is checking.** It
+  attaches through the new `FabricTestNats::attach_without_provisioning`, so the
+  subcommand stops get-or-creating the two fixed streams it exists to probe. This
+  was a 1.1.3 bug — `verify` attached through `FabricTestNats::connect`, which
+  get-or-creates the two fixed streams — not a consequence of the v1.3.0 re-pin;
+  the re-pin only made it visible by turning the durable probe read-only.
+
 ### Removed (temporary)
 
 - `conformance-passport` is out of `[workspace] members` and its CI `infra-e2e`
@@ -178,9 +204,14 @@ Non-behavioural, text only:
   pinning br-rust-common **v1.2.0**) with the now-v1.3.0 workspace, and cargo
   cannot unify two git tags of one package — the build fails on two
   `br_core_kernel::Actor` / two `Fabric` types in the graph. The crate stays
-  in-tree with its pins untouched. It re-enters **in this same release** with
-  WP7, which drops its svc-auth crate pins in favour of the Go anchor on the seal
-  side and re-pins it on br-rust-common alone.
+  in-tree with its pins untouched — but **untouched is also ungated**: a crate
+  outside `[workspace] members` is built by nothing, so `cargo fmt --check`,
+  `cargo clippy`, `cargo test`, `cargo doc`, the MSRV build and `cargo deny` all
+  stop seeing it. For the length of this release the crate is **fully ungated
+  in-tree** — nothing builds or lints it; only WP7's re-entry restores those
+  gates. It re-enters **in
+  this same release** with WP7, which drops its svc-auth crate pins in favour of
+  the Go anchor on the seal side and re-pins it on br-rust-common alone.
 
 ## 1.1.3 - 2026-07-23
 

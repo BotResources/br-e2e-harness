@@ -31,7 +31,7 @@ enum Command {
         run_id: Option<String>,
     },
     #[command(
-        about = "Read-only check: each fixed stream covers its coordinate subject and carries the durable with exactly that filter. Creates nothing."
+        about = "Read-only check: each fixed stream covers its coordinate subject and carries the durable with exactly that filter, and each declared KV bucket is present. Creates nothing."
     )]
     Verify {
         #[arg(long)]
