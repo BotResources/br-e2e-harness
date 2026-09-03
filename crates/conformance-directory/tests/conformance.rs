@@ -2,7 +2,7 @@ use conformance_directory::{
     CheckOutcome, build_and_emit, consumer_reads_groups, consumer_reads_users,
     extension_survives_projection, filter_flip_orphan_deletes, publisher_floor,
     publisher_groups_optional, reserved_key_rejected, run_wire_battery,
-    users_only_narrows_projection,
+    stager_stages_in_the_projection_transaction, users_only_narrows_projection,
 };
 
 fn assert_pass(outcome: &CheckOutcome) {
@@ -80,6 +80,17 @@ async fn c4_filter_flip_orphan_deletes() {
 async fn c5_users_only_narrows_projection() {
     let snapshot = build_and_emit().await.expect("anchor snapshot");
     assert_pass(&users_only_narrows_projection(&snapshot).await.expect("c5"));
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + a Postgres + `go` on PATH"]
+async fn c6_stager_stages_in_the_projection_transaction() {
+    let snapshot = build_and_emit().await.expect("anchor snapshot");
+    assert_pass(
+        &stager_stages_in_the_projection_transaction(&snapshot)
+            .await
+            .expect("c6"),
+    );
 }
 
 #[tokio::test]

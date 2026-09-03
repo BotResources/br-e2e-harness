@@ -11,6 +11,7 @@ pub mod provision;
 pub mod publish_fixture;
 pub mod publisher;
 pub mod source;
+pub mod stager;
 pub mod users_only;
 pub mod wire;
 
@@ -29,6 +30,7 @@ pub use pg::ConsumerDb;
 pub use publish_fixture::publish_snapshot;
 pub use publisher::{publisher_floor, publisher_groups_optional};
 pub use source::AnchorSource;
+pub use stager::{IMPACT_TABLE, StagedImpact, stager_stages_in_the_projection_transaction};
 pub use users_only::users_only_narrows_projection;
 pub use wire::{
     NEUTRAL_EXTENSION_KEY, deserialize_group, deserialize_meta, deserialize_user, run_wire_battery,

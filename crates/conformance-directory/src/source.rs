@@ -60,6 +60,10 @@ impl AnchorSource {
         self.users.insert(user_id, user);
     }
 
+    pub fn upsert_group(&mut self, group_id: Uuid, group: PublishedGroup) {
+        self.groups.insert(group_id, group);
+    }
+
     pub fn first_user(&self) -> Option<(Uuid, PublishedUser)> {
         self.users
             .iter()

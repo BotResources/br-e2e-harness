@@ -181,7 +181,7 @@ identically whether or not extensions are present.
 
 ## 6. Oracle — how the lib is guarded
 
-The conformance runner (`crates/conformance-directory`, the **W1–W5** wire gate)
+The conformance runner (`crates/conformance-directory`, the **W1–W6** wire gate)
 validates **only by deserialising the Go-frozen wire into the real
 `br-core-directory` types**:
 
@@ -244,7 +244,14 @@ infra:
   NATS KV + real Postgres. **All opt-in, none mandatory.** **C1:** reconcile-on-boot
   projects users into PG, `resolve_user` returns the carried fields, retracting a
   user orphan-deletes its row. **C2:** `is_member` / `group_name` resolve with
-  groups in `_meta`, and auto-degrade to empty under a users-only `_meta`.
+  groups in `_meta`, and auto-degrade to empty under a users-only `_meta`. **C3:** an
+  extracted extension survives the projection losslessly. **C4:** a user that flips
+  to failing `filter_users` is orphan-deleted on the next reconcile. **C5:** a
+  `UsersOnly` consumer reconciles and watches against a schema lacking the group
+  tables, emitting no group DML. **C6:** a registered `ImpactStager` runs on the
+  sink's own connection inside the roster transaction — impacts and roster write
+  commit or roll back together, and each write stages exactly the entities it
+  makes unnameable.
 
 ---
 
