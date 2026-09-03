@@ -468,22 +468,45 @@ absent infra and never widens a durable:
   binding by a placeholder (`integration.evt.__withheld__.>` /
   `integration.cmd.__withheld__.>`) so **every** coordinate on that stream fails;
   the other fixed stream is untouched.
-- **`DeliveryOutage`** is `#[must_use]`. `.restore()` puts the original
-  `subjects` back and fails loud if the broker refuses; there is **no `Drop`
-  net**, so a guard dropped without `restore()` leaves the stream narrowed for
-  the rest of the run — a test bug, not a recoverable state. `.stream()`,
-  `.withheld_subjects()` and `.live_subjects()` are the assertion surface.
+- **`DeliveryOutage`** is `#[must_use]`. `.restore()` puts the **pre-outage**
+  binding back (the one read at `withhold_*` time — *not* a pristine
+  `integration.evt.>`), so nested outages must be restored **LIFO**; it fails
+  loud if the broker refuses. There is **no `Drop` net**, so a guard dropped
+  without `restore()` leaves the stream narrowed for the rest of the run — a
+  test bug, not a recoverable state, and nothing repairs it (see the
+  parallel-safety warning below). The assertion surface: `.stream()`,
+  `.live_subjects()` (what the stream binds during the outage) and
+  `.withheld_subjects()` — the **one concrete coordinate** for
+  `withhold_*_subject`, the **previous binding patterns** (e.g.
+  `["integration.evt.>"]`) for `withhold_*_stream`.
 - **Misuse panics before the stream is touched:** withholding a coordinate the
-  stream does not currently carry (a second outage nested inside a first), or a
-  `keep` list containing the withheld coordinate. A durable bound *before* the
-  outage keeps its filter and receives again after `restore()`.
+  stream does not currently carry (reachable when a `withhold_*_subject` nests
+  inside another), the same coordinate in both `withheld` and `keep`, the same
+  coordinate twice in `keep` (the broker would reject it as duplicate subjects),
+  and a `withhold_*_stream` on a stream already bound to the placeholder. The
+  coverage check mirrors the lib's own `subject_covered` semantics: an inner `>`
+  is a literal token, `*` stands for exactly one token, and an empty pattern or
+  subject covers nothing.
+- **A durable is never touched** — it keeps its filter *and* its position across
+  the outage: a message stored before the narrowing is still stored during it and
+  is delivered after `restore()`, ahead of anything published since.
+- **⚠ The two fixed streams are GLOBAL, so an outage is not parallel-safe.**
+  A `DeliveryOutage` rewrites `INTEGRATION_CMD` / `INTEGRATION_EVT` themselves —
+  on a shared `connect(url)` broker it makes **every concurrent scenario's**
+  publishes fail, and because `get_or_create_fixed_stream` returns early when the
+  stream exists, a *lost* guard is never repaired for the rest of the run. Give a
+  scenario that withholds its **own `start()` server**, or serialize the whole
+  `connect(url)` group around it.
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
 suffix + KV prefix, both derived from the stable `run_id`), so independent
 scenarios coexist on one server — `start()` (own server) **or** `connect(url)`
 (a shared CI/local NATS) — without cross-talk, and **never** wipe the shared
 fixed streams or `PUBLISHED_LANGUAGE` bucket (all provisioning is get-or-create).
-The boundary it does **not** cross: the two **fixed** streams (`INTEGRATION_CMD`
+The one deliberate exception is `DeliveryOutage`, which *does* rewrite a fixed
+stream's binding for the duration of an outage — it never wipes, but it is
+global while it lasts, so a withholding scenario owns its server or its serial
+group (see the warning above). The boundary it does **not** cross: the two **fixed** streams (`INTEGRATION_CMD`
 / `INTEGRATION_EVT`) and the **shared** `PUBLISHED_LANGUAGE` bucket are global,
 frozen names — two real *competing consumers* on the same fixed stream race for
 the same messages, which no namespacing fixes. A scenario that asserts a specific
@@ -752,7 +775,7 @@ here, synthetically:
 | The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
 | `WsCredential` carries a `Cookie` arm, not just a `Passport` | `X-Passport` is trusted on two legs (platform security invariant #4): the edge strips any client-forged copy and re-injects the resolved one, **and** NetworkPolicy blocks direct external access to the service, so nothing off-cluster can present the header in the first place. The first leg is why a test that traverses the real edge cannot forge a Passport — the edge would strip it — and must authenticate the way a browser does, with the session cookie (the gateway's e2e crate had hand-rolled its own cookie-carrying WS client for exactly this). The second is why forging one *is* legitimate for a test that talks to a service **behind** the frontier, where the harness stands in for the edge on a path no outside client can reach: that case keeps `WsCredential::Passport`. `Anonymous` presents neither header, for the unauthenticated-reject path. |
 | A server close **frame** is its own `ServerClosed { code, reason }`, and the close arm is where 1.2.0's two string changes are | `graphql-transport-ws` encodes *why* the server refused in the close code (`4401` unauthorized, `4403` forbidden, `4409` subscriber-already-exists, `4429` too-many-initialisation-requests) — the whole point of a typed outcome is that the handle says why it went quiet, so folding that into the payload-less `Closed` would drop the reason a scenario asserts on. `Closed` therefore keeps the *reasonless* endings (stream exhausted, close frame with no payload). 1.1.3 rendered **both** through one arm (`ws: server closed: {c:?}`), so both moved: a frame with a payload is now a stable `code=… reason=…` (never tungstenite's `Debug`, which a dependency bump could reword), and a frame without one folds into ``ws: socket closed before a `next` push`` — the same fact as an exhausted stream. Those two are the only `next_data` / `next_matching` strings that moved; every other is byte-identical to 1.1.3. A read/parse/pong/`close()` failure stays distinct as `Transport(String)`: a broken exchange, not an ended one. |
-| `DeliveryOutage` narrows the stream config instead of faking a broker failure, and `restore()` is explicit | A JetStream stream config has no deny-list and a wildcard cannot exclude one subject, so on a **real** broker the only way to make one coordinate undeliverable is to rewrite the stream's `subjects` down to the set that must keep flowing — which is why the API takes the `keep` set rather than the withheld coordinate alone, and why it is a narrowing rather than a deny-list. Faking it (a mocked publish, an injected error) would prove nothing: the assertion that matters is that the **lib's** real `publish_event` returns `Publish(NoStream)` against a real server, exactly as it would when GitOps never declared the stream. `restore()` is explicit and there is no `Drop` net because restoring is an async broker round-trip that must fail loud — a `Drop` would have to swallow that error (or block a runtime) and would silently re-widen the stream at an unpredictable moment, racing the assertions still running against the outage. |
+| `DeliveryOutage` narrows the stream config instead of faking a broker failure, `restore()` is explicit, and a withholding scenario owns its server | A JetStream stream config has no deny-list and a wildcard cannot exclude one subject, so on a **real** broker the only way to make one coordinate undeliverable is to rewrite the stream's `subjects` down to the set that must keep flowing — which is why the API takes the `keep` set rather than the withheld coordinate alone, and why it is a narrowing rather than a deny-list. Faking it (a mocked publish, an injected error) would prove nothing: the assertion that matters is that the **lib's** real `publish_event` returns `Publish(NoStream)` against a real server, exactly as it would when GitOps never declared the stream. `restore()` is explicit and there is no `Drop` net because restoring is an async broker round-trip that must fail loud — a `Drop` would have to swallow that error (or block a runtime) and would silently re-widen the stream at an unpredictable moment, racing the assertions still running against the outage. The cost of using the real mechanism is that the fixed streams are global names: an outage is visible to every scenario on that broker and a lost guard is unrepairable (the get-or-create provisioner returns early on an existing stream), which is why the parallel-safety rule for a withholding scenario is stricter than for anything else in the harness — its own `start()` server, or a serialized `connect(url)` group. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `FabricTestNats` binds durables from typed coords, never a subject string | The hand-rolled `NatsEnv` it generalises wrote the declare subject as a `const &str`, so a drift in the lib's subject grammar slipped past the harness. Binding through `command_subject(&coords)` / `event_subject(&coords)` makes the durable's `filter_subjects` byte-identical to what the lib's `Fabric` binds at runtime — drift now breaks the bind, which is the point. |
 | `FabricTestNats::with_published_language()` is get-or-create, never wiped | The `PUBLISHED_LANGUAGE` bucket is **reconcile-no-wipe** state (the #73 fix): a directory consumer folds it and a wipe would replay-from-empty. It is created if absent and otherwise left exactly as found — unlike `recreate_*`, which delete-then-create per-scenario throwaway streams. |

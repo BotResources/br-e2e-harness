@@ -78,15 +78,28 @@ single git tag `v{version}` releases the set. Format follows
   (`integration.evt.__withheld__.>` / `integration.cmd.__withheld__.>`) so
   **every** coordinate on that stream fails, and the other fixed stream is
   untouched.
-- **`DeliveryOutage::restore(self)`** puts the original `subjects` back and
-  fails loud if the broker refuses. The guard is `#[must_use]` and has **no
-  `Drop` net**: a guard dropped without `restore()` leaves the stream narrowed
-  for the rest of the run, which is a test bug. `stream()`,
-  `withheld_subjects()` and `live_subjects()` are the assertion surface.
+- **`DeliveryOutage::restore(self)`** puts the **pre-outage** binding back (the
+  one read at `withhold_*` time, not a pristine `integration.evt.>`, so nested
+  outages restore LIFO) and fails loud if the broker refuses. The guard is
+  `#[must_use]` and has **no `Drop` net**: a guard dropped without `restore()`
+  leaves the stream narrowed for the rest of the run, which is a test bug.
+  `stream()`, `live_subjects()` and `withheld_subjects()` are the assertion
+  surface — the latter is the one concrete coordinate for `withhold_*_subject`
+  and the previous binding patterns for `withhold_*_stream`.
 - **Misuse panics before the stream is touched** — withholding a coordinate the
-  stream does not currently carry (a second outage nested inside a first), or a
-  `keep` list containing the withheld coordinate. A durable bound before the
-  outage keeps its filter and receives again after `restore()`.
+  stream does not currently carry (a `withhold_*_subject` nested inside
+  another), the same coordinate in both `withheld` and `keep`, the same
+  coordinate twice in `keep`, and a `withhold_*_stream` on a stream already
+  bound to the placeholder. The coverage check mirrors the lib's own
+  `subject_covered` semantics (inner `>` is a literal, `*` is exactly one token,
+  an empty pattern or subject covers nothing).
+- **A durable is untouched by an outage** — it keeps its filter and its
+  position: a message stored before the narrowing survives it and is delivered
+  after `restore()`, ahead of anything published since.
+- **An outage rewrites a GLOBAL fixed stream**, so a withholding scenario needs
+  its own `start()` server or a serialized `connect(url)` group — it makes every
+  concurrent scenario's publishes fail, and a lost guard is never repaired
+  (`get_or_create_fixed_stream` returns early on an existing stream).
 
 #### Workspace re-pin to `br-rust-common` v1.3.0
 

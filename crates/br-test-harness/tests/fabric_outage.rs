@@ -1,98 +1,17 @@
 #![cfg(feature = "nats-fabric")]
 
+#[path = "fabric_outage/support.rs"]
+mod support;
+
 use std::time::Duration;
 
-use br_core_integration::{
-    Aggregate, Bc, CommandCoords, EventCoords, IntegrationCommand, IntegrationEvent, PastFact, Verb,
-};
 use br_test_harness::FabricTestNats;
-use br_util_nats_fabric::{
-    FabricError, INTEGRATION_EVT, PublishErrorKind, command_subject, event_subject,
-};
-use futures_util::FutureExt as _;
+use br_util_nats_fabric::{EventConsumer, INTEGRATION_EVT, command_subject, event_subject};
 use serde_json::Value;
-use uuid::Uuid;
-
-fn created() -> EventCoords {
-    EventCoords {
-        producer: Bc::new("identity").unwrap(),
-        aggregate: Aggregate::new("user").unwrap(),
-        fact: PastFact::new("created").unwrap(),
-        version: 1,
-    }
-}
-
-fn renamed() -> EventCoords {
-    EventCoords {
-        producer: Bc::new("identity").unwrap(),
-        aggregate: Aggregate::new("user").unwrap(),
-        fact: PastFact::new("renamed").unwrap(),
-        version: 1,
-    }
-}
-
-fn deleted() -> EventCoords {
-    EventCoords {
-        producer: Bc::new("identity").unwrap(),
-        aggregate: Aggregate::new("user").unwrap(),
-        fact: PastFact::new("deleted").unwrap(),
-        version: 1,
-    }
-}
-
-fn deliver() -> CommandCoords {
-    CommandCoords {
-        receiver: Bc::new("notifier").unwrap(),
-        aggregate: Aggregate::new("notification").unwrap(),
-        verb: Verb::new("deliver").unwrap(),
-        version: 1,
-    }
-}
-
-fn envelope() -> IntegrationEvent<Value> {
-    serde_json::from_value(serde_json::json!({
-        "event_id": Uuid::now_v7(),
-        "event_type": "outage.probe",
-        "version": 1,
-        "occurred_at": "2026-09-03T00:00:00Z",
-        "metadata": {
-            "actor_id": Uuid::now_v7(),
-            "actor_kind": "service",
-            "correlation_id": Uuid::now_v7()
-        },
-        "payload": { "probe": "delivery-outage" }
-    }))
-    .expect("the probe envelope deserializes into the lib's IntegrationEvent")
-}
-
-fn command_envelope() -> IntegrationCommand<Value> {
-    serde_json::from_value(serde_json::json!({
-        "command_id": Uuid::now_v7(),
-        "command_type": "outage.probe",
-        "version": 1,
-        "issued_at": "2026-09-03T00:00:00Z",
-        "metadata": {
-            "actor_id": Uuid::now_v7(),
-            "actor_kind": "service",
-            "correlation_id": Uuid::now_v7()
-        },
-        "payload": { "probe": "delivery-outage" }
-    }))
-    .expect("the probe envelope deserializes into the lib's IntegrationCommand")
-}
-
-fn assert_no_stream(err: FabricError, subject: &str) {
-    assert!(
-        matches!(
-            &err,
-            FabricError::Publish {
-                kind: PublishErrorKind::NoStream,
-                ..
-            }
-        ),
-        "a publish on the withheld '{subject}' must fail Publish(NoStream), got {err:?}"
-    );
-}
+use support::{
+    assert_no_stream, command_envelope, created, deleted, deliver, envelope, marked_envelope,
+    marker_of, renamed,
+};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
@@ -129,10 +48,43 @@ async fn a_withheld_event_coordinate_fails_typed_while_a_kept_sibling_keeps_flow
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn a_durable_bound_before_the_outage_still_receives_after_restore() {
+async fn an_outage_is_a_narrowing_so_a_coordinate_absent_from_keep_also_stops() {
+    let nats = FabricTestNats::start().await;
+    let (withheld, kept, unlisted) = (created(), renamed(), deleted());
+
+    let outage = nats.withhold_event_subject(&withheld, &[&kept]).await;
+
+    for coords in [&withheld, &unlisted] {
+        let err = nats
+            .fabric()
+            .publish_event(coords, &envelope())
+            .await
+            .expect_err("only the coordinates listed in `keep` survive the narrowing");
+        assert_no_stream(err, &event_subject(coords));
+    }
+
+    nats.fabric()
+        .publish_event(&kept, &envelope())
+        .await
+        .expect("the one listed coordinate is still stored");
+
+    outage.restore().await;
+
+    nats.fabric()
+        .publish_event(&unlisted, &envelope())
+        .await
+        .expect("the unlisted coordinate flows again once the binding is restored");
+
+    nats.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_durable_keeps_its_position_and_the_stream_keeps_its_messages_across_an_outage() {
     let nats = FabricTestNats::start().await;
     let (withheld, kept) = (created(), renamed());
     let durable = nats.durable("outage_reader");
+    let subject = event_subject(&withheld);
 
     let mut consumer = nats
         .fabric()
@@ -140,36 +92,71 @@ async fn a_durable_bound_before_the_outage_still_receives_after_restore() {
         .await
         .expect("bind a durable on the withheld coordinate before the outage");
 
+    nats.fabric()
+        .publish_event(&withheld, &marked_envelope("before"))
+        .await
+        .expect("a message stored before the outage");
+
     let outage = nats.withhold_event_subject(&withheld, &[&kept]).await;
     let err = nats
         .fabric()
-        .publish_event(&withheld, &envelope())
+        .publish_event(&withheld, &marked_envelope("during"))
         .await
         .expect_err("the withheld coordinate is covered by no stream during the outage");
-    assert_no_stream(err, &event_subject(&withheld));
+    assert_no_stream(err, &subject);
+    assert!(
+        !nats.raw_message_absent(INTEGRATION_EVT, &subject).await,
+        "narrowing the binding must not delete the messages already stored on the subject"
+    );
     outage.restore().await;
 
     nats.fabric()
-        .publish_event(&withheld, &envelope())
+        .publish_event(&withheld, &marked_envelope("after"))
         .await
         .expect("the coordinate publishes again after restore");
 
-    let delivered = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
-        .await
-        .expect("the durable receives within the deadline after restore")
-        .expect("the durable pull loop is healthy after the outage")
-        .expect("a message is delivered, not an empty batch");
-    assert_eq!(delivered.subject(), event_subject(&withheld));
-    delivered.ack().await.expect("ack the delivered message");
+    assert_eq!(
+        [
+            recv(&mut consumer, &subject).await,
+            recv(&mut consumer, &subject).await
+        ],
+        ["before", "after"],
+        "the durable resumes at its own position: the pre-outage message is delivered first \
+         and the post-restore one second, on the handle bound before the outage — so the \
+         narrowing neither dropped a stored message nor reset the consumer"
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), consumer.recv())
+            .await
+            .is_err(),
+        "nothing is left pending: the withheld publish stored no message at all"
+    );
 
     assert_eq!(
         nats.durable_filter_subjects(INTEGRATION_EVT, &durable)
             .await,
-        vec![event_subject(&withheld)],
+        vec![subject],
         "the outage never touched the durable's filter, only the stream binding"
     );
 
     nats.shutdown().await;
+}
+
+async fn recv(consumer: &mut EventConsumer<Value>, subject: &str) -> String {
+    let delivered = tokio::time::timeout(Duration::from_secs(10), consumer.recv())
+        .await
+        .expect("the durable delivers within the deadline")
+        .expect("the durable pull loop is healthy across the outage")
+        .expect("a message is delivered, not an empty batch");
+    assert_eq!(delivered.subject(), subject);
+    assert_eq!(
+        delivered.delivered_count(),
+        Some(1),
+        "a first delivery, never a redelivery: the outage caused no ack churn"
+    );
+    let marker = marker_of(delivered.payload().expect("the payload decodes")).to_string();
+    delivered.ack().await.expect("ack the delivered message");
+    marker
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -226,65 +213,4 @@ async fn a_command_stream_outage_leaves_the_event_stream_untouched() {
 
     outage.restore().await;
     nats.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn withholding_a_coordinate_the_stream_no_longer_carries_panics() {
-    let nats = FabricTestNats::start().await;
-    let (withheld, kept, absent) = (created(), renamed(), deleted());
-
-    let outage = nats.withhold_event_subject(&withheld, &[&kept]).await;
-
-    let misuse = std::panic::AssertUnwindSafe(nats.withhold_event_subject(&absent, &[&kept]))
-        .catch_unwind()
-        .await;
-    let message = panic_message(misuse.err().expect(
-        "withholding a coordinate the narrowed stream no longer carries must fail loud, \
-         never silently succeed",
-    ));
-    assert!(
-        message.contains("does not cover"),
-        "the panic must name the uncovered coordinate, got: {message}"
-    );
-
-    outage.restore().await;
-    nats.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn keeping_the_withheld_coordinate_panics_before_the_stream_is_touched() {
-    let nats = FabricTestNats::start().await;
-    let withheld = created();
-
-    let misuse = std::panic::AssertUnwindSafe(nats.withhold_event_subject(&withheld, &[&withheld]))
-        .catch_unwind()
-        .await;
-    let message = panic_message(
-        misuse
-            .err()
-            .expect("asking to both drop and keep one coordinate must fail loud"),
-    );
-    assert!(
-        message.contains("listed in `keep`"),
-        "the panic must name the contradiction, got: {message}"
-    );
-
-    nats.fabric()
-        .publish_event(&withheld, &envelope())
-        .await
-        .expect("a rejected misuse must leave the stream binding exactly as it was");
-
-    nats.shutdown().await;
-}
-
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        return (*message).to_string();
-    }
-    payload
-        .downcast_ref::<String>()
-        .cloned()
-        .unwrap_or_else(|| "<non-string panic payload>".to_string())
 }

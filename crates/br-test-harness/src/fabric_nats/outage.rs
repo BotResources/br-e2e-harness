@@ -87,11 +87,16 @@ impl FabricTestNats {
         let mut config = stream_config(&self.js, stream_name).await;
         let restored = config.subjects.clone();
         assert_covered(stream_name, &restored, &withheld);
-        for kept in &keep {
+        for (index, kept) in keep.iter().enumerate() {
             assert!(
                 *kept != withheld,
                 "withholding '{withheld}' on {stream_name}: the withheld coordinate is also \
                  listed in `keep`, which would ask the outage to both drop and keep it"
+            );
+            assert!(
+                !keep[..index].contains(kept),
+                "withholding '{withheld}' on {stream_name}: '{kept}' appears twice in `keep`, \
+                 which the broker rejects as duplicate stream subjects"
             );
             assert_covered(stream_name, &restored, kept);
         }
@@ -118,6 +123,11 @@ impl FabricTestNats {
     ) -> DeliveryOutage {
         let mut config = stream_config(&self.js, stream_name).await;
         let restored = config.subjects.clone();
+        assert!(
+            !restored.iter().any(|bound| bound == placeholder),
+            "{stream_name} already binds the withheld placeholder {restored:?}: a whole-stream \
+             outage nested inside another would record the placeholder as the binding to restore"
+        );
         let live = vec![placeholder.to_string()];
         config.subjects = live.clone();
         update_subjects(&self.js, config).await;
@@ -156,17 +166,26 @@ fn assert_covered(stream_name: &'static str, subjects: &[String], subject: &str)
 }
 
 fn covers(pattern: &str, subject: &str) -> bool {
-    let mut pattern = pattern.split('.');
-    let mut subject = subject.split('.');
-    loop {
-        match (pattern.next(), subject.next()) {
-            (Some(">"), Some(_)) => return true,
-            (Some("*"), Some(_)) => {}
-            (Some(bound), Some(token)) if bound == token => {}
-            (None, None) => return true,
-            _ => return false,
+    if pattern.is_empty() || subject.is_empty() {
+        return false;
+    }
+    let mut subject_tokens = subject.split('.');
+    let mut pattern_tokens = pattern.split('.');
+    while let Some(bound) = pattern_tokens.next() {
+        match bound {
+            ">" => return pattern_tokens.next().is_none() && subject_tokens.next().is_some(),
+            "*" => {
+                if subject_tokens.next().is_none() {
+                    return false;
+                }
+            }
+            literal => match subject_tokens.next() {
+                Some(token) if token == literal => {}
+                _ => return false,
+            },
         }
     }
+    subject_tokens.next().is_none()
 }
 
 #[cfg(test)]
@@ -212,6 +231,28 @@ mod tests {
             "integration.evt.identity.user.created.v1",
             "integration.evt.identity.user.created.v1.extra"
         ));
+    }
+
+    #[test]
+    fn a_token_wildcard_never_stands_in_for_several_tokens() {
+        assert!(!covers("integration.evt.*", "integration.evt.a.b"));
+        assert!(covers("integration.evt.*", "integration.evt.a"));
+    }
+
+    #[test]
+    fn an_inner_gt_is_a_literal_token_and_covers_nothing() {
+        assert!(!covers("integration.>.user", "integration.evt.user"));
+        assert!(!covers(
+            "integration.>.user",
+            "integration.evt.identity.user"
+        ));
+    }
+
+    #[test]
+    fn an_empty_pattern_or_subject_covers_nothing() {
+        assert!(!covers("", ""));
+        assert!(!covers("", "integration.evt.identity.user.created.v1"));
+        assert!(!covers("integration.evt.>", ""));
     }
 
     #[test]
