@@ -60,6 +60,10 @@ consumed as a `git` + `tag` Cargo dependency (not an image).
 |---|---|---|---|---|
 | `br-test-harness` | `[dev-dependencies]` git + tag | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](CHANGELOG.md) |
 | `conformance-scope` | `[dev-dependencies]` git + tag | Black-box S1–S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](CHANGELOG.md) |
+| `conformance-identity` | `[dev-dependencies]` git + tag | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](CHANGELOG.md) |
+| `conformance-passport` | `[dev-dependencies]` git + tag | Black-box G1 battery: sealed bearer → `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](CHANGELOG.md) |
+| `conformance-directory` | `[dev-dependencies]` git + tag | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](CHANGELOG.md) |
+| `conformance-nats-fabric` | `[dev-dependencies]` git + tag | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](CHANGELOG.md) |
 
 Planned: `identity-test` — a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested
@@ -89,10 +93,13 @@ depends on its kind:
 
 ## Release process
 
-1. In your PR, bump the workspace `version` in the root `Cargo.toml` and add a
-   matching `## [X.Y.Z] — YYYY-MM-DD` section to the root `CHANGELOG.md`.
-2. CI gates the PR (fmt, clippy, tests, deny, machete, semver-checks,
-   changelog entry).
+1. In your PR, bump the workspace `version` in the root `Cargo.toml`, add a
+   matching `## X.Y.Z - YYYY-MM-DD` section to the root `CHANGELOG.md` — plain
+   heading, ASCII hyphen, no brackets: `check-changelog.sh` and `release-tags`
+   both match on `^## {version}` — and move every README pin of this repo to
+   `tag = "v{version}"`.
+2. CI gates the PR (fmt, clippy, tests, deny, machete, semver-checks, changelog
+   entry, README pins).
 3. On merge to `main`, three idempotent, order-independent workflows ship the
    one version: `release-tags` creates the single `v{version}` tag and GitHub
    Release (notes from the root `CHANGELOG.md`); `cd` builds and publishes any
@@ -110,6 +117,8 @@ tag event and ride the merge event instead.
 | Thing | Why it is the way it is |
 |---|---|
 | `[profile.dev.package.{rsa,num-bigint-dig}] opt-level = 3` in the root `Cargo.toml` | Pure-Rust RSA key generation is unbearably slow unoptimized; the OIDC test IdP's pre-generated key pool would stall every test suite otherwise, so the crypto stack stays optimized even in dev/test profiles. |
+| A cross-service wire is frozen by a **Go anchor**, and the Rust side deserializes through the **real lib types** | Freezing the wire in Rust freezes it against the very code that could drift with it. The anchor is an independent implementation, so a renamed field or a changed serde in `br-core-*` fails against it. Where the wire is a *credential* the runner cannot re-derive (the sealed bearer), the anchor emits **committed vectors** checked byte-for-byte by its own Go test, so no consumer needs `go` on `PATH` to run the battery. |
+| Raw `async_nats` lives **here** and nowhere else | Service code reaches NATS only through `br-util-nats-fabric`. But a test fixture must do what the fabric refuses — provision an adversarial durable, purge a stream, publish malformed bytes, narrow a stream to inject a delivery outage — so the raw client is confined to `br-test-harness`, and a suite that needs one of those asks the harness instead of opening its own connection. |
 
 ## Dev
 

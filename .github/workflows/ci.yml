@@ -28,6 +28,17 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --all-targets --locked
+      - name: spawned-nats slice stays free of br-rust-common
+        run: |
+          set -euo pipefail
+          cargo check -p br-test-harness --no-default-features --features spawned-nats --locked
+          tree=$(cargo tree -p br-test-harness --no-default-features --features spawned-nats -e normal)
+          if printf '%s\n' "$tree" | grep -q 'br-rust-common'; then
+            printf '%s\n' "$tree" | grep 'br-rust-common'
+            echo "::error::the spawned-nats slice pulls br-rust-common; br-rust-common can no longer dev-depend on SpawnedNats without a cycle" >&2
+            exit 1
+          fi
+          echo "✓ spawned-nats is fabric-free"
 
   infra-e2e:
     name: harness self-test (real infra)
@@ -187,6 +198,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: check changelog entries
         run: bash .github/scripts/check-changelog.sh
+      - name: check README pins
+        run: bash .github/scripts/check-readme-pins.sh
 
   shellcheck:
     name: shellcheck
