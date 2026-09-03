@@ -19,19 +19,31 @@ import (
 const (
 	publishedLanguageBucket = "PUBLISHED_LANGUAGE"
 	sealSubcommand          = "seal"
+	vectorsSubcommand       = "vectors"
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == sealSubcommand {
-		if err := runSeal(os.Args[2:], os.Stdout); err != nil {
-			fmt.Fprintf(os.Stderr, "seal: %v\n", err)
-			os.Exit(2)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case sealSubcommand:
+			exitOnError(sealSubcommand, runSeal(os.Args[2:], osLookupEnv, os.Stdout))
+			return
+		case vectorsSubcommand:
+			exitOnError(vectorsSubcommand, runVectors(os.Args[2:], os.Stdout))
+			return
 		}
-		return
 	}
 	if err := run(); err != nil {
 		log.Fatalf("fatal: %v", err)
 	}
+}
+
+func exitOnError(subcommand string, err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s: %v\n", subcommand, err)
+	os.Exit(2)
 }
 
 func run() error {

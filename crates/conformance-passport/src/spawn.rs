@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use br_test_harness::wait_until;
-use uuid::Uuid;
 
 use crate::checks::{CheckContext, run_scenario};
 use crate::endpoint::PassportEndpoint;
@@ -45,12 +44,10 @@ pub async fn run_spawn(
     }
 
     let endpoint = PassportEndpoint::new(subject.base_url())?;
-    let namespace = Uuid::now_v7().simple().to_string();
     let ctx = CheckContext {
         harness: &harness,
         seeder: &seeder,
         endpoint: &endpoint,
-        namespace: &namespace,
     };
 
     let mut report = ConformanceReport::default();

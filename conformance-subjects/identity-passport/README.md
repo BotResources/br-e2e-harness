@@ -7,13 +7,16 @@ as a real `svc-identity` does: it reads a bearer credential, looks up the
 with its own ChaCha20-Poly1305 AEAD, and returns the resolved **Passport** in the
 `X-Passport` response header.
 
-It is the **test SUBJECT** for conformance group **G1**, and it is also the
-**producer** of the seeds the runner writes: the `seal` subcommand (below) renders
-the KV key and the exact stored bytes. A separate Rust runner drives it as a
-**black box**: it brings up JetStream NATS with a pre-created `PUBLISHED_LANGUAGE`
-bucket, asks this binary for the sealed bytes, writes them raw, calls
+It is the **test SUBJECT** for conformance group **G1**, and — at **dev time only**
+— the **generator** of the frozen seeds the runner replays. A separate Rust runner
+drives it as a **black box**: it brings up JetStream NATS with a pre-created
+`PUBLISHED_LANGUAGE` bucket, writes the committed vector bytes raw, calls
 `GET /internal/passport` with various `Authorization` headers, and asserts the
 returned `X-Passport` decodes under the real `br_core_auth::Passport`.
+
+**During a conformance run this binary only serves.** Generation happens offline via
+`make vectors`; the runner never invokes a seal. A consuming service driven by the
+same battery therefore needs no seal subcommand — and must not ship one.
 
 > This is a **test fixture**. It implements no authentication on its HTTP surface
 > and is meant only for an isolated, throwaway test network.
@@ -26,11 +29,13 @@ wire — its own SHA-256, its own AAD derivation, its own struct parse, and both
 imports the Rust lib**, and no Rust crate ships the wire it freezes.
 
 **Seal and open are frozen together, in one package.** The wire is pinned by
-`wire_test.go` + `seal_test.go`, not by a Rust contract crate: a fixed-nonce vector
-reproduces a **frozen ciphertext**, and a second vector freezes the exact
-**cleartext bytes** (`{"actor":{"kind":"…","id":"…"},"token_id":"…"}`) and the exact
-**envelope bytes** (`{"nonce":"…","ciphertext":"…"}`). Drift on either side turns
-those tests red instead of moving Rust and the wire together silently.
+`wire_test.go` + `seal_test.go` + `vectors_test.go`, not by a Rust contract crate: a
+fixed-nonce vector reproduces a **frozen ciphertext**, further vectors freeze the
+exact **cleartext bytes** (`{"actor":{"kind":"…","id":"…"},"token_id":"…"}`) and the
+exact **envelope bytes** (`{"nonce":"…","ciphertext":"…"}`), and the committed
+vector file is byte-compared against a live regeneration. Drift on either side —
+or a hand edit of the JSON — turns those tests red instead of moving Rust and the
+wire together silently.
 
 The runner keeps one lib-oracle cross-check on the Rust side: the KV key this
 binary emits must end in `br_core_auth::bearer_token_key(<token>)`, so the digest
@@ -134,13 +139,14 @@ make check                           # fmt + vet + test + guard
 ```
 
 The offline tests pin the KV-key/AAD vectors, the frozen cleartext and envelope
-bytes, a fixed-nonce seal that reproduces a frozen ciphertext, the `seal`
-CLI contract (round-trip, service actor, fresh nonce per seal, wrong key,
-both tamper modes, unreadable, and every rejected input), and the `Passport`
-golden shape. The full G1 e2e (found / revoked / unknown / no-credential /
-wrong-key / tampered / unreadable / KV-failure / readiness) is the Rust
-conformance runner's job; it brings the real `PUBLISHED_LANGUAGE` bucket and the
-real `Passport` deserialiser as the oracle.
+bytes, a fixed-nonce seal that reproduces a frozen ciphertext, the `seal` CLI
+contract (round-trip, service actor, fresh nonce per seal, wrong key, both tamper
+modes, unreadable, and every rejected input), the committed vector file's
+byte-equality with a live regeneration, and the `Passport` golden shape. The full
+G1 e2e (found / revoked / unknown / no-credential / wrong-key / tampered ciphertext
+/ tampered nonce / unreadable / KV-failure / readiness) is the Rust conformance
+runner's job; it brings the real `PUBLISHED_LANGUAGE` bucket and the real
+`Passport` deserialiser as the oracle.
 
 `make guard` fails loud if any retired-model marker (an `email` JSON tag, a
 `userIDFromEmail` / `uuid.NewSHA1` derivation, or the old plaintext entry type)

@@ -5,7 +5,7 @@ use br_util_nats_fabric::{Fabric, KvKey, PublishedLanguagePublisher};
 
 use crate::build::build_subject;
 use crate::error::{ConformanceError, Result};
-use crate::seal::{SealedSeeder, seal_key_b64, wrong_seal_key_b64};
+use crate::seal::SealedSeeder;
 
 pub struct PassportHarness {
     nats: FabricTestNats,
@@ -37,11 +37,7 @@ impl PassportHarness {
     }
 
     pub fn seeder(&self) -> SealedSeeder {
-        SealedSeeder::new(self.binary.clone(), seal_key_b64())
-    }
-
-    pub fn wrong_key_seeder(&self) -> SealedSeeder {
-        SealedSeeder::new(self.binary.clone(), wrong_seal_key_b64())
+        SealedSeeder::new()
     }
 
     pub async fn pl_get_raw(&self, key: &KvKey) -> Option<Vec<u8>> {

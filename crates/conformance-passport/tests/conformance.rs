@@ -5,7 +5,6 @@ use conformance_passport::checks::{CheckContext, run_scenario};
 use conformance_passport::{
     PassportEndpoint, PassportHarness, ReadyzProbe, Scenario, SealedSeeder, Subject, SubjectConfig,
 };
-use uuid::Uuid;
 
 const SHORT: Duration = Duration::from_secs(10);
 
@@ -14,7 +13,6 @@ struct Fixture {
     seeder: SealedSeeder,
     endpoint: PassportEndpoint,
     subject: Subject,
-    namespace: String,
 }
 
 impl Fixture {
@@ -36,7 +34,6 @@ impl Fixture {
             seeder,
             endpoint,
             subject,
-            namespace: Uuid::now_v7().simple().to_string(),
         }
     }
 
@@ -45,7 +42,6 @@ impl Fixture {
             harness: &self.harness,
             seeder: &self.seeder,
             endpoint: &self.endpoint,
-            namespace: &self.namespace,
         };
         run_scenario(scenario, &ctx).await
     }
@@ -113,6 +109,12 @@ async fn p7_tampered_envelope_fails_closed() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+async fn p10_tampered_nonce_fails_closed() {
+    assert_scenario(Scenario::TamperedNonceFailsClosed).await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
 async fn p9_unreadable_envelope_fails_closed() {
     assert_scenario(Scenario::UnreadableEnvelopeFailsClosed).await;
 }
@@ -133,7 +135,7 @@ async fn full_battery_is_conformant_via_run_spawn() {
         .expect("run_spawn");
     assert!(
         report.is_conformant(),
-        "the full P1..P9 battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
+        "the full battery must be conformant: {} passed, {} failed, {} skipped\n{:#?}",
         report.passed(),
         report.failed(),
         report.skipped(),

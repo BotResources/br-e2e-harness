@@ -4,6 +4,7 @@ use crate::endpoint::Resolution;
 use crate::error::Result;
 use crate::outcome::CheckOutcome;
 use crate::scenario::Scenario;
+use crate::vectors::Vector;
 
 use super::CheckContext;
 
@@ -31,7 +32,7 @@ pub async fn run_anonymous_scenario(scenario: Scenario, ctx: &CheckContext<'_>) 
 async fn resolve(scenario: Scenario, ctx: &CheckContext<'_>) -> Result<Resolution> {
     match scenario {
         Scenario::RevokedBearerIsAnonymous => {
-            let seed = ctx.seed("revoked").await?;
+            let seed = ctx.seed(Vector::Revoked).await;
             ctx.seeder.revoke(ctx.harness, &seed).await?;
             ctx.endpoint.resolve_bearer(&seed.raw).await
         }

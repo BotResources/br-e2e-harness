@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "seal_key_b64": "Hy49TFtqeYiXprXE0+LxAA8eLTxLWml4h5altMPS4fA=",
+  "wrong_seal_key_b64": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk=",
+  "vectors": [
+    {
+      "name": "faithful-human",
+      "token": "brk_conformance_faithful_human",
+      "kv_key": "identity/bearer_tokens/5cb3870af4ce5eaad1824a2bc635b2fff1d629b3b96cb50a9ffcdf53a8c4b1cb",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0001-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0001-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6Ii8rWXdFS3VKNjZyT0VOL0ciLCJjaXBoZXJ0ZXh0IjoiL2NyS3U5SXBNSFgrYk0wSmoyQnZkblI5WEQzSk0rMnJabExFUjN4ckl4YTFid2d1dzdkM1RlRUNqTlI5UnhHOEFDdGpzUUgyK2xmelpJejdNUWt1YnBjMDNMUm85S0ZJdTFEUjkzR0FTK0NEc3IzY1lzak9YamFGeE1VYmZVVzFQWU5VQWJQdnVHM29FQTdQQ0tNajBMUHprTUJ2ekZXalBWMk1UVCtGK1FqN3Vyd0RqYklydlE9PSJ9"
+    },
+    {
+      "name": "faithful-human-second",
+      "token": "brk_conformance_faithful_human_second",
+      "kv_key": "identity/bearer_tokens/072075c2085d41cb0da6188e5e72648d2c7669a16a719c8eaca16d7c507e45b1",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0002-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0002-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6ImlKcnBTc1hzem5qeDhVNU4iLCJjaXBoZXJ0ZXh0IjoiS1FnR2lwcGhOVyszNGhxODVyTXc0VVYyNVdLOTUzaWVaK0FZWUE1STdnUlVHdkYyQUw4Sk5TMU40dklzVjJpRjlLbG9iU2JtODdDbWtXTmNHd0I2aHRobkErUFJoYTlHNHlaWWUyeDlpVGpWTHlhQ3JiUUVLYVZLSWR4VVNleS9ieDV5NUFIUlNPUHJ0a1BrZXorYjRlalBOZTd2SFJuUnMrMDZ4eUtvcmVRcHRxdjJkUWJRUUE9PSJ9"
+    },
+    {
+      "name": "faithful-service",
+      "token": "brk_conformance_faithful_service",
+      "kv_key": "identity/bearer_tokens/bdee170a695c4b0bf951a16c8ffad44d3288bd58b09104e0269fcd0a98aa475d",
+      "actor_kind": "service",
+      "actor_id": "0190a1b2-0003-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0003-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6IjdxcFd2S3RGbDk0VHpzeXUiLCJjaXBoZXJ0ZXh0IjoiNHRtT3M3SHFaT2xSOE14ZVl4K2RLaFZYR0JXNHhpS1QzME80QmNlUXlFeXdJQ3E4NHpPSWgrSGY3Nm92TWZyLzRGQ2tXenJha3dQcVF5MCtFei94anlPUGM5VXdGVDZBUWhhTVdCb0V0ZjRNRllOVHhnVVFUVlRsSzI0RU1Yb2pVUEhVZUM4ZWRINWk2ZmNBNEdGdkdrQ3NKOGZOSy9yTFdXRzlJSTlrUjJ3N1NGY1RjaG9lRWIxUSJ9"
+    },
+    {
+      "name": "revoked",
+      "token": "brk_conformance_revoked",
+      "kv_key": "identity/bearer_tokens/1166ba6b06314dd0072ec1e39ffd8fe541ec10591d217b48b1d9c437f5c43947",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0004-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0004-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6ImRNSG5TK204U3cvL0RmUzYiLCJjaXBoZXJ0ZXh0IjoiZUNVZDl0SS9sbmJvNVhhOTNpLzR2RXQ4UStVei9jYk9GbDRpZ2tXMDBxQVFHVEZzbDBTTFEvNExMZDBKRFBxcEkxKytaNVVnYVZieUI2UURQYmN6Vmk1WWVMaEczcXdKMVF3blErMUR1clpSWmN6R09NVkZ2bzJaeVJ6WUxYb1Jwbk56QmUzMStJbkt3ckFMRnRuQ0o5VncyRW9GS2R6Nms3cEpvY0xwQzV4NktmRlFDK2ZuYmc9PSJ9"
+    },
+    {
+      "name": "kv-error",
+      "token": "brk_conformance_kv_error",
+      "kv_key": "identity/bearer_tokens/32d2f053a5c08622e4f1cf2451f15d3922f8b07bd45d1db9c92468b81e7c6d2f",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0005-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0005-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6Ik5VMmJkbVpJNUJYb3NqaXgiLCJjaXBoZXJ0ZXh0IjoiOFh2RGh3VnZ3UXg3RUUrL1E2V21yd0podWFvOFZ0TWlTbVBpdXhXRXBaUDQrNDdEcVRRS3l0aHJQN21GUmtwTW8rdStmaFZSaFdWVFVPRy93NmJRMGNGUXo0UTV1R3Fid25lRmZWNE1MZitRbHAzWFdPT1ZhRDRFMkZNb2JCZ1ZLR3A1QjJrRkhZSmU1d3Bxb2FVMk1Nd3ltdGxvR3EwbHB5dFVRWjlDSUs1eWpHQmw2cTl5Vnc9PSJ9"
+    },
+    {
+      "name": "wrong-key",
+      "token": "brk_conformance_wrong_key",
+      "kv_key": "identity/bearer_tokens/f093c3f2145c8c3f735bc4b2f89f3245d6b4d03e28ca12c76696d4f9d5323790",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0006-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0006-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "wrong_seal_key",
+      "corruption": "none",
+      "resolves": "anonymous",
+      "value_b64": "eyJub25jZSI6InhaOWQ2UCtVNmpNTXhBc2IiLCJjaXBoZXJ0ZXh0IjoiSExEMGcycnFZczRJT1FrY1NRSmJ6N0ZiUExvMXoyalJEQ1dicWdPYXR1cXp5a2tvVmNGUzhJMGR5QlBtemF3ZFRDTXhTTGJhTlRRaGpWVndTVlBZRDdwZzd6RXRYNU1lTEovYXhlTXRVazBzS3pJSUJrZzNhc3lJR25wZnNmTUdNS0FwZCtobzZjdnVwd05ZLzFwd0xHT0dwNnBhaGFxQXZ3R3I0N2ZLRnJZRDg1VStLcG9xZWc9PSJ9"
+    },
+    {
+      "name": "tampered-ciphertext-faithful",
+      "token": "brk_conformance_tampered_ciphertext",
+      "kv_key": "identity/bearer_tokens/e09cce40350115e5185a2ad070c14ef2d5858771bc1204839d59b56eebdd709d",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0007-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0007-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6InArVTE1STZIMWI5YVJBMHQiLCJjaXBoZXJ0ZXh0IjoiYlRzenVJVTJIL3Q5SlZQS1FubGRNQjhWcHY0Rzh3VDJ3UTVXRklrV2ZEb0NYLzlMUVFoc1VNY2V0L3ZHdEdqNElvMC9JVW1tM1RFQURFOXMraE9aRkdWRkVlOXgyZmozVHMyQ1pVUURSTWhRR1ZRbHV6ZWh3N0MxVXoxT2hhZjZWZXVOSS9LbThFYnU2N0pTQW5wa21ubXFYVHFYUitZdC9nM2l3blhwZWk4ZGUxdnhtOW5rcFE9PSJ9"
+    },
+    {
+      "name": "tampered-ciphertext-corrupt",
+      "token": "brk_conformance_tampered_ciphertext",
+      "kv_key": "identity/bearer_tokens/e09cce40350115e5185a2ad070c14ef2d5858771bc1204839d59b56eebdd709d",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0007-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0007-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "ciphertext",
+      "resolves": "anonymous",
+      "value_b64": "eyJub25jZSI6ImR6cFY1aXdKZE5hallGKzEiLCJjaXBoZXJ0ZXh0IjoiOThYQXp1Ri9hbGVHREhXbHAxZjZoeGIxd1BHMDdmcWUwN1RxeGp4bGtMMnJMTU1FV0tIelZHSVRCbCs0c2hXKy9zWlZDL1FyY0hla1JCVVpseXV3UWxPaXBBUytVUEUrS0ZoYVJBYkc5WEVpOURBbWZ3U0g5eGM1WS83Slp3K1dPR3pBY2NjVTBlMEw2NUpSRUVZN0gzL2dMcWxkWmY2Qm5mMUk5Sy9OSWRUWlZDcmhYSlhrSlE9PSJ9"
+    },
+    {
+      "name": "tampered-nonce-faithful",
+      "token": "brk_conformance_tampered_nonce",
+      "kv_key": "identity/bearer_tokens/eed17c3cfba14cf8761a87857d1c89812343b54666a0d1a51a0dc4176954d279",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0008-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0008-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6ImpsT3ZBNWJ1ZEY0ckFaR3giLCJjaXBoZXJ0ZXh0IjoiR3FhNGl0ejJvTUJnOGpUeEFzeUl5MEhOViswQitwMlEwU3krN1U3c1hEcjFEbEVWc2NidHRzUGllSS9vZEI4ZVRGcUNxb3ZSY1loaHQrKy9rZW1tRFZKOTlGQnQraGVaUW41YUlwb0pyY3VxUi9YdnNyRXdUYUJYc2dQYW9qOVRpcW1oQnlJOU5zNE00U2tQSVpCMC80R21HNks1OUR1VnhodTZlS3NkeUhrQ28xc1JOa0VtTWc9PSJ9"
+    },
+    {
+      "name": "tampered-nonce-corrupt",
+      "token": "brk_conformance_tampered_nonce",
+      "kv_key": "identity/bearer_tokens/eed17c3cfba14cf8761a87857d1c89812343b54666a0d1a51a0dc4176954d279",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0008-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0008-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "nonce",
+      "resolves": "anonymous",
+      "value_b64": "eyJub25jZSI6Inl6SlIrWGZFRHFQaTVlc3ciLCJjaXBoZXJ0ZXh0IjoiWHRVRHJNV2ZHNGwzZ1Nsb3RFdGdybkJOL3JWbzFmRklFYXJZd0VTSmhMdEdQbHpYdmNNaVZhNHhoU1JlS253OU1ZcVZJLzM3MWhpdnZoaTFXM1Q2dyt1bHhhdHBabjF1SGdEdm1sMWhZclpRbmFSb1BmakthY3o4MlRvUzdJOWJ5VGhNcmF5YllHRkpjN3NWSFFhVzh6VURoVHA4aHFZUDRrZU51MlFuQmlyOFhKSTdBbkhYMmc9PSJ9"
+    },
+    {
+      "name": "unreadable-faithful",
+      "token": "brk_conformance_unreadable",
+      "kv_key": "identity/bearer_tokens/88b10a0e3e12cc68e1988bb8e10fa7b817d403642b7aee979c3614f73938e691",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0009-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0009-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "none",
+      "resolves": "human",
+      "value_b64": "eyJub25jZSI6InBvaUNnMGErZjNzZ3VRN00iLCJjaXBoZXJ0ZXh0IjoiUEd4dm9oclNvZjYwQ2pra1dHUTZFWW45dXRET3krT3B4c0dWQXB6REVtZlF1dFQ2VTVKNGJLTERZSGZGMCtIYml2UER3Qk04TS8yUEw5d0NSbENoRUM1TTZTQnVtZGxwWEl3aGtoVUlqeUFUMU9ORmVabGFFcU9tTTM4Qm1PQ0VhdThPVmFwcUp1TWxuWjhqVGRJRUJlOXhxTkxVN3kwOVdyNDJJcTRCMjdHbllDUDdlNHJWVXc9PSJ9"
+    },
+    {
+      "name": "unreadable-corrupt",
+      "token": "brk_conformance_unreadable",
+      "kv_key": "identity/bearer_tokens/88b10a0e3e12cc68e1988bb8e10fa7b817d403642b7aee979c3614f73938e691",
+      "actor_kind": "human",
+      "actor_id": "0190a1b2-0009-7e5f-8a9b-0c1d2e3f4a5b",
+      "token_id": "0190c0de-0009-7e5f-8a9b-0c1d2e3f4a5b",
+      "sealed_with": "seal_key",
+      "corruption": "unreadable",
+      "resolves": "anonymous",
+      "value_b64": "eyJjaXBoZXJ0ZXh0IjoicHdsZnUzRlZPekdKNU93SWNRT0JqVHpkMHJNcERBZkVzUExMQXViMjVXOTZnd1FsbnNwenR0OG5DSW5Wa0JFWmsxUDRCbmhBaDBzYkJOQjJaZ0tydUl6RHZoeFhjVUtvQ3o1b05iL1J0R3JUYTBENWo5bWdOMkdidzZEclVmbTUzdjZ4ZU5tcnhsTXZaQ0NIMWNnQ2NPcVV4R3R2OUNQUGYvWEx0K0FxdU5CUzVYelhlVjkwVkE9PSIsImV2aWwiOnRydWUsIm5vbmNlIjoiNXlXaDRjZlVoYUorckxJSyJ9"
+    }
+  ]
+}

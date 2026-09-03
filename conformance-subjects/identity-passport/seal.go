@@ -7,24 +7,27 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	tamperNone       = ""
-	tamperCiphertext = "ciphertext"
-	tamperNonce      = "nonce"
+	tamperNone        = ""
+	tamperCiphertext  = "ciphertext"
+	tamperNonce       = "nonce"
+	corruptUnreadable = "unreadable"
 )
 
 type sealRequest struct {
-	keyB64     string
+	key        []byte
 	token      string
 	actor      string
 	tokenID    string
 	tamper     string
 	unreadable bool
+	nonce      []byte
 }
 
 type sealResult struct {
@@ -32,8 +35,8 @@ type sealResult struct {
 	ValueB64 string `json:"value_b64"`
 }
 
-func runSeal(args []string, out io.Writer) error {
-	req, err := parseSealArgs(args)
+func runSeal(args []string, lookupEnv func(string) (string, bool), out io.Writer) error {
+	req, err := parseSealArgs(args, lookupEnv)
 	if err != nil {
 		return err
 	}
@@ -49,11 +52,10 @@ func runSeal(args []string, out io.Writer) error {
 	return err
 }
 
-func parseSealArgs(args []string) (sealRequest, error) {
+func parseSealArgs(args []string, lookupEnv func(string) (string, bool)) (sealRequest, error) {
 	fs := flag.NewFlagSet("seal", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var req sealRequest
-	fs.StringVar(&req.keyB64, "key", "", "base64-std of the 32-byte seal key")
 	fs.StringVar(&req.token, "token", "", "the raw bearer token")
 	fs.StringVar(&req.actor, "actor", "", "human:<uuid> or service:<uuid>")
 	fs.StringVar(&req.tokenID, "token-id", "", "the token id (uuid)")
@@ -65,13 +67,34 @@ func parseSealArgs(args []string) (sealRequest, error) {
 	if fs.NArg() != 0 {
 		return sealRequest{}, fmt.Errorf("unexpected positional argument %q", fs.Arg(0))
 	}
+	key, err := sealKeyFromEnv(lookupEnv)
+	if err != nil {
+		return sealRequest{}, err
+	}
+	req.key = key
 	return req, validateSealRequest(req)
 }
 
-func validateSealRequest(req sealRequest) error {
-	if req.keyB64 == "" {
-		return errors.New("--key is required (base64-std of 32 bytes)")
+func sealKeyFromEnv(lookupEnv func(string) (string, bool)) ([]byte, error) {
+	raw, ok := lookupEnv("BEARER_SEAL_KEY")
+	if !ok || raw == "" {
+		return nil, errors.New("BEARER_SEAL_KEY is required (base64-std of a 32-byte key)")
 	}
+	return decodeSealKey(raw)
+}
+
+func decodeSealKey(raw string) ([]byte, error) {
+	key, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("BEARER_SEAL_KEY is not valid base64-std: %w", err)
+	}
+	if len(key) != bearerSealKeyLen {
+		return nil, fmt.Errorf("BEARER_SEAL_KEY must decode to %d bytes, got %d", bearerSealKeyLen, len(key))
+	}
+	return key, nil
+}
+
+func validateSealRequest(req sealRequest) error {
 	if req.token == "" {
 		return errors.New("--token is required")
 	}
@@ -103,8 +126,8 @@ func parseActor(raw string) (bearerActor, error) {
 	if !ok {
 		return bearerActor{}, fmt.Errorf("--actor %q must be kind:uuid", raw)
 	}
-	if kind != "human" && kind != "service" {
-		return bearerActor{}, fmt.Errorf("--actor kind %q must be human or service", kind)
+	if kind != actorHuman && kind != actorService {
+		return bearerActor{}, fmt.Errorf("--actor kind %q must be %s or %s", kind, actorHuman, actorService)
 	}
 	if !isUUID(id) {
 		return bearerActor{}, fmt.Errorf("--actor id %q is not a uuid", id)
@@ -133,14 +156,10 @@ func isUUID(value string) bool {
 }
 
 func sealOnce(req sealRequest) (sealResult, error) {
-	key, err := base64.StdEncoding.DecodeString(req.keyB64)
-	if err != nil {
-		return sealResult{}, fmt.Errorf("--key is not valid base64-std: %w", err)
+	if len(req.key) != bearerSealKeyLen {
+		return sealResult{}, fmt.Errorf("the seal key must be %d bytes, got %d", bearerSealKeyLen, len(req.key))
 	}
-	if len(key) != bearerSealKeyLen {
-		return sealResult{}, fmt.Errorf("--key must decode to %d bytes, got %d", bearerSealKeyLen, len(key))
-	}
-	aead, err := chacha20poly1305.New(key)
+	aead, err := chacha20poly1305.New(req.key)
 	if err != nil {
 		return sealResult{}, fmt.Errorf("building the aead: %w", err)
 	}
@@ -148,10 +167,18 @@ func sealOnce(req sealRequest) (sealResult, error) {
 	if err != nil {
 		return sealResult{}, err
 	}
-	sealed, err := sealEntry(aead, req.token, bearerEntry{Actor: actor, TokenID: req.tokenID})
+	entry := bearerEntry{Actor: actor, TokenID: req.tokenID}
+
+	var sealed sealedBearer
+	if req.nonce == nil {
+		sealed, err = sealEntry(aead, req.token, entry)
+	} else {
+		sealed, err = sealEntryWithNonce(aead, req.token, entry, req.nonce)
+	}
 	if err != nil {
 		return sealResult{}, err
 	}
+
 	value, err := renderStoredValue(sealed, req)
 	if err != nil {
 		return sealResult{}, err
@@ -210,4 +237,8 @@ func flipFirstByte(b64 string) (string, error) {
 	}
 	raw[0] ^= 0xff
 	return base64.StdEncoding.EncodeToString(raw), nil
+}
+
+func osLookupEnv(key string) (string, bool) {
+	return os.LookupEnv(key)
 }

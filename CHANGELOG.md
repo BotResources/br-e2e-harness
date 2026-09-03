@@ -15,35 +15,51 @@ single git tag `v{version}` releases the set. Format follows
   1.1.2 exclude / 1.1.3 re-enter dance). Its only BotResources dependencies are now
   `br-rust-common` (`br-core-auth`, `br-util-nats-fabric`) and the sibling
   `br-test-harness`. The unused `br-core-kernel` dep is dropped with them.
-- **The seal side of the bearer wire is frozen in the Go anchor.** A contract that
-  must stay constant is frozen by an independent implementation, never by a Rust
-  contract crate — otherwise Rust and the wire evolve together silently. The
-  `identity-passport` subject gains a one-shot `seal` subcommand (`--key`,
-  `--token`, `--actor human:<uuid>|service:<uuid>`, `--token-id`, plus
-  `--tamper ciphertext|nonce` and `--unreadable`) printing one JSON line
-  (`kv_key` + `value_b64`); serving stays the default mode, so the spawn path is
-  unchanged. `SealedSeeder` invokes it and writes the bytes verbatim through
-  `pl_put_raw` — Rust never builds, parses or byte-flips an envelope. `seal_test.go`
-  freezes the cleartext bytes, the envelope bytes, a fixed-nonce ciphertext, and
-  every CLI rejection.
-- **`PassportHarness::seeder()` / `wrong_key_seeder()` are now synchronous and
-  infallible** (they no longer open a NATS publisher); `SealedSeeder::seed`,
-  `overwrite` and `revoke` take the harness. `SealedSeed` carries the `kv_key` the
-  anchor emitted. `seal_key()` / `wrong_seal_key()` are replaced by
-  `seal_key_b64()` / `wrong_seal_key_b64()`.
+- **The sealed wire is frozen as committed vectors produced by the Go anchor.** A
+  contract that must stay constant is frozen by an independent implementation, never
+  by a Rust contract crate — otherwise Rust and the wire evolve together silently.
+  `crates/conformance-passport/vectors/passport-wire-v1.json` carries, per case, the
+  token, the KV key, the sealed identity and the exact `value_b64` bytes; the
+  `identity-passport` anchor generates it deterministically (`make vectors`: fixed
+  keys, fixed ids, one fixed nonce per entry), and `vectors_test.go` regenerates it
+  in memory and asserts **byte-equality** with the committed file, so anchor drift
+  or a hand edit fails `make check`. `SealedSeeder` `include_str!`s the file and
+  writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or
+  mutates a sealed envelope.
+- **The subject under test only ever serves.** The battery no longer asks any binary
+  to seal, so a consuming service driven by `run_spawn` needs no credential-forging
+  subcommand — `SubjectConfig` / `Subject::spawn` / `run_spawn` keep their contract,
+  and `BEARER_SEAL_KEY` now comes straight out of the vector file. The anchor's
+  `seal` subcommand remains a dev-time generator only and takes its key from
+  `BEARER_SEAL_KEY`, exactly as serve mode does.
+- **`ALL` grows from 8 to 10 mandatory scenarios** (P9 and P10 below). A consumer
+  asserting `report.passed() == ALL.len()` picks them up automatically; one pinning
+  the literal `8` must move to `ALL.len()`.
+- `PassportHarness::seeder()` is now synchronous and infallible, and
+  `wrong_key_seeder()` is gone (the wrong-key case is a vector, not a second
+  publisher). `SealedSeeder::seed` takes a `Vector` and the harness; `SealedSeed`
+  carries its `kv_key`. `CheckContext` loses its `namespace` field — vector tokens
+  are fixed, so per-run namespacing no longer exists. `SEAL_KEY` / `WRONG_SEAL_KEY`
+  / `seal_key()` / `wrong_seal_key()` are replaced by the vector file plus
+  `vectors::seal_key_b64()`.
 - Bump every `br-rust-common` pin to `v1.3.0`, and drop the now-unused `svc-auth`
   entry from `deny.toml`'s git source allow-list.
 - `cargo update -p chacha20` off the yanked `0.10.0` (it reaches the tree through
   `async-nats` → `rand`, unrelated to the svc-auth removal): `cargo deny check`
   advisories pass again.
+- CI runs the passport battery with `--test-threads=1`, matching the README.
 
 ### Added
 
-- **P9 — an unreadable envelope fails closed.** The frozen contract already
-  required it; nothing covered it. A bearer that resolves is overwritten at the
-  same KV key with a genuine, openable seal carrying one unknown field, so only the
-  strict parse can reject it → anonymous. P6 and P7 gain the same
-  resolved-then-corrupted framing, making the corruption the only difference.
+- **P9 — an unreadable envelope fails closed.** The frozen contract already required
+  it; nothing covered it. A bearer that resolves is replaced, at its own KV key, by a
+  genuine **openable** seal carrying one unknown field, so only the strict parse can
+  reject it → anonymous.
+- **P10 — a tampered nonce fails closed.** Same shape, with the identity re-sealed
+  under a fresh nonce whose byte 0 is then flipped: the carried nonce no longer
+  matches the tag → anonymous.
+- P6 and P7 gain the same *resolved-then-corrupted* framing, so the corruption is
+  provably the only difference between the two resolutions.
 
 ## 1.1.3 - 2026-07-23
 

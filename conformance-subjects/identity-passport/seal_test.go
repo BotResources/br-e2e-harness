@@ -30,17 +30,30 @@ func otherKeyB64() string {
 
 func goldenSealArgs() []string {
 	return []string{
-		"--key", fixedKeyB64(),
 		"--token", goldenToken,
 		"--actor", "human:" + goldenUserID,
 		"--token-id", goldenTokenID,
 	}
 }
 
+func envWith(key string) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		if name == "BEARER_SEAL_KEY" {
+			return key, true
+		}
+		return "", false
+	}
+}
+
 func sealCLI(t *testing.T, args ...string) sealResult {
 	t.Helper()
+	return sealCLIWithKey(t, fixedKeyB64(), args...)
+}
+
+func sealCLIWithKey(t *testing.T, key string, args ...string) sealResult {
+	t.Helper()
 	var out bytes.Buffer
-	if err := runSeal(args, &out); err != nil {
+	if err := runSeal(args, envWith(key), &out); err != nil {
 		t.Fatalf("runSeal(%v): %v", args, err)
 	}
 	line := out.String()
@@ -134,7 +147,6 @@ func TestSealCLIEmitsTheContractKvKeyAndAnOpenableEnvelope(t *testing.T) {
 
 func TestSealCLIRoundTripsAServiceActor(t *testing.T) {
 	result := sealCLI(t,
-		"--key", fixedKeyB64(),
 		"--token", goldenToken,
 		"--actor", "service:"+goldenUserID,
 		"--token-id", goldenTokenID,
@@ -173,8 +185,7 @@ func TestSealTwiceDrawsDistinctNoncesAndBothOpen(t *testing.T) {
 }
 
 func TestSealUnderAWrongKeyDoesNotOpenWithTheResolverKey(t *testing.T) {
-	result := sealCLI(t,
-		"--key", otherKeyB64(),
+	result := sealCLIWithKey(t, otherKeyB64(),
 		"--token", goldenToken,
 		"--actor", "human:"+goldenUserID,
 		"--token-id", goldenTokenID,
@@ -231,27 +242,28 @@ func TestUnreadableSealIsRejectedByTheParserNotTheAead(t *testing.T) {
 func TestSealRejectsBadInput(t *testing.T) {
 	cases := []struct {
 		name string
+		key  string
 		args []string
 	}{
-		{"no key", []string{"--token", goldenToken, "--actor", "human:" + goldenUserID, "--token-id", goldenTokenID}},
-		{"no token", []string{"--key", fixedKeyB64(), "--actor", "human:" + goldenUserID, "--token-id", goldenTokenID}},
-		{"no actor", []string{"--key", fixedKeyB64(), "--token", goldenToken, "--token-id", goldenTokenID}},
-		{"no token id", []string{"--key", fixedKeyB64(), "--token", goldenToken, "--actor", "human:" + goldenUserID}},
-		{"key not base64", append(goldenSealArgs()[2:], "--key", "not base64!")},
-		{"key wrong length", append(goldenSealArgs()[2:], "--key", base64.StdEncoding.EncodeToString([]byte("short")))},
-		{"actor kind unknown", []string{"--key", fixedKeyB64(), "--token", goldenToken, "--actor", "robot:" + goldenUserID, "--token-id", goldenTokenID}},
-		{"actor id not uuid", []string{"--key", fixedKeyB64(), "--token", goldenToken, "--actor", "human:nope", "--token-id", goldenTokenID}},
-		{"actor missing colon", []string{"--key", fixedKeyB64(), "--token", goldenToken, "--actor", "human", "--token-id", goldenTokenID}},
-		{"token id not uuid", []string{"--key", fixedKeyB64(), "--token", goldenToken, "--actor", "human:" + goldenUserID, "--token-id", "nope"}},
-		{"tamper mode unknown", append(goldenSealArgs(), "--tamper", "everything")},
-		{"tamper with unreadable", append(goldenSealArgs(), "--tamper", tamperCiphertext, "--unreadable")},
-		{"unknown flag", append(goldenSealArgs(), "--nonce", goldenNonce)},
-		{"positional argument", append(goldenSealArgs(), "extra")},
+		{"no key in env", "", goldenSealArgs()},
+		{"key not base64", "not base64!", goldenSealArgs()},
+		{"key wrong length", base64.StdEncoding.EncodeToString([]byte("short")), goldenSealArgs()},
+		{"no token", fixedKeyB64(), []string{"--actor", "human:" + goldenUserID, "--token-id", goldenTokenID}},
+		{"no actor", fixedKeyB64(), []string{"--token", goldenToken, "--token-id", goldenTokenID}},
+		{"no token id", fixedKeyB64(), []string{"--token", goldenToken, "--actor", "human:" + goldenUserID}},
+		{"actor kind unknown", fixedKeyB64(), []string{"--token", goldenToken, "--actor", "robot:" + goldenUserID, "--token-id", goldenTokenID}},
+		{"actor id not uuid", fixedKeyB64(), []string{"--token", goldenToken, "--actor", "human:nope", "--token-id", goldenTokenID}},
+		{"actor missing colon", fixedKeyB64(), []string{"--token", goldenToken, "--actor", "human", "--token-id", goldenTokenID}},
+		{"token id not uuid", fixedKeyB64(), []string{"--token", goldenToken, "--actor", "human:" + goldenUserID, "--token-id", "nope"}},
+		{"tamper mode unknown", fixedKeyB64(), append(goldenSealArgs(), "--tamper", "everything")},
+		{"tamper with unreadable", fixedKeyB64(), append(goldenSealArgs(), "--tamper", tamperCiphertext, "--unreadable")},
+		{"unknown flag", fixedKeyB64(), append(goldenSealArgs(), "--nonce", goldenNonce)},
+		{"positional argument", fixedKeyB64(), append(goldenSealArgs(), "extra")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if err := runSeal(tc.args, &out); err == nil {
+			if err := runSeal(tc.args, envWith(tc.key), &out); err == nil {
 				t.Fatalf("runSeal(%v) must fail", tc.args)
 			}
 			if out.Len() != 0 {

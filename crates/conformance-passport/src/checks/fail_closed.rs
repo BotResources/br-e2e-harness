@@ -1,6 +1,6 @@
 use crate::endpoint::Resolution;
 use crate::outcome::{CheckId, CheckOutcome};
-use crate::seal::SealVariant;
+use crate::vectors::Vector;
 
 use super::CheckContext;
 
@@ -9,17 +9,7 @@ pub async fn run_wrong_seal_key(ctx: &CheckContext<'_>) -> CheckOutcome {
     let expected =
         "a bearer sealed under the WRONG key resolves to anonymous (200), never a wrong identity";
 
-    let wrong_seeder = ctx.harness.wrong_key_seeder();
-    let seed = match wrong_seeder
-        .seed(ctx.harness, ctx.namespace, "wrong_key")
-        .await
-    {
-        Ok(seed) => seed,
-        Err(e) => {
-            return CheckOutcome::fail(id, expected, "wrong-key seeding failed", format!("{e}"));
-        }
-    };
-
+    let seed = ctx.seed(Vector::WrongKey).await;
     if ctx.harness.pl_get_raw(&seed.kv_key).await.is_none() {
         return CheckOutcome::fail(
             id,
@@ -47,14 +37,26 @@ pub async fn run_wrong_seal_key(ctx: &CheckContext<'_>) -> CheckOutcome {
     }
 }
 
-pub async fn run_tampered_envelope(ctx: &CheckContext<'_>) -> CheckOutcome {
+pub async fn run_tampered_ciphertext(ctx: &CheckContext<'_>) -> CheckOutcome {
     run_corrupted_envelope(
         ctx,
         CheckId::TamperedEnvelopeFailsClosed,
-        "a bearer that resolved, then had its stored ciphertext byte-flipped, resolves to anonymous (200)",
-        "tampered",
-        SealVariant::TamperedCiphertext,
-        "the subject opened a tampered ciphertext — the AEAD tag must fail closed to anonymous",
+        "a bearer that resolved, then replaced at its own key by a re-seal with byte 0 of the ciphertext flipped, resolves to anonymous (200)",
+        Vector::TamperedCiphertextFaithful,
+        Vector::TamperedCiphertextCorrupt,
+        "the subject opened a flipped ciphertext — the AEAD tag must fail closed to anonymous",
+    )
+    .await
+}
+
+pub async fn run_tampered_nonce(ctx: &CheckContext<'_>) -> CheckOutcome {
+    run_corrupted_envelope(
+        ctx,
+        CheckId::TamperedNonceFailsClosed,
+        "a bearer that resolved, then replaced at its own key by a re-seal with byte 0 of the nonce flipped, resolves to anonymous (200)",
+        Vector::TamperedNonceFaithful,
+        Vector::TamperedNonceCorrupt,
+        "the subject opened an envelope whose nonce no longer matches the tag — the AEAD must fail closed to anonymous",
     )
     .await
 }
@@ -63,9 +65,9 @@ pub async fn run_unreadable_envelope(ctx: &CheckContext<'_>) -> CheckOutcome {
     run_corrupted_envelope(
         ctx,
         CheckId::UnreadableEnvelopeFailsClosed,
-        "a bearer that resolved, then had its stored envelope replaced by an unparseable one, resolves to anonymous (200)",
-        "unreadable",
-        SealVariant::Unreadable,
+        "a bearer that resolved, then replaced at its own key by an envelope carrying an unknown field, resolves to anonymous (200)",
+        Vector::UnreadableFaithful,
+        Vector::UnreadableCorrupt,
         "the subject accepted an envelope carrying an unknown field — the parse must fail closed to anonymous",
     )
     .await
@@ -75,22 +77,18 @@ async fn run_corrupted_envelope(
     ctx: &CheckContext<'_>,
     id: CheckId,
     expected: &'static str,
-    label: &str,
-    variant: SealVariant,
+    faithful: Vector,
+    corrupt: Vector,
     on_resolved: &'static str,
 ) -> CheckOutcome {
-    let seed = match ctx.seed(label).await {
-        Ok(seed) => seed,
-        Err(e) => return CheckOutcome::fail(id, expected, "seeding failed", format!("{e}")),
-    };
-
+    let seed = ctx.seed(faithful).await;
     match ctx.endpoint.resolve_bearer(&seed.raw).await {
         Ok(Resolution::Resolved(_)) => {}
         Ok(Resolution::Anonymous) => {
             return CheckOutcome::fail(
                 id,
                 expected,
-                "the faithful seed already resolved to anonymous",
+                "the faithful vector already resolved to anonymous",
                 "the corruption must be the only difference — a seed that never resolved proves nothing",
             );
         }
@@ -104,8 +102,14 @@ async fn run_corrupted_envelope(
         }
     }
 
-    if let Err(e) = ctx.seeder.overwrite(ctx.harness, &seed, variant).await {
-        return CheckOutcome::fail(id, expected, "overwriting the seed failed", format!("{e}"));
+    let corrupted = ctx.seed(corrupt).await;
+    if corrupted.kv_key != seed.kv_key {
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "the corrupted vector does not share the faithful vector's key",
+            "the pair must overwrite one key, otherwise the two resolutions are unrelated",
+        );
     }
 
     let resolution = match ctx.endpoint.resolve_bearer(&seed.raw).await {

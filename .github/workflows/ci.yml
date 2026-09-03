@@ -79,7 +79,7 @@ jobs:
       - name: nats-fabric conformance battery
         run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
       - name: passport conformance battery
-        run: cargo test -p conformance-passport --test conformance --locked -- --ignored
+        run: cargo test -p conformance-passport --test conformance --locked -- --ignored --test-threads=1
       - name: directory conformance battery
         run: cargo test -p conformance-directory --test conformance --locked -- --ignored --test-threads=1
 
