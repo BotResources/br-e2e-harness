@@ -9,11 +9,14 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
-- **Every `br-rust-common` pin moves from `v1.2.0` to `v1.3.0`** (25 declarations
-  across 5 workspace `Cargo.toml`, `{ tag, version }` both bumped; no
-  workspace-level pin introduced). `conformance-directory` C1–C5 therefore run
-  against 1.3.0's transactional directory sinks and the stager path, and the
-  whole tree resolves to a single br-rust-common source.
+- **Every `br-rust-common` pin in the workspace moves from `v1.2.0` to
+  `v1.3.0`** — 22 declarations across the 5 workspace-member `Cargo.toml`
+  (`{ tag, version }` both bumped; no workspace-level pin introduced). The 3
+  remaining declarations stay on `v1.2.0` in `conformance-passport`, which leaves
+  the workspace in this release (see below) and keeps its pins frozen.
+  `conformance-directory` C1–C5 therefore run against 1.3.0's transactional
+  directory sinks and the stager path, and the workspace resolves to a single
+  br-rust-common source.
 
 - **`fabric-nats verify` is a genuine read-only check.** br-rust-common v1.3.0
   turned `verify_command_durable` / `verify_event_durable` into a stream-coverage
@@ -25,7 +28,11 @@ single git tag `v{version}` releases the set. Format follows
   coordinate; either miss exits `4` naming the stream, the durable and the filter
   found, and the `ok` line states both checks. It also attaches through the new
   `FabricTestNats::attach_without_provisioning`, so `verify` no longer
-  get-or-creates the two fixed streams it is meant to be checking.
+  get-or-creates the two fixed streams it is meant to be checking. It now covers
+  the `[published_language]` / `[bearer_tokens]` manifest flags too (bucket
+  presence, read-only), reports **every** failing entry rather than only the
+  first, and discriminates an absent stream from an uncovered subject in the
+  message.
 
 - **The harness call sites that *assert* the anti-over-delivery narrow-back moved
   to `ensure_event_durable`** (`conformance-nats-fabric`'s
@@ -51,10 +58,21 @@ single git tag `v{version}` releases the set. Format follows
   Option<Vec<String>>`** — the non-panicking sibling of
   `durable_filter_subjects`, so "the durable is absent" is a value rather than a
   panic.
+- **`BareFabricNats::assert_missing_stream_on_bind` /
+  `assert_missing_command_stream_on_bind` / `event_stream_absent`** — the bind-path
+  guard of the never-auto-provision invariant. Until 1.3.0 the `verify_*_durable`
+  sites covered it incidentally, because the probe created the consumer; now that
+  the probe creates nothing, `ensure_*_durable` against a NATS with no fixed
+  stream needs its own black-box assertion. Exercised by a new
+  `conformance-nats-fabric` check
+  (`a_missing_fixed_stream_fails_the_durable_bind_loud_and_provisions_nothing`)
+  and a harness test, both asserting `Consume(NoStream)` **and** that the stream
+  is still absent afterwards.
 - `tests/fabric_nats_cli.rs` — real-infra coverage of the `verify` subcommand:
-  it fails loud without creating the fixed streams it probes, fails while the
-  durable is absent and passes once provisioned, and rejects a durable whose
-  filter is not the coordinate.
+  it fails loud without creating the fixed streams it probes or the KV bucket the
+  manifest declares, reports every failing entry, fails while the durable is
+  absent and passes once provisioned, and rejects a durable whose filter is not
+  the coordinate.
 
 ### Removed (temporary)
 

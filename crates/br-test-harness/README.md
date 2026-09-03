@@ -339,6 +339,10 @@ subject grammar drifts, the durable bind stops matching and the test fails.
 
 - **`FabricTestNats::start()`** — spawn its own `nats-server`, connect, provision
   both fixed streams (**get-or-create**), mint a UUIDv7 `run_id`.
+- **`FabricTestNats::attach_without_provisioning(url)`** — attach to an
+  **already-running** NATS and provision **nothing**, not even the fixed streams:
+  for a caller whose job is to *observe* the topology as found rather than
+  establish it (the `fabric-nats verify` path).
 - **`FabricTestNats::connect(url)`** — attach to an **already-running** NATS and
   provision the same topology on it (the cross-process / shared-CI-NATS case).
   `shutdown()` tears down a *spawned* server but is a **no-op when attached** —
@@ -425,7 +429,7 @@ absent infra and never widens a durable:
   the widening was undone; **`.durable_filter_subjects_if_present(stream, durable)
   -> Option<Vec<String>>`** is the non-panicking sibling for "does this durable
   exist at all".
-- **`.assert_missing_stream(&coords, durable) -> FabricError`** binds against an
+- **`.assert_missing_stream(&coords, durable) -> FabricError`** probes an
   absent fixed stream and returns the `Consume(NoStream)` it fails with;
   **`.publish_dead_subject(subject, bytes) -> PublishErrorKind`** is the one method
   that legitimately takes a **raw subject** — it exists to prove a publish to the
@@ -434,13 +438,19 @@ absent infra and never widens a durable:
   surface that *replaced* the consumers which used to reach for a raw JetStream
   handle — which no longer exists on either Fabric type.
 - **`BareFabricNats::without_fixed_streams()` / `with_only_command_stream()` /
-  `with_only_event_stream()`** start a server **missing** a fixed stream so a lib
-  bind against the absent stream fails with `FabricError::Consume`:
+  `with_only_event_stream()`** start a server **missing** a fixed stream, so both
+  lib paths against the absent stream fail with `FabricError::Consume(NoStream)`
+  and neither creates it. **Probe** path:
   `.assert_missing_stream(&event_coords, durable)` /
-  `.assert_missing_command_stream(&command_coords, durable)` return that error
-  through the lib's own `verify_*_durable` stream probe, `.command_stream_absent()` proves the
-  command stream is genuinely absent, and `.published_language_absent()` proves the
-  PL bucket is not silently created. `BareFabricNats` exposes **no** raw JetStream
+  `.assert_missing_command_stream(&command_coords, durable)` return the error the
+  lib's `verify_*_durable` fails with. **Bind** path:
+  `.assert_missing_stream_on_bind(&event_coords, durable)` /
+  `.assert_missing_command_stream_on_bind(&command_coords, durable)` return the
+  error `ensure_*_durable` fails with — the bind path is the one that would
+  auto-provision if the lib ever regressed, so it has its own guard.
+  `.command_stream_absent()` / `.event_stream_absent()` prove the streams are
+  genuinely absent afterwards, and `.published_language_absent()` proves the PL
+  bucket is not silently created. `BareFabricNats` exposes **no** raw JetStream
   handle either.
 
 **Parallel-safety boundary.** A `FabricTestNats` namespaces itself (durable
@@ -484,11 +494,16 @@ fabric-nats print-subjects        --manifest <path.toml> [--run-id <id>]
   + the PL and `bearer_tokens` buckets, prints the rendered subjects + durable names;
   idempotent.
 - `verify` is **read-only and creates nothing** — not the streams, not the
-  durables: it attaches through `attach_without_provisioning`, then per manifest
-  entry checks (a) the fixed stream exists and its `subjects` cover the rendered
-  coordinate (the lib's `verify_*_durable`) and (b) the durable exists on that
-  stream filtering **exactly** that coordinate. Either miss exits **4** naming
-  the stream, the durable and the filter found; the `ok` line states both checks.
+  durables, not the buckets: it attaches through `attach_without_provisioning`,
+  then checks **every** manifest entry. For a durable: (a) the fixed stream
+  exists and its `subjects` cover the rendered coordinate (the lib's
+  `verify_*_durable`) and (b) the durable exists on that stream filtering
+  **exactly** that coordinate. For a `[published_language]` / `[bearer_tokens]`
+  flag: the bucket is present. **Every** failing entry is printed; the exit code
+  is **4** if any failed. Each message names what was missing — an absent stream,
+  an uncovered subject (with what the stream does bind), an absent durable, a
+  filter that is not the coordinate, or an absent bucket — and each `ok` line
+  states what was checked.
 - `print-subjects` renders coords → subjects with **no** NATS contact.
 - `--run-id` suffixes durables (`{durable}_{id}`) for the shared-NATS
   cross-process case; default is the literal manifest name.

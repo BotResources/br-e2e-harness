@@ -38,9 +38,10 @@ if the **dead `identity.cmd.` / `identity.evt.` grammar** ever appears in it.
   is **narrowed back** to the exact coordinate filter when the lib create-or-binds
   it (`ensure_event_durable` returns `Ok`); reading the durable's effective filter
   back proves the widening was undone — a consumer cannot silently over-subscribe.
-- Binding against a **missing fixed stream** fails loud
-  (`FabricError::Consume(NoStream)`) — the platform never auto-provisions the
-  stream, on the probe or on the bind.
+- A **missing fixed stream** fails loud on **both** lib paths — the
+  `verify_*_durable` coverage probe *and* the `ensure_*_durable` durable bind —
+  with `FabricError::Consume(NoStream)`, and the stream is still absent
+  afterwards: the platform never auto-provisions it.
 - The anchor's rendered subjects match the lib renderers **byte-for-byte**.
 - The **dead `identity.*` grammar fails loud**: a publish on `identity.cmd.*`
   lands on no fixed stream (`PublishErrorKind::NoStream`) and no `INTEGRATION_*`

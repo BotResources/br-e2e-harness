@@ -80,6 +80,10 @@ impl BareFabricNats {
         self.js.get_stream(INTEGRATION_CMD).await.is_err()
     }
 
+    pub async fn event_stream_absent(&self) -> bool {
+        self.js.get_stream(INTEGRATION_EVT).await.is_err()
+    }
+
     pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
         assert_missing_stream(&self.js, coords, durable).await
     }
@@ -89,13 +93,42 @@ impl BareFabricNats {
         coords: &CommandCoords,
         durable: &str,
     ) -> FabricError {
-        let fabric = Fabric::new(self.js.clone());
-        fabric
+        self.fabric()
             .verify_command_durable(coords, durable)
             .await
             .expect_err(
                 "probing a command coordinate against a missing fixed stream must fail loud",
             )
+    }
+
+    pub async fn assert_missing_stream_on_bind(
+        &self,
+        coords: &EventCoords,
+        durable: &str,
+    ) -> FabricError {
+        self.fabric()
+            .ensure_event_durable(coords, durable)
+            .await
+            .expect_err(
+                "binding an event durable against a missing fixed stream must fail loud, never create it",
+            )
+    }
+
+    pub async fn assert_missing_command_stream_on_bind(
+        &self,
+        coords: &CommandCoords,
+        durable: &str,
+    ) -> FabricError {
+        self.fabric()
+            .ensure_command_durable(coords, durable)
+            .await
+            .expect_err(
+                "binding a command durable against a missing fixed stream must fail loud, never create it",
+            )
+    }
+
+    fn fabric(&self) -> Fabric {
+        Fabric::new(self.js.clone())
     }
 
     pub async fn shutdown(self) {

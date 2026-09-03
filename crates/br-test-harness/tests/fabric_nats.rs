@@ -4,7 +4,7 @@ use br_scope_declaration_contract::{accepted_event_coords, declare_command_coord
 use br_test_harness::fabric_nats::BareFabricNats;
 use br_test_harness::{FabricTestNats, WidenedDurable};
 use br_util_nats_fabric::{
-    FabricError, INTEGRATION_CMD, INTEGRATION_EVT, command_subject, event_subject,
+    ConsumeErrorKind, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, command_subject, event_subject,
 };
 
 #[tokio::test]
@@ -117,13 +117,37 @@ async fn double_provisioning_a_shared_nats_is_idempotent_and_never_wipes() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn a_missing_fixed_stream_makes_the_lib_bind_fail_loud() {
+async fn a_missing_fixed_stream_makes_the_lib_probe_fail_loud() {
     let bare = BareFabricNats::with_only_event_stream().await;
     let coords = declare_command_coords().expect("declare command coords");
 
     let err = bare.assert_missing_command_stream(&coords, "absent").await;
     assert!(matches!(err, FabricError::Consume { .. }));
     assert!(bare.command_stream_absent().await);
+
+    bare.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_missing_fixed_stream_makes_the_lib_bind_fail_loud() {
+    let bare = BareFabricNats::with_only_event_stream().await;
+    let coords = declare_command_coords().expect("declare command coords");
+
+    let err = bare
+        .assert_missing_command_stream_on_bind(&coords, "absent")
+        .await;
+    assert!(matches!(
+        err,
+        FabricError::Consume {
+            kind: ConsumeErrorKind::NoStream,
+            ..
+        }
+    ));
+    assert!(
+        bare.command_stream_absent().await,
+        "the failed bind must not have created the fixed command stream"
+    );
 
     bare.shutdown().await;
 }

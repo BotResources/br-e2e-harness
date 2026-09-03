@@ -32,6 +32,11 @@ fact = "accepted"
 version = 1
 "#;
 
+const BUCKET_MANIFEST: &str = r#"
+[published_language]
+enabled = true
+"#;
+
 const REAIMED_MANIFEST: &str = r#"
 [[command_durable]]
 durable = "verify_probe_cmd"
@@ -57,8 +62,42 @@ async fn verify_fails_loud_without_creating_the_fixed_streams_it_probes() {
         rendered(&out)
     );
     assert!(
-        bare.command_stream_absent().await,
-        "verify must not create the fixed stream it failed to find"
+        bare.command_stream_absent().await && bare.event_stream_absent().await,
+        "verify must not create either fixed stream it failed to find"
+    );
+
+    bare.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn verify_fails_loud_without_creating_the_kv_bucket_the_manifest_declares() {
+    let bare = BareFabricNats::without_fixed_streams().await;
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), BUCKET_MANIFEST);
+
+    let out = cli("verify", &bare.url(), &manifest).await;
+
+    assert_eq!(out.status.code(), Some(4), "{}", rendered(&out));
+    assert!(
+        stderr(&out).contains("PUBLISHED_LANGUAGE"),
+        "the failure must name the absent bucket: {}",
+        rendered(&out)
+    );
+    assert!(
+        bare.published_language_absent().await,
+        "verify must not create the bucket it failed to find"
+    );
+
+    let provisioned = cli("provision", &bare.url(), &manifest).await;
+    assert!(provisioned.status.success(), "{}", rendered(&provisioned));
+
+    let verified = cli("verify", &bare.url(), &manifest).await;
+    assert!(verified.status.success(), "{}", rendered(&verified));
+    assert!(
+        String::from_utf8_lossy(&verified.stdout).contains("ok kv PUBLISHED_LANGUAGE"),
+        "verify must report the bucket it checked: {}",
+        rendered(&verified)
     );
 
     bare.shutdown().await;
@@ -74,8 +113,9 @@ async fn verify_fails_while_the_durable_is_absent_and_passes_once_provisioned() 
     let absent = cli("verify", &harness.url(), &manifest).await;
     assert_eq!(absent.status.code(), Some(4), "{}", rendered(&absent));
     assert!(
-        stderr(&absent).contains("verify_probe_cmd") && stderr(&absent).contains("absent"),
-        "the failure must name the missing durable: {}",
+        stderr(&absent).contains("verify_probe_cmd")
+            && stderr(&absent).contains("verify_probe_evt"),
+        "every failing entry must be reported, not only the first: {}",
         rendered(&absent)
     );
     assert!(
