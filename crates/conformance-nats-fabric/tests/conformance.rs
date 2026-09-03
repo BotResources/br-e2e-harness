@@ -4,8 +4,8 @@ use br_test_harness::{BareFabricNats, FabricTestNats, run_once, workspace_bin};
 use conformance_nats_fabric::anchor::frozen_wire;
 use conformance_nats_fabric::checks::integration::{
     assert_dead_grammar_fails_loud, assert_missing_stream_fails_loud,
-    assert_no_fixed_stream_captured, assert_widened_durable_converges, rust_command_subject,
-    rust_event_subject, widen,
+    assert_missing_stream_fails_loud_on_bind, assert_no_fixed_stream_captured,
+    assert_widened_durable_converges, rust_command_subject, rust_event_subject, widen,
 };
 use conformance_nats_fabric::checks::projection::{
     assert_bootstrap_then_watch_is_parallel_safe, assert_prefix_watch_delivery_gap,
@@ -103,9 +103,17 @@ async fn a_widened_durable_is_converged_back_to_the_exact_filter() {
 
 #[tokio::test]
 #[ignore = "requires a real nats-server"]
-async fn a_missing_fixed_stream_fails_loud() {
+async fn a_missing_fixed_stream_fails_the_coverage_probe_loud() {
     let bare = BareFabricNats::without_fixed_streams().await;
     assert_missing_stream_fails_loud(&bare).await;
+    bare.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real nats-server"]
+async fn a_missing_fixed_stream_fails_the_durable_bind_loud_and_provisions_nothing() {
+    let bare = BareFabricNats::without_fixed_streams().await;
+    assert_missing_stream_fails_loud_on_bind(&bare).await;
     bare.shutdown().await;
 }
 

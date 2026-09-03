@@ -15,6 +15,7 @@ pub enum CheckId {
     ConsumerFilterFlipOrphans,
     WireReservedKeyRejected,
     ConsumerUsersOnlyNarrows,
+    ConsumerStagerTransaction,
 }
 
 impl CheckId {
@@ -33,6 +34,7 @@ impl CheckId {
             CheckId::ConsumerFilterFlipOrphans => "c4",
             CheckId::WireReservedKeyRejected => "w6",
             CheckId::ConsumerUsersOnlyNarrows => "c5",
+            CheckId::ConsumerStagerTransaction => "c6",
         }
     }
 
@@ -51,6 +53,7 @@ impl CheckId {
             "c4" => Some(CheckId::ConsumerFilterFlipOrphans),
             "w6" => Some(CheckId::WireReservedKeyRejected),
             "c5" => Some(CheckId::ConsumerUsersOnlyNarrows),
+            "c6" => Some(CheckId::ConsumerStagerTransaction),
             _ => None,
         }
     }
