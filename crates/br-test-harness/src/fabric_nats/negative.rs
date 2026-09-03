@@ -4,8 +4,35 @@ use br_util_nats_fabric::{
     Fabric, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, KV_PUBLISHED_LANGUAGE, PublishErrorKind,
 };
 
+use super::FabricTestNats;
 use crate::nats::connect;
 use crate::spawned_nats::SpawnedNats;
+
+impl FabricTestNats {
+    pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
+        assert_missing_stream(&self.js, coords, durable).await
+    }
+
+    pub async fn publish_dead_subject(&self, subject: &str, bytes: &[u8]) -> PublishErrorKind {
+        publish_dead_subject(&self.js, subject, bytes).await
+    }
+
+    pub async fn raw_message_absent(&self, stream: &str, subject: &str) -> bool {
+        raw_message_absent(&self.js, stream, subject).await
+    }
+
+    pub async fn durable_filter_subjects(&self, stream: &str, durable: &str) -> Vec<String> {
+        durable_filter_subjects(&self.js, stream, durable).await
+    }
+
+    pub async fn durable_filter_subjects_if_present(
+        &self,
+        stream: &str,
+        durable: &str,
+    ) -> Option<Vec<String>> {
+        durable_filter_subjects_if_present(&self.js, stream, durable).await
+    }
+}
 
 pub struct WidenedDurable {
     pub stream: &'static str,
@@ -53,6 +80,10 @@ impl BareFabricNats {
         self.js.get_stream(INTEGRATION_CMD).await.is_err()
     }
 
+    pub async fn event_stream_absent(&self) -> bool {
+        self.js.get_stream(INTEGRATION_EVT).await.is_err()
+    }
+
     pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
         assert_missing_stream(&self.js, coords, durable).await
     }
@@ -62,11 +93,42 @@ impl BareFabricNats {
         coords: &CommandCoords,
         durable: &str,
     ) -> FabricError {
-        let fabric = Fabric::new(self.js.clone());
-        fabric
+        self.fabric()
             .verify_command_durable(coords, durable)
             .await
-            .expect_err("binding a command durable against a missing fixed stream must fail loud")
+            .expect_err(
+                "probing a command coordinate against a missing fixed stream must fail loud",
+            )
+    }
+
+    pub async fn assert_missing_stream_on_bind(
+        &self,
+        coords: &EventCoords,
+        durable: &str,
+    ) -> FabricError {
+        self.fabric()
+            .ensure_event_durable(coords, durable)
+            .await
+            .expect_err(
+                "binding an event durable against a missing fixed stream must fail loud, never create it",
+            )
+    }
+
+    pub async fn assert_missing_command_stream_on_bind(
+        &self,
+        coords: &CommandCoords,
+        durable: &str,
+    ) -> FabricError {
+        self.fabric()
+            .ensure_command_durable(coords, durable)
+            .await
+            .expect_err(
+                "binding a command durable against a missing fixed stream must fail loud, never create it",
+            )
+    }
+
+    fn fabric(&self) -> Fabric {
+        Fabric::new(self.js.clone())
     }
 
     pub async fn shutdown(self) {
@@ -94,7 +156,7 @@ pub async fn assert_missing_stream(
     fabric
         .verify_event_durable(coords, durable)
         .await
-        .expect_err("binding against a missing fixed stream must fail loud, not auto-provision")
+        .expect_err("probing an event coordinate against a missing fixed stream must fail loud")
 }
 
 pub async fn publish_dead_subject(
@@ -140,6 +202,21 @@ pub async fn durable_filter_subjects(
         .await
         .unwrap_or_else(|e| panic!("read durable {durable} info on {stream_name}: {e}"))
         .config;
+    filters_of(config)
+}
+
+pub async fn durable_filter_subjects_if_present(
+    js: &jetstream::Context,
+    stream_name: &str,
+    durable: &str,
+) -> Option<Vec<String>> {
+    let stream = js.get_stream(stream_name).await.ok()?;
+    let mut consumer: jetstream::consumer::PullConsumer =
+        stream.get_consumer(durable).await.ok()?;
+    Some(filters_of(&consumer.info().await.ok()?.config))
+}
+
+fn filters_of(config: &jetstream::consumer::Config) -> Vec<String> {
     if !config.filter_subjects.is_empty() {
         config.filter_subjects.clone()
     } else if !config.filter_subject.is_empty() {

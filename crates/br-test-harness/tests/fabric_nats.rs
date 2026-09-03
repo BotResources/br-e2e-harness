@@ -3,7 +3,9 @@
 use br_scope_declaration_contract::{accepted_event_coords, declare_command_coords};
 use br_test_harness::fabric_nats::BareFabricNats;
 use br_test_harness::{FabricTestNats, WidenedDurable};
-use br_util_nats_fabric::{FabricError, INTEGRATION_EVT, event_subject};
+use br_util_nats_fabric::{
+    ConsumeErrorKind, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, command_subject, event_subject,
+};
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
@@ -16,11 +18,19 @@ async fn start_provisions_the_two_fixed_streams_and_a_filter_identical_durable()
         .with_command_durable(&coords, "declare_worker")
         .await;
 
+    let durable = harness.durable("declare_worker");
     harness
         .fabric()
-        .verify_command_durable(&coords, &harness.durable("declare_worker"))
+        .verify_command_durable(&coords, &durable)
         .await
-        .expect("the harness durable filter must match what the lib binds");
+        .expect("the fixed command stream must cover the declared coordinate");
+    assert_eq!(
+        harness
+            .durable_filter_subjects(INTEGRATION_CMD, &durable)
+            .await,
+        vec![command_subject(&coords)],
+        "the harness durable must filter exactly the coordinate the lib renders"
+    );
 
     harness.shutdown().await;
 }
@@ -38,9 +48,9 @@ async fn a_widened_durable_is_converged_back_to_the_exact_filter() {
 
     harness
         .fabric()
-        .verify_event_durable(&coords, &durable)
+        .ensure_event_durable(&coords, &durable)
         .await
-        .expect("create-or-bind converges a widened durable back to the coordinate filter");
+        .expect("ensure_event_durable converges a widened durable back to the coordinate filter");
 
     let filters = harness.durable_filter_subjects(stream, &durable).await;
     assert_eq!(
@@ -107,13 +117,37 @@ async fn double_provisioning_a_shared_nats_is_idempotent_and_never_wipes() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn a_missing_fixed_stream_makes_the_lib_bind_fail_loud() {
+async fn a_missing_fixed_stream_makes_the_lib_probe_fail_loud() {
     let bare = BareFabricNats::with_only_event_stream().await;
     let coords = declare_command_coords().expect("declare command coords");
 
     let err = bare.assert_missing_command_stream(&coords, "absent").await;
     assert!(matches!(err, FabricError::Consume { .. }));
     assert!(bare.command_stream_absent().await);
+
+    bare.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_missing_fixed_stream_makes_the_lib_bind_fail_loud() {
+    let bare = BareFabricNats::with_only_event_stream().await;
+    let coords = declare_command_coords().expect("declare command coords");
+
+    let err = bare
+        .assert_missing_command_stream_on_bind(&coords, "absent")
+        .await;
+    assert!(matches!(
+        err,
+        FabricError::Consume {
+            kind: ConsumeErrorKind::NoStream,
+            ..
+        }
+    ));
+    assert!(
+        bare.command_stream_absent().await,
+        "the failed bind must not have created the fixed command stream"
+    );
 
     bare.shutdown().await;
 }

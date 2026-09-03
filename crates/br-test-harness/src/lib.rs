@@ -33,9 +33,10 @@ pub use wait::wait_until;
 #[cfg(feature = "nats-fabric")]
 pub use fabric_nats::{
     BEARER_BUCKET, BareFabricNats, BearerSeedError, BearerSeeder, CapturedMessage, CommandAwaiter,
-    CommandCapture, EventCapture, FabricAwaiter, FabricKvError, FabricTestNats, Manifest,
-    ManifestError, NatsBacking, Rendered, RenderedCommand, RenderedEvent, RunNamespace,
-    SeededToken, WidenedDurable, unknown_bearer,
+    CommandCapture, DeliveryOutage, DurableConfig, DurableTap, EventCapture, FabricAwaiter,
+    FabricKvError, FabricTestNats, FixedStream, Manifest, ManifestError, NatsBacking, Rendered,
+    RenderedCommand, RenderedEvent, RunNamespace, SeededToken, TapOutcome, TapStop, TappedDelivery,
+    WidenedDurable, unknown_bearer,
 };
 #[cfg(feature = "nats")]
 pub use nats::TestNats;
@@ -53,9 +54,9 @@ pub use passport::PassportBuilder;
 #[cfg(feature = "server")]
 pub use server::TestServer;
 #[cfg(feature = "sse")]
-pub use sse::SseSubscription;
+pub use sse::{DrainStop, SseOutcome, SseSubscription};
 #[cfg(feature = "ws")]
-pub use ws::WsSubscription;
+pub use ws::{WsCredential, WsError, WsSubscription};
 
 #[cfg(feature = "oidc")]
 pub use oidc_test_idp as oidc;

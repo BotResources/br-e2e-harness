@@ -5,6 +5,13 @@ mod connect;
 mod kv;
 mod namespace;
 mod negative;
+mod observe;
+mod outage;
+mod provision;
+mod purge;
+mod raw_publish;
+mod tap;
+mod tuning;
 
 pub use bearer::{BEARER_BUCKET, BearerSeedError, BearerSeeder, SeededToken, unknown_bearer};
 pub use capture::{CapturedMessage, CommandAwaiter, CommandCapture, EventCapture, FabricAwaiter};
@@ -13,16 +20,19 @@ pub use connect::NatsBacking;
 pub use kv::FabricKvError;
 pub use namespace::RunNamespace;
 pub use negative::{BareFabricNats, WidenedDurable};
+pub use observe::FixedStream;
+pub use outage::DeliveryOutage;
+pub use tap::{DurableTap, TapOutcome, TapStop, TappedDelivery};
+pub use tuning::DurableConfig;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use async_nats::jetstream::{self, consumer};
+use async_nats::jetstream;
 use br_core_directory::DirectoryMeta;
 use br_core_integration::{CommandCoords, EventCoords};
 use br_util_nats_fabric::{
-    Fabric, FabricError, INTEGRATION_CMD, INTEGRATION_EVT, KV_EPHEMERAL_AUTH,
-    KV_PUBLISHED_LANGUAGE, KvKey, KvPrefix, PublishErrorKind, PublishedLanguagePublisher,
-    PublishedLanguageReader, command_subject, event_subject,
+    Fabric, INTEGRATION_CMD, INTEGRATION_EVT, KV_EPHEMERAL_AUTH, KV_PUBLISHED_LANGUAGE, KvKey,
+    KvPrefix, PublishedLanguagePublisher, PublishedLanguageReader, event_subject,
 };
 use futures_util::TryStreamExt as _;
 use serde::Serialize;
@@ -59,10 +69,26 @@ impl FabricTestNats {
         .await
     }
 
+    pub async fn attach_without_provisioning(existing_url: &str) -> Self {
+        let client = connect_or_panic(existing_url).await;
+        let js = jetstream::new(client.clone());
+        Self::bind(
+            NatsBacking::Attached {
+                url: existing_url.to_string(),
+            },
+            client,
+            js,
+        )
+    }
+
     async fn from_client(backing: NatsBacking, client: async_nats::Client) -> Self {
         let js = jetstream::new(client.clone());
         connect::get_or_create_fixed_stream(&js, INTEGRATION_CMD, "integration.cmd.>").await;
         connect::get_or_create_fixed_stream(&js, INTEGRATION_EVT, "integration.evt.>").await;
+        Self::bind(backing, client, js)
+    }
+
+    fn bind(backing: NatsBacking, client: async_nats::Client, js: jetstream::Context) -> Self {
         let fabric = Fabric::new(js.clone());
         let ns = RunNamespace::mint();
         Self {
@@ -89,46 +115,6 @@ impl FabricTestNats {
         let store = connect::get_or_create_bucket(&self.js, bearer::BEARER_BUCKET).await;
         self.bearer = Some(store);
         self
-    }
-
-    pub async fn with_command_durable(self, coords: &CommandCoords, durable_name: &str) -> Self {
-        let subject = command_subject(coords);
-        self.create_durable(INTEGRATION_CMD, &self.ns.durable(durable_name), &subject)
-            .await;
-        self
-    }
-
-    pub async fn with_event_durable(self, coords: &EventCoords, durable_name: &str) -> Self {
-        let subject = event_subject(coords);
-        self.create_durable(INTEGRATION_EVT, &self.ns.durable(durable_name), &subject)
-            .await;
-        self
-    }
-
-    pub async fn provision_command_durable(&self, coords: &CommandCoords, durable: &str) {
-        self.create_durable(INTEGRATION_CMD, durable, &command_subject(coords))
-            .await;
-    }
-
-    pub async fn provision_event_durable(&self, coords: &EventCoords, durable: &str) {
-        self.create_durable(INTEGRATION_EVT, durable, &event_subject(coords))
-            .await;
-    }
-
-    pub async fn with_widened_durable(
-        self,
-        stream_name: &'static str,
-        durable_name: &str,
-        widened_filter: &str,
-    ) -> (Self, WidenedDurable) {
-        let durable = self.ns.durable(durable_name);
-        self.create_durable(stream_name, &durable, widened_filter)
-            .await;
-        let marker = WidenedDurable {
-            stream: stream_name,
-            durable,
-        };
-        (self, marker)
     }
 
     pub fn fabric(&self) -> &Fabric {
@@ -286,22 +272,6 @@ impl FabricTestNats {
         BearerSeeder { store }
     }
 
-    pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
-        negative::assert_missing_stream(&self.js, coords, durable).await
-    }
-
-    pub async fn publish_dead_subject(&self, subject: &str, bytes: &[u8]) -> PublishErrorKind {
-        negative::publish_dead_subject(&self.js, subject, bytes).await
-    }
-
-    pub async fn raw_message_absent(&self, stream: &str, subject: &str) -> bool {
-        negative::raw_message_absent(&self.js, stream, subject).await
-    }
-
-    pub async fn durable_filter_subjects(&self, stream: &str, durable: &str) -> Vec<String> {
-        negative::durable_filter_subjects(&self.js, stream, durable).await
-    }
-
     pub async fn shutdown(self) {
         self.backing.shutdown().await;
     }
@@ -311,24 +281,6 @@ impl FabricTestNats {
             .get_key_value(KV_PUBLISHED_LANGUAGE)
             .await
             .expect("published-language bucket (call with_published_language first)")
-    }
-
-    async fn create_durable(&self, stream_name: &'static str, durable: &str, filter: &str) {
-        let stream = self.js.get_stream(stream_name).await.unwrap_or_else(|e| {
-            panic!("fixed stream {stream_name} must exist before binding: {e}")
-        });
-        stream
-            .create_consumer(consumer::pull::Config {
-                durable_name: Some(durable.to_string()),
-                filter_subjects: vec![filter.to_string()],
-                ack_policy: consumer::AckPolicy::Explicit,
-                ack_wait: std::time::Duration::from_secs(2),
-                ..Default::default()
-            })
-            .await
-            .unwrap_or_else(|e| {
-                panic!("create durable {durable} on {stream_name} filtering {filter}: {e}")
-            });
     }
 }
 

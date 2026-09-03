@@ -36,10 +36,12 @@ if the **dead `identity.cmd.` / `identity.evt.` grammar** ever appears in it.
 
 - A durable **widened** to `integration.evt.>` (not the exact coordinate subject)
   is **narrowed back** to the exact coordinate filter when the lib create-or-binds
-  it (`verify_event_durable` returns `Ok`); reading the durable's effective filter
+  it (`ensure_event_durable` returns `Ok`); reading the durable's effective filter
   back proves the widening was undone — a consumer cannot silently over-subscribe.
-- Binding against a **missing fixed stream** fails loud
-  (`FabricError::Consume(NoStream)`) — the platform never auto-provisions.
+- A **missing fixed stream** fails loud on **both** lib paths — the
+  `verify_*_durable` coverage probe *and* the `ensure_*_durable` durable bind —
+  with `FabricError::Consume(NoStream)`, and the stream is still absent
+  afterwards: the platform never auto-provisions it.
 - The anchor's rendered subjects match the lib renderers **byte-for-byte**.
 - The **dead `identity.*` grammar fails loud**: a publish on `identity.cmd.*`
   lands on no fixed stream (`PublishErrorKind::NoStream`) and no `INTEGRATION_*`
@@ -60,6 +62,13 @@ if the **dead `identity.cmd.` / `identity.evt.` grammar** ever appears in it.
   `FabricError::Decode` error.
 
 ## Running
+
+Add it as a dev-dependency, pinned to the same harness tag as `br-test-harness`:
+
+```toml
+[dev-dependencies]
+conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0" }
+```
 
 The real-infra tests in `tests/conformance.rs` are `#[ignore]`-gated and require
 a `nats-server` on `PATH` and a `go` toolchain:

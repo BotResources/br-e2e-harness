@@ -34,7 +34,7 @@ implementations**:
 
 ## The batteries
 
-### Wire-deser gate — W1–W5 (offline, the gate)
+### Wire-deser gate — W1–W6 (offline, the gate)
 
 Builds + runs the Go anchor, then for each emitted `{key, value}` entry
 deserialises the `value` through the lib oracle. **Offline** — no NATS, no PG;
@@ -79,6 +79,7 @@ consume nothing.
 | **C3** | a published user carrying an extension the consumer's `extract_user_extensions` selects is projected into `known_users.extensions` and read back **intact** — the sink is lossless and never force-drops extensions. |
 | **C4** | a user passing `filter_users` is projected; republishing it so it **fails** the filter makes the next `reconcile` **orphan-delete** its row (the copy filter is re-evaluated, a flip retracts). |
 | **C5** | a `ConsumptionScope::UsersOnly` consumer against a schema that **lacks** the group tables reconciles, then **watches** a live PUT: a fresh user published into the bucket while `watch()` runs is projected into `known_users` (polled to a deadline), and the group tables still do **not** exist — so the scope narrows a *live* change with **no** group DML (any group write would error on the missing tables). Because directory keys are slash-delimited, the live PUT also exercises `br-rust-common` v1.0.1's `watch_all` + client-side prefix filter on real NATS. |
+| **C6** | a registered `ImpactStager` runs **on the sink's own connection, inside the roster transaction**: a committed roster write and its impacts are durable together (the stager reads the still-uncommitted roster row through the `conn` it is handed), a stager that **refuses** one key rolls that key's roster write back — **every column** of the pre-existing row unchanged — while a lower-ordered sibling key stays converged, a converged mirror stages nothing, and a projector with **no** stager registered converges the roster while staging nothing at all. The impact set is pinned for the **six** roster writes the Go anchor can drive: user upsert → that user; group upsert that **adds** members → the group only; group upsert that **drops** a member → the group **+** the removed member; group upsert renaming only → the group; user delete → that user **+** every group still holding it; group delete → the group **+** every member the cascade unlinks. Service-account writes are **not** exercised — the anchor publishes no `identity/service_accounts/…` key, so the battery cannot drive that sink without inventing a wire the Go anchor does not freeze. |
 
 ## Public helper surface (the reusable battery)
 
@@ -88,7 +89,8 @@ consuming service's e2e can call them directly:
 - `build_and_emit()` — builds the Go anchor and runs it once, returning the
   parsed `DirectorySnapshotWire`. `build_anchor()` / `emit_snapshot(binary)` split
   the two steps.
-- `run_wire_battery(&snapshot) -> ConformanceReport` — the W1–W5 offline gate;
+- `run_wire_battery(&snapshot) -> ConformanceReport` — the W1–W5 offline gate
+  (`reserved_key_rejected()` is the standalone W6 check);
   `deserialize_user` / `deserialize_group` / `deserialize_meta` are the per-entry
   oracle deser, each erroring with the offending KV key and the lib type it failed
   to deserialise into.
@@ -105,6 +107,16 @@ consuming service's e2e can call them directly:
 - `users_only_narrows_projection(&snapshot)` — the C5 `ConsumptionScope::UsersOnly`
   scenario against a `ConsumerDb::apply_users_only_schema()` (a schema variant that
   omits the group tables; `group_tables_exist()` probes their absence).
+- `stager_stages_in_the_projection_transaction(&snapshot)` — the C6 stager
+  scenario. It creates an **adopter-owned** `conformance_impacts(seq, namespace,
+  key, roster_visible)` table (`IMPACT_TABLE`) in the throwaway database and
+  registers an `ImpactStager` that writes one row per `Impact::ForeignChanged` on
+  the `conn` the sink hands it, recording whether the roster row the impact names
+  was already visible to that connection. The stager kit is exported for an
+  adopter wiring its own impact table: `RecordingStager::{recording, refusing}`,
+  `StagerFault`, `StagedImpact` (the read-back row) and the
+  `create_impact_table` / `staged_impacts` / `clear_impacts` helpers, all
+  addressing `IMPACT_TABLE`.
 - `reserved_key_rejected()` — the W6 offline guard; returns a `CheckOutcome` (no
   infra), asserting `PublishedUser::new` fails closed on a reserved-key extension.
 - `AnchorSource` — a `DirectorySource` built **from the anchor snapshot** (its
@@ -145,7 +157,7 @@ Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.3" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0" }
 ```
 
 ## Why — the non-obvious bits
@@ -159,6 +171,11 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 | Cx loads a `DirectorySnapshot` from the projected `known_*` rows, then exercises the readers | The kit's `DirectoryProjector` writes KV→PG; the readers (`resolve_user` / `is_member` / `group_name`) live on `DirectorySnapshot`, which a consumer service builds from its projection. Cx mirrors that: project to PG, read PG back into a snapshot, assert the readers. |
 | Cx uses the `E2eDatabase` owner role for both migration and projection | The directory projection store carries no row-ownership dimension (reference data, not RLS-gated), so there is no second runtime role to model. The owner is a `NOSUPERUSER` least-privilege role; the projector reconciles as it. |
 | W6 (reserved-key) drives `PublishedUser::new`, not a wire deser | The deser path consumes the three reserved core keys (`email` / `first_name` / `last_name`) out of the flatten bag *before* `new`, so a wire value can never leave a reserved key in the residual extensions — the guard is structurally unreachable via deser. It exists to defend the **publisher's** direct constructor path, which is exactly what W6 exercises (fail-closed, never a silent overwrite). |
+| C6 designates the **last** user in key order as the one its stager refuses | `PublishedLanguageConsumer::bootstrap` projects a `BTreeMap<KvKey, _>`, so keys are applied in sorted order and the first key commits before the last one is even attempted. Refusing the last one makes "the sibling still converges, the refused key does not" a deterministic single-pass observation instead of a race. |
+| C6 records `roster_visible` from inside `stage_in` **and** asserts a rollback | Either alone is weak: a `true` visibility flag is also what an already-committed pooled write would show, and a rollback alone does not prove the stager ran on the sink's connection. Together they pin the whole boundary — same connection, still-uncommitted, both-or-neither. |
+| C6 re-converges with an accepting stager right after the rollback phase | It proves the refused key's new value was genuinely published and only the rollback kept it out of `known_users` — otherwise the "untouched row" assertion would also pass against a change that never reached KV. |
+| C6 deletes the group **after** deleting one of its users | A user retraction deliberately leaves the `known_user_group` rows in place, so the group still holds a link the delete has to unlink. That is what reaches the stager-only branch of `GroupSink::retract` (lock the group row, read the members, stage one impact each) — a group delete on an empty group would never enter it. |
+| C6's `plan()` refuses a snapshot where the refused user and the deleted user are the same id | The phases are ordered, and the last one renames the refused user. If the anchor ever made that user the group's lowest-id member, the delete phase would have removed the row the rename needs, and the check would report a lib defect that is really a fixture defect. |
 | C5 (UsersOnly) proves the narrowing by a schema that **lacks** the group tables | A `UsersOnly` consumer that merely *suppressed* output would pass even against a full schema. Dropping the group tables turns any stray group DML into a hard error, so a green C5 proves the scope genuinely never opens the group consumer — the narrowing is real, not cosmetic. `watch()` is run under a short `timeout` (a live subscription never returns on its own); the assertion is that it does not error and materialises no group tables within the window. |
 | The whole real battery is `#[ignore]`-gated | It drives real infra (`go` + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
 

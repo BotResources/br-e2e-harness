@@ -12,6 +12,15 @@ a **sealed** bearer credential into a `Passport` exactly as the platform require
 > sealed entry into the `PUBLISHED_LANGUAGE` KV bucket, and calls the subject's
 > HTTP surface on an isolated, throwaway test network.
 
+> **It depends on no BotResources code but `br-rust-common` and the sibling
+> `br-test-harness`.** The sealed wire is frozen by the Go anchor as **committed
+> vectors**, never by a Rust contract crate — so Rust and the wire cannot evolve
+> together silently.
+
+> **The subject under test only ever serves.** The battery never asks it to seal,
+> so a consuming service's binary needs no credential-forging subcommand: it exposes
+> `GET /internal/passport`, `/readyz`, `/livez`, and nothing else.
+
 ## The frozen contract (authoritative)
 
 `GET /internal/passport`:
@@ -21,7 +30,8 @@ a **sealed** bearer credential into a `Passport` exactly as the platform require
   bucket `PUBLISHED_LANGUAGE` → **200** with response header `X-Passport` =
   base64-std of a `br_core_auth::Passport`.
 - token absent / revoked, no `Authorization`, a non-Bearer credential, an
-  **unreadable envelope**, a **wrong seal key**, or a **tampered ciphertext** →
+  **unreadable envelope**, a **wrong seal key**, a **tampered ciphertext**, or a
+  **tampered nonce** →
   **200, no `X-Passport`** (anonymous, fail-closed).
 - a backend (KV) error → it **fails loud** (a **5xx**, or the resolver becomes
   unreachable), never a silent 200.
@@ -34,12 +44,16 @@ dropping its connection / exiting (fail-loud).
 
 ## The sealed wire
 
-The KV value is a `br_auth_contract::SealedBearer { nonce, ciphertext }` (both
-base64-std, `deny_unknown_fields`) — a **ChaCha20-Poly1305** AEAD envelope
-(RFC 8439, 12-byte random nonce carried in the envelope, 16-byte tag). The
-**AAD is the unprefixed SHA-256 digest** of the raw token
-(`br_core_auth::bearer_token_key`), not the full KV key. The sealed cleartext is
-`br_auth_contract::BearerEntry { actor, token_id }` — it carries **no email**.
+The KV value is `{"nonce":"…","ciphertext":"…"}` (both base64-std, unknown fields
+rejected) — a **ChaCha20-Poly1305** AEAD envelope (RFC 8439, 12-byte random nonce
+carried in the envelope, 16-byte tag). The **AAD is the unprefixed SHA-256 digest**
+of the raw token (`br_core_auth::bearer_token_key`), not the full KV key. The
+sealed cleartext is `{"actor":{"kind":"human"|"service","id":"<uuid>"},"token_id":"<uuid>"}`
+— it carries **no email**.
+
+That wire is frozen in **Go**, in `conformance-subjects/identity-passport`, and
+materialised as the committed file `vectors/passport-wire-v1.json` in this crate.
+Rust ships no implementation of it.
 
 The resolved `Passport::Human` therefore has `auth_method = Pat { token_id }`,
 `user_id` = the `UserId` inside the sealed `Actor::Human(..)`, and **no `email`
@@ -49,58 +63,93 @@ must not), **not** fully-empty claims: a real subject MAY carry other claims (e.
 `scopes`), so the battery asserts `claims.get("email").is_none()`, never `{}`. The
 Go anchor emits `{}` only because it has no scopes source.
 
-## Oracle — the real lib, never hand-rolled
+## Oracle — committed vectors freeze the wire, the lib decodes the Passport
 
-The runner seeds and decodes **using the real types**, never a hand-restated wire
-shape:
+Two roles, never conflated:
 
-- **Seeding** uses `br_auth_identity_util::BearerPublisher` (the identity-side
-  producer kit) to seal a `BearerEntry` and write it at `bearer_token_kv_key`,
-  through the existing `br-test-harness` `with_published_language` PL seam — the
-  in-crate `SealedSeeder`. The subject independently recomputes the same KV key and
-  **opens** the envelope with its own Go AEAD.
+- **Seeding replays committed vectors.** `vectors/passport-wire-v1.json` carries, per
+  case, the `token`, the `kv_key`, the sealed identity, and `value_b64` — the exact
+  bytes to store. `SealedSeeder` `include_str!`s that file, decodes `value_b64`, and
+  writes it **verbatim** through the `br-test-harness` `pl_put_raw` seam. Rust parses
+  only the vector file's own JSON envelope; it never parses, builds, or mutates a
+  *sealed* envelope. The adversarial cases (wrong key, flipped ciphertext, flipped
+  nonce, unknown field) are **pre-generated entries**, not Rust byte-flipping. Each
+  corrupt entry — every entry whose `corruption` is not `none` — is a **controlled
+  twin**: the Go anchor builds it from the exact sealed bytes of its faithful entry
+  and applies only the declared mutation. `wrong-key` is not a corrupt entry: it is a
+  faithful seal under another key, and it has no twin (see P6).
 - **Decoding** the returned `X-Passport` is `PassportHeader::from_header(&str)`
   into the real `br_core_auth::Passport`. Deserialization succeeding **is** the
   wire-shape check — `Passport` is `#[serde(deny_unknown_fields)]`, so a stale
   decode fails. There is no hand-written shape guard to drift from the types.
 
-> **The Go subject is a frozen, independent anchor of the external wire — and it
-> OPENS the Rust-sealed envelope.** It re-implements the KV-key/AAD derivation, the
-> envelope parse, and the ChaCha20-Poly1305 **open** in Go, never importing the
-> Rust lib. Seeding through the real Rust seal + the frozen Go open is genuine
-> cross-language interop: it pins the whole crypto contract — key handling,
-> AAD = unprefixed digest, cipher / nonce / tag, envelope JSON, `BearerEntry`
-> shape, and `Passport` shape. The **random per-seal nonce** means the ciphertext
-> bytes are not frozen; the crypto **contract** is. When `br-rust-common` /
-> `svc-auth` evolve, this crate bumps its pins and re-runs against the unchanged Go
-> subject: **green means the external envelope didn't move**; **red is a real
-> break**.
+The vectors are generated by the Go anchor (`make -C conformance-subjects/identity-passport vectors`)
+and **byte-compared against a live regeneration** by `vectors_test.go` on every
+`make check` — and by the `identity-passport anchor tests` step of the `infra-e2e`
+CI job, so anchor drift or a hand edit of the JSON fails CI. Because the seal is
+a dev-time generator and never runs during a conformance run, the **subject under
+test only serves** — no consuming binary has to ship a way to forge a credential.
 
-## The conformance battery (P1–P8, G4)
+Two cross-checks run at parse time, so an unusable file panics before any scenario.
+First, the lib oracle: every `kv_key` in the file must end in
+`br_core_auth::bearer_token_key(<token>)`, so the digest derivation stays pinned to
+the real lib and a bare digest with no prefix is rejected — the prefix is the
+anchor's. Second, the twin rule, applied to **every** entry: a vector may declare a
+`corruption` only if the twin table names it as the corrupt half of a pair (and a
+corrupt half may not declare `none` or another pair's mutation), and each corrupt
+vector must then be its faithful vector's envelope with exactly the declared
+mutation — **byte 0 xor `0xff`** in the named field with the other field
+byte-identical, or the same envelope plus one unknown key. A pair that drifted apart
+(another nonce, a flip away from byte 0, a partial flip, a re-seal, a split
+identity), a corrupt vector smuggled in outside the table, or an unknown `corruption`
+label is rejected here, so `run_corrupted_envelope` proves what it claims.
 
-P1–P8 are `#[ignore]`-gated real-infra tests (`tests/conformance.rs`); **G4** is a
+> **The Rust-side interop guard belongs where the Rust seal lives.** Opening a
+> Go-produced vector through `br_auth_contract::open` proves Rust↔Go interop, and it
+> is `svc-auth`'s test to own, next to the crate it guards. This battery is the
+> **external-wire** gate: it depends on no service, so a `br-rust-common` bump
+> never drags a consumer's tag along.
+
+## The conformance battery (P1–P10, G4)
+
+P1–P10 are `#[ignore]`-gated real-infra tests (`tests/conformance.rs`); **G4** is a
 pure round-trip through the lib types (a unit test in `src/scopes.rs`, no infra).
 G4 runs via `cargo test` only — it is an offline lib round-trip, never a black-box
 spawned subject, so it is **not** selectable on the spawn runner
-(`Scenario::from_code("g4")` returns `None` by design; only P1–P8 are spawn
-scenarios):
+(`Scenario::from_code("g4")` returns `None` by design; only P1–P10 are spawn
+scenarios). The codes are identifiers, not an order: **P8 is destructive and always
+runs last**, whatever its number:
 
 | Id | Asserts |
 |---|---|
 | **P1** | A seeded sealed bearer resolves to **200 + `X-Passport`**, decoding to a `Passport::Human` whose `auth_method` is `Pat { token_id }` matching the sealed `token_id`, whose `user_id` equals the **exact** sealed `Actor::Human` UserId, and whose `claims` carries **no email**. Resolved twice → deterministic. |
-| **P2** | A bearer seeded then **revoked** (`delete_bearer`) resolves to **200, no `X-Passport`**. |
+| **P2** | A bearer seeded then **revoked** (the KV key retracted) resolves to **200, no `X-Passport`**. |
 | **P3** | A bearer that was **never seeded** resolves to **200, no `X-Passport`**. |
 | **P4** | A request with **no `Authorization`** resolves to **200, no `X-Passport`**. |
 | **P5** | Two distinct sealed entries (distinct `user_id` + `token_id`) resolve, **each to its own passport**, no cross-talk. |
-| **P6** | A bearer sealed under a **WRONG key** (a second `BearerPublisher` with a different 32-byte key) → the subject (correct key) AEAD-open fails → **anonymous**, never a wrong identity. |
-| **P7** | A correctly-sealed bearer whose stored ciphertext is then **byte-flipped** (`pl_get_raw` → flip → `pl_put_raw`) → the AEAD tag fails → **anonymous**. |
+| **P6** | The `wrong-key` vector — its own identity, sealed under a **different 32-byte key** — is stored, and the subject (correct key) AEAD-open fails → **anonymous**, never a wrong identity. It is the **one negative vector with no twin**: a KV key holds a single value, so an entry sealed under the wrong key cannot also be the faithful entry that resolves at that key. Its guarantee therefore rests on a `pl_get_raw` **presence** assertion — the value is proven in the bucket before the endpoint is called, so the anonymity is an open failure and not a missing key — not on a prior resolution. |
+| **P7** | A bearer that **resolved** is then replaced, at its own KV key, by the `tampered-ciphertext-corrupt` vector: the **exact envelope that just resolved** — same nonce, same ciphertext — with **byte 0 of the ciphertext flipped**, and nothing else. The AEAD tag fails → **anonymous**. The proven-resolving twin is what makes the flip the only difference. |
+| **P10** | Same shape as P7 with the `tampered-nonce-corrupt` vector: the exact resolving envelope with **byte 0 of its nonce flipped**, so the carried nonce no longer matches the tag → **anonymous**. |
+| **P9** | A bearer that **resolved** is then replaced, at its own KV key, by the `unreadable-corrupt` vector: the exact resolving envelope **plus one unknown field**, byte-identical otherwise. The strict parse rejects it **before** the AEAD → **anonymous**. `vectors_test.go` proves it would open without that field, so the parse is the only thing failing. |
 | **P8** | With the `PUBLISHED_LANGUAGE` bucket **destroyed** under the live subject, resolution **fails loud** — a **5xx** *or* the resolver becoming **unreachable** (transport error) — never a silent **200** (anonymous or resolved). A pre-deletion health guard first confirms the subject resolves the seed, so a later unreachability is attributable to the infra loss alone. Destructive → `run_spawn` always runs it **last**. |
 | **G4** | A `Passport` carrying a `scopes` claim survives the `X-Passport` base64 round-trip identically, and the typed-scopes API holds (`scopes()` / `has_scope` / absent = empty / malformed skipped). |
 
-The non-tautological property **P1 + P5** prove: the independent subject opens what
-the real lib sealed. If the subject's key derivation, AAD, cipher, or entry parse
-diverged, the open would fail → anonymous → the battery goes red. That is the
-backward-compat / interop gate.
+**What P1–P10 prove, and what they do not.** They prove the *endpoint* behaviour —
+resolution, determinism, no cross-talk, and fail-closed on every unopenable or
+unparseable input — against a subject that is a black box to the runner. They do
+**not** prove Rust↔Go crypto interop: seal and open are the same frozen Go
+implementation, and that is deliberate (the wire must not move with the Rust lib).
+Interop is pinned instead by the anchor's own frozen vectors and by the
+`br-auth-contract` guard in `svc-auth`.
+
+The frozen set also carries a **`faithful-service`** vector, freezing the
+`{"kind":"service","id":…}` cleartext — that is wire, so it is frozen. Its
+*resolution* is not: the Go anchor answers with a `Passport::Human` carrying the
+service-account id, but a real `svc-identity` may legitimately answer with a
+`Passport::Service`, so the vector declares **`"resolves": "unasserted"`** and no
+P-scenario drives it over HTTP. `vectors_test.go` opens it and checks the cleartext,
+and separately guards the rule both ways: no *human* vector may be left unasserted,
+and a *service* vector may never be given an asserted outcome.
 
 `ConformanceReport::is_conformant()` means **"every check that ran passed, and at
 least one ran"** — zero failures, zero skips, and a **non-empty** report. A gate
@@ -138,7 +187,9 @@ and is asserted separately, not via the report.
 |---|---|
 | `NATS_URL` | the throwaway broker URL |
 | `PORT` | the loopback port to bind; `base_url = http://127.0.0.1:$PORT` |
-| `BEARER_SEAL_KEY` | base64-std of the fixed 32-byte seal key |
+| `BEARER_SEAL_KEY` | `seal_key_b64` read straight out of the vector file |
+
+Nothing else is required of the subject — it serves, it never seals.
 
 The KV bucket is the fixed `PUBLISHED_LANGUAGE` (not an env var). Readiness is
 `/readyz`. This matches the gateway `examples/svc-identity` exactly, so the same
@@ -152,35 +203,41 @@ fails loud if the bucket is missing, so the boot order is fixed:
 1. `FabricTestNats::start()` (its own `nats-server`).
 2. Provision the `PUBLISHED_LANGUAGE` bucket in-process via
    `with_published_language()` (no external binary, so the gate is a zero-ceremony
-   drop-in) **before** the subject, which also binds it for seeding.
+   drop-in) **before** the subject.
 3. Spawn the subject with `NATS_URL` / `PORT` / `BEARER_SEAL_KEY`.
 4. `wait_until` `/readyz` == 200.
-5. Run the scenarios (P8 last), then shut down.
+5. Run the scenarios (P8 last), each seeding the committed vector bytes it needs at
+   the vector's own KV key, then shut down.
 
 ## Running it
 
-Needs `nats-server` and the **Go toolchain** on `PATH` (the runner builds the
-subject and runs its `make guard`). No external binary is required — the bucket is
-provisioned in-process. The tests are `#[ignore]`-gated so the default `cargo test`
-stays green:
+**Two paths, two toolchains — this is the point of seeding from vectors.**
+
+| Path | Entry point | Needs |
+|---|---|---|
+| **In-repo** (drive the Go anchor) | `PassportHarness::start()` / `build_subject()` | `nats-server`, **plus `go` and `make`** — it compiles the anchor and runs its `make guard` |
+| **Consumer** (drive your own service) | `run_spawn(&SpawnTarget { binary }, …)` / `start_with_binary` | `nats-server` only — **no Go, no make**; the seeds are the committed vectors, and your binary is never asked to seal |
+
+No external binary is required either way — the bucket is provisioned in-process.
+The tests are `#[ignore]`-gated so the default `cargo test` stays green:
 
 ```sh
 # offline (G4 + unit tests)
 cargo test -p conformance-passport
 
-# full P1..P8 battery against the Go anchor (real infra)
+# full P1..P10 battery against the Go anchor (real infra)
 cargo test -p conformance-passport --test conformance -- --ignored --test-threads=1
 ```
 
 ## Install
 
 A **dev-dependency**, pinned to a release tag. Keep its `br-rust-common` pin
-identical to `br-test-harness`'s (`v1.2.0`) so Cargo resolves a single source of
+identical to `br-test-harness`'s (`v1.3.0`) so Cargo resolves a single source of
 `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.3" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0" }
 ```
 
 ## License

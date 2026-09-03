@@ -7,12 +7,16 @@ as a real `svc-identity` does: it reads a bearer credential, looks up the
 with its own ChaCha20-Poly1305 AEAD, and returns the resolved **Passport** in the
 `X-Passport` response header.
 
-It is the **test SUBJECT** for conformance group **G1**. A separate Rust runner
+It is the **test SUBJECT** for conformance group **G1**, and — at **dev time only**
+— the **generator** of the frozen seeds the runner replays. A separate Rust runner
 drives it as a **black box**: it brings up JetStream NATS with a pre-created
-`PUBLISHED_LANGUAGE` bucket, seeds **sealed** entries with the real Rust lib
-(`br-auth-identity-util` → `br-auth-contract`), calls `GET /internal/passport`
-with various `Authorization` headers, and asserts the returned `X-Passport`
-decodes under the real `br_core_auth::Passport`.
+`PUBLISHED_LANGUAGE` bucket, writes the committed vector bytes raw, calls
+`GET /internal/passport` with various `Authorization` headers, and asserts the
+returned `X-Passport` decodes under the real `br_core_auth::Passport`.
+
+**During a conformance run this binary only serves.** Generation happens offline via
+`make vectors`; the runner never invokes a seal. A consuming service driven by the
+same battery therefore needs no seal subcommand — and must not ship one.
 
 > This is a **test fixture**. It implements no authentication on its HTTP surface
 > and is meant only for an isolated, throwaway test network.
@@ -20,14 +24,22 @@ decodes under the real `br_core_auth::Passport`.
 ## The cross-language anchor
 
 This subject is the **frozen, independent Go re-implementation** of the sealed
-wire — its own SHA-256, its own AAD derivation, its own struct parse, and its own
-`golang.org/x/crypto/chacha20poly1305` **open** path. It **never imports the Rust
-lib**. The runner seeds with the *real* Rust seal (`BearerPublisher`); this subject
-independently **decrypts** it. A green run is genuine Rust-seal / Go-open
-cross-language interop: it pins the whole crypto contract — key handling, the
-AAD = unprefixed digest, the cipher / nonce / tag, the envelope JSON, the
-`BearerEntry` shape, and the `Passport` shape. The random per-seal nonce means the
-**ciphertext bytes are not frozen** — the crypto **contract** is.
+wire — its own SHA-256, its own AAD derivation, its own struct parse, and both the
+`golang.org/x/crypto/chacha20poly1305` **seal** and **open** paths. It **never
+imports the Rust lib**, and no Rust crate ships the wire it freezes.
+
+**Seal and open are frozen together, in one package.** The wire is pinned by
+`wire_test.go` + `seal_test.go` + `vectors_test.go`, not by a Rust contract crate: a
+fixed-nonce vector reproduces a **frozen ciphertext**, further vectors freeze the
+exact **cleartext bytes** (`{"actor":{"kind":"…","id":"…"},"token_id":"…"}`) and the
+exact **envelope bytes** (`{"nonce":"…","ciphertext":"…"}`), and the committed
+vector file is byte-compared against a live regeneration. Drift on either side —
+or a hand edit of the JSON — turns those tests red instead of moving Rust and the
+wire together silently.
+
+The runner keeps one lib-oracle cross-check on the Rust side: the KV key this
+binary emits must end in `br_core_auth::bearer_token_key(<token>)`, so the digest
+derivation stays anchored to the real lib.
 
 ## What it does
 
@@ -49,8 +61,8 @@ On boot:
      (`{"actor":{"kind","id"},"token_id"}`); it builds a `Passport::Human`,
      base64-encodes its JSON, and returns **200** with header `X-Passport`.
    - **Not found** (revoked/absent), **no `Authorization`**, **not a Bearer**,
-     **empty token**, **unreadable envelope**, **wrong key**, or **tampered
-     ciphertext** → **200 with no `X-Passport`** (anonymous, fail-closed).
+     **empty token**, **unreadable envelope**, **wrong key**, **tampered
+     ciphertext**, or **tampered nonce** → **200 with no `X-Passport`** (anonymous, fail-closed).
    - **KV backend failure** (e.g. the bucket vanished) → **500**.
 
 `/livez` is always **200**. The endpoint **resolves**, it does not **gate**: an
@@ -78,6 +90,49 @@ The emitted `X-Passport` is standard base64 (RFC 4648, padded) of this exact JSO
 (`actor: {"kind":"human","id":"<uuid>"}`) — there is **no email** in the sealed
 model and **no UUIDv5-from-email derivation**. `claims` is the empty object.
 
+## The `seal` subcommand (seed production)
+
+`identity-passport seal …` renders one seed and exits; with no subcommand the
+binary serves (so the resolver path is unchanged). It prints **exactly one JSON
+line** on stdout and exits non-zero with a message on stderr for any bad input.
+
+```sh
+BEARER_SEAL_KEY=<base64-std of 32 bytes> identity-passport seal \
+  --token <raw bearer token> \
+  --actor human:<uuid> | service:<uuid> \
+  --token-id <uuid> \
+  [--tamper ciphertext|nonce] [--unreadable]
+```
+
+```json
+{"kv_key":"identity/bearer_tokens/<sha256hex>","value_b64":"<base64-std of the exact bytes to store>"}
+```
+
+| Flag | Effect |
+|---|---|
+| *(none)* | a faithful envelope: fresh 12-byte nonce, AAD = the unprefixed digest, cleartext = the bearer entry |
+| `--tamper ciphertext` | seals faithfully, then flips the first ciphertext byte — parses, **never opens** (AEAD tag) |
+| `--tamper nonce` | seals faithfully, then flips the first nonce byte — parses, **never opens** |
+| `--unreadable` | a faithful envelope **plus an unknown field** — would open, but the parser must reject it first |
+
+The seed is sealed with `BEARER_SEAL_KEY` — the same variable, read the same way, as
+in serve mode; there is no `--key` flag. The KV key never depends on the seal key.
+`--tamper` and `--unreadable` are mutually exclusive.
+
+The committed **wrong-key** vector is not produced this way: `vector_specs.go` holds
+`frozenWrongSealKey` alongside `frozenSealKey` and seals that one entry with it, so
+the pair of keys is frozen in the file rather than supplied at generation time.
+
+The committed **corrupt** vectors are not sealed at all: each one is a **controlled
+twin** of a faithful entry. `vectors.go` takes the faithful entry's exact stored
+bytes and calls `mutateStoredValue` with the declared mutation — the same code path
+the `--tamper` / `--unreadable` flags use — so the two halves share one token, one
+KV key, one identity, one nonce and one ciphertext, and differ only by the flipped
+byte or the added unknown key. A spec whose twin carries another identity is refused
+at generation time. Nonces are derived from the **token**
+(`sha256("identity-passport/vector-nonce/" + token)[..12]`), so distinct tokens have
+distinct nonces and twins share theirs by construction.
+
 ## Configuration (env only)
 
 | Variable | Required | Default | Meaning |
@@ -96,12 +151,17 @@ go build -o identity-passport .      # or: make build
 make check                           # fmt + vet + test + guard
 ```
 
-The offline tests (`wire_test.go`) pin the KV-key/AAD vectors, a fixed-nonce
-Go-internal seal+open round-trip (a frozen ciphertext that pins the AEAD wiring),
-and the `Passport` golden shape. The full G1 e2e (found / revoked / unknown /
-no-credential / wrong-key / tampered / KV-failure / readiness) is the Rust
-conformance runner's job; it brings the real `PUBLISHED_LANGUAGE` bucket, the real
-Rust seal, and the real `Passport` deserialiser as the oracle.
+The offline tests pin the KV-key/AAD vectors, the frozen cleartext and envelope
+bytes, a fixed-nonce seal that reproduces a frozen ciphertext, the `seal` CLI
+contract (round-trip, service actor, fresh nonce per seal, wrong key, both tamper
+modes, unreadable, and every rejected input), the committed vector file's
+byte-equality with a live regeneration, the twin rule (each corrupt vector is its
+faithful twin's bytes plus exactly the declared mutation), and the `Passport` golden
+shape. The full
+G1 e2e (found / revoked / unknown / no-credential / wrong-key / tampered ciphertext
+/ tampered nonce / unreadable / KV-failure / readiness) is the Rust conformance
+runner's job; it brings the real `PUBLISHED_LANGUAGE` bucket and the real
+`Passport` deserialiser as the oracle.
 
 `make guard` fails loud if any retired-model marker (an `email` JSON tag, a
 `userIDFromEmail` / `uuid.NewSHA1` derivation, or the old plaintext entry type)

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -69,6 +70,29 @@ func parseSealed(raw []byte) (sealedBearer, error) {
 		return sealedBearer{}, err
 	}
 	return sb, nil
+}
+
+func sealEntry(aead cipher.AEAD, token string, entry bearerEntry) (sealedBearer, error) {
+	nonce := make([]byte, chacha20poly1305.NonceSize)
+	if _, err := rand.Read(nonce); err != nil {
+		return sealedBearer{}, fmt.Errorf("drawing a %d-byte nonce: %w", chacha20poly1305.NonceSize, err)
+	}
+	return sealEntryWithNonce(aead, token, entry, nonce)
+}
+
+func sealEntryWithNonce(aead cipher.AEAD, token string, entry bearerEntry, nonce []byte) (sealedBearer, error) {
+	if len(nonce) != chacha20poly1305.NonceSize {
+		return sealedBearer{}, fmt.Errorf("nonce must be %d bytes, got %d", chacha20poly1305.NonceSize, len(nonce))
+	}
+	plaintext, err := json.Marshal(entry)
+	if err != nil {
+		return sealedBearer{}, fmt.Errorf("marshalling the bearer entry: %w", err)
+	}
+	ciphertext := aead.Seal(nil, nonce, plaintext, aad(token))
+	return sealedBearer{
+		Nonce:      base64.StdEncoding.EncodeToString(nonce),
+		Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
+	}, nil
 }
 
 func openSealed(aead cipher.AEAD, token string, sb sealedBearer) (bearerEntry, error) {

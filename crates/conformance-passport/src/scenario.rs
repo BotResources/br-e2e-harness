@@ -10,10 +10,12 @@ pub enum Scenario {
     DistinctTokensDistinctPassports,
     WrongSealKeyFailsClosed,
     TamperedEnvelopeFailsClosed,
+    TamperedNonceFailsClosed,
+    UnreadableEnvelopeFailsClosed,
     KvErrorFailsLoud,
 }
 
-pub const ALL: [Scenario; 8] = [
+pub const ALL: [Scenario; 10] = [
     Scenario::ValidBearerResolvesToPassport,
     Scenario::RevokedBearerIsAnonymous,
     Scenario::UnknownBearerIsAnonymous,
@@ -21,6 +23,8 @@ pub const ALL: [Scenario; 8] = [
     Scenario::DistinctTokensDistinctPassports,
     Scenario::WrongSealKeyFailsClosed,
     Scenario::TamperedEnvelopeFailsClosed,
+    Scenario::TamperedNonceFailsClosed,
+    Scenario::UnreadableEnvelopeFailsClosed,
     Scenario::KvErrorFailsLoud,
 ];
 
@@ -34,6 +38,8 @@ impl Scenario {
             Scenario::DistinctTokensDistinctPassports => CheckId::DistinctTokensDistinctPassports,
             Scenario::WrongSealKeyFailsClosed => CheckId::WrongSealKeyFailsClosed,
             Scenario::TamperedEnvelopeFailsClosed => CheckId::TamperedEnvelopeFailsClosed,
+            Scenario::TamperedNonceFailsClosed => CheckId::TamperedNonceFailsClosed,
+            Scenario::UnreadableEnvelopeFailsClosed => CheckId::UnreadableEnvelopeFailsClosed,
             Scenario::KvErrorFailsLoud => CheckId::KvErrorFailsLoud,
         }
     }
@@ -57,6 +63,8 @@ impl Scenario {
             }
             CheckId::WrongSealKeyFailsClosed => Some(Scenario::WrongSealKeyFailsClosed),
             CheckId::TamperedEnvelopeFailsClosed => Some(Scenario::TamperedEnvelopeFailsClosed),
+            CheckId::TamperedNonceFailsClosed => Some(Scenario::TamperedNonceFailsClosed),
+            CheckId::UnreadableEnvelopeFailsClosed => Some(Scenario::UnreadableEnvelopeFailsClosed),
             CheckId::KvErrorFailsLoud => Some(Scenario::KvErrorFailsLoud),
             CheckId::ScopesClaimRoundTrip => None,
         }
@@ -115,7 +123,7 @@ mod tests {
                 Scenario::UnknownBearerIsAnonymous
             ]
         );
-        assert!(parse_scenarios("p9").is_err());
+        assert!(parse_scenarios("p42").is_err());
         assert!(parse_scenarios("  ").is_err());
     }
 }

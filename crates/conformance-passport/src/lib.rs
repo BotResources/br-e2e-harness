@@ -10,6 +10,7 @@ pub mod scopes;
 pub mod seal;
 pub mod spawn;
 pub mod subject;
+pub mod vectors;
 
 pub use br_test_harness::unknown_bearer;
 pub use build::{build_subject, ensure_go_available, subject_dir};
@@ -21,6 +22,7 @@ pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
 pub use readyz::ReadyzProbe;
 pub use scenario::{ALL, Scenario, parse_scenarios};
 pub use scopes::g4_scopes_claim_round_trips_through_the_header;
-pub use seal::{SEAL_KEY, SealedSeed, SealedSeeder, seal_key, seal_key_b64, wrong_seal_key};
+pub use seal::{SealedSeed, SealedSeeder};
 pub use spawn::{DEFAULT_TIMEOUT, SpawnTarget, run_spawn};
 pub use subject::{Subject, SubjectConfig};
+pub use vectors::{EVERY_VECTOR, Vector, frozen_wire, seal_key_b64};

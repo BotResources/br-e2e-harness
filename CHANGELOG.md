@@ -7,6 +7,426 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.2.0 - 2026-09-03
+
+### Added
+
+#### `br-test-harness` — `FabricTestNats` adversarial provisioning, observation and purge
+
+- **`DurableConfig` + `provision_command_durable_with` /
+  `provision_event_durable_with`.** `#[non_exhaustive] DurableConfig { ack_wait,
+  max_deliver: Option<i64>, max_ack_pending }` — `Default` reads the lib's
+  `ConsumerTuning::default()` through `From<ConsumerTuning>` (plus unlimited
+  deliver), so the lib's own defaults cannot drift away from it;
+  `DurableConfig::harness()` is what `provision_*_durable` has always used (`2s`,
+  server-default `max_ack_pending`, unlimited deliver), and `.ack_wait` /
+  `.max_deliver` /
+  `.unlimited_deliver` / `.max_ack_pending` narrow it. The frozen-as-contract
+  config stays frozen (`ack_policy = Explicit`, `deliver_policy = All`,
+  `replay_policy = Instant`, filter = the rendered coordinate). `max_deliver` is
+  settable here — and only here — because a finite redelivery budget is
+  deployment-declared on the durable bound to `INTEGRATION_CMD` — it is consumer
+  config, not a stream property — while the lib freezes it at unlimited;
+  adversarial provisioning is the harness's job. `provision_*_durable`
+  and `with_*_durable` delegate with `DurableConfig::harness()`, behaviour
+  unchanged.
+- **`tap_durable(FixedStream, durable) -> DurableTap`** — pulls from an
+  already-provisioned durable and **never acks**, so a frame redelivers until its
+  budget is exhausted. It exists because every lib `ensure_*` / `run_*` path
+  create-or-updates the durable back to the lib's config, erasing the budget
+  under test. The tap says **why** it went quiet:
+  `next_within(timeout) -> TapOutcome::{ Delivery(TappedDelivery { subject,
+  payload, delivered_count }), Timeout, Closed }` — only `Timeout` is "the
+  observer is alive and saw nothing". A durable deleted while the tap holds a
+  pull request in flight — always, on its `messages()` stream — is terminated by
+  the server and reads as `Closed`, as does an ended pull stream; a request
+  issued *after* the deletion comes back no-responders, and that (like every
+  other pull-stream error kind) panics naming the durable, since it is neither
+  quiet nor a clean close. Known limit: the idle heartbeat is 15s, so a quiet
+  window longer than 30s panics `MissingHeartbeat` instead of reading
+  `Timeout`. `deliveries_within(timeout, cap) ->
+  (Vec<TappedDelivery>, TapStop::{ Limit, Timeout, Closed })` reports the stop
+  reason, so an exhaustion assertion proves the redeliveries stopped **while the
+  tap still observed** instead of certifying the loss of its own observer.
+  `expect_delivery(what, timeout)` / `expect_quiet(what, quiet)` are the
+  panicking forms (`expect_quiet` rejects `Closed`), `close()` drops the pull
+  stream, and `delete_durable(FixedStream, durable)` tears the consumer away so a
+  suite can prove the tap detects it.
+- **Typed read-only counters.** `consumer_pending(FixedStream, durable)`,
+  `consumer_delivered(FixedStream, durable)`,
+  `consumer_redelivered(FixedStream, durable)` (deliveries past the first),
+  `command_stream_len()`,
+  `event_stream_len()`, `stream_len(FixedStream)` — `consumer_info` / stream state
+  without exposing a JetStream handle. `FixedStream::{Cmd, Evt}` is the typed
+  stand-in for the two fixed stream names (`.name()` bridges to the `&str`-taking
+  negative-path helpers).
+- **Purge.** `purge_command_stream()` / `purge_event_stream()` and
+  `purge_command_subject(&coords)` / `purge_event_subject(&coords)`, each
+  returning the purged count — the between-scenarios reset on a shared
+  `connect(url)` NATS; a purge never deletes the gitops-declared stream.
+- **`publish_command_raw(&coords, bytes)`** — the command-side sibling of
+  `publish_event_envelope` and the only intentional malformed-wire command
+  publisher, so a lib consumer's decode failure and its handler's `Term`
+  fail-closed path are reachable from a test. Typed `fabric().publish_command`
+  stays the default.
+
+  Together these are the four operations a service e2e had to hand-roll on a
+  retained raw `jetstream::Context`; that `Context` can now leave `tests/common`.
+
+#### `br-test-harness` — SSE and WS subscription handles
+
+- **`SseOutcome` — the SSE handle says why it went quiet.**
+  `SseSubscription::next_outcome(timeout) -> SseOutcome::{ Event(Value), Timeout, Closed }`
+  splits the two cases `next_event` collapsed into a single `None`: a server that
+  ended the stream now reads as `Closed`, a stream held open with nothing to say
+  as `Timeout`. `next_event` is unchanged (`Event(v) => Some(v)`, otherwise
+  `None`), so every existing suite compiles as-is and migrates on its own
+  schedule.
+- **`SseSubscription::drain_outcome(max, timeout) -> (usize, DrainStop)`** — the
+  drain reports why it stopped (`DrainStop::{ Limit, Timeout, Closed }`);
+  `drain(max, timeout) -> usize` keeps its signature and delegates.
+- **`SseSubscription::with_logs(&SpawnedProcess)`** — opt-in attachment of the
+  spawned service's captured output. When attached, a `Closed` panic from
+  `expect_event` / `expect_event_on` / `expect_silence` carries the last 80 lines
+  of the service log, so "the server closed the subscription" arrives with the
+  reason the service printed — read **at panic time**, so a line the service
+  prints after the attach still lands in the message. `Timeout` carries the tail
+  too ("alive but pushed nothing" is the frequent diagnosis). Unattached, the
+  panic still names the outcome.
+- **`WsCredential` — `WsSubscription` takes a generic credential.**
+  `#[non_exhaustive] enum WsCredential<'a> { Passport(&Passport), Cookie(&str),
+  Anonymous }` plus `WsSubscription::open_with(base, credential, query)` and
+  `open_at_with(base, ws_path, credential, query)`. `Passport` sends
+  `X-Passport` (unchanged), `Cookie` sends `Cookie` and no `X-Passport`,
+  `Anonymous` sends neither — so a suite can drive a subscription through the
+  real edge, where a client-forged `X-Passport` is stripped, without
+  hand-rolling its own WS client. `open` / `open_at(&Passport)` keep their exact
+  signatures and delegate with `WsCredential::Passport`.
+- **`WsError` — a typed WS outcome.** `#[non_exhaustive] enum WsError {
+  Timeout, Closed, ServerClosed { code: u16, reason: String }, Completed,
+  ErrorFrame(String), Transport(String) }` (with `Display` + `Error`) and
+  `WsSubscription::next_data_outcome(timeout) -> Result<Value, WsError>`: a
+  deadline with no push, a stream that ended, a server that refused with a close
+  code, a `complete` before any push, an `error` frame and a broken exchange are
+  now six distinct verdicts — the handle says *why* it went quiet.
+  `ServerClosed` keeps the `graphql-transport-ws` rejection code (`4400`,
+  `4401`, `4403`, `4409`, `4429`) an assertion needs. `next_data` /
+  `next_matching` keep `Result<Value, String>` and render the variants through
+  `Display`.
+- **`WsSubscription::next_matching_outcome(predicate, timeout) -> Result<Value,
+  WsError>`** — the typed sibling of `next_matching`, for a drain-until-match
+  that needs the reason it stopped rather than the skipped-frames report.
+  `next_matching` delegates to the same loop and its message — reason **and**
+  skipped frames — is unchanged.
+
+- **`WsSubscription::close(self) -> Result<(), WsError>`** — ends the
+  subscription with a `complete` frame, then closes the socket, so the service
+  observes an orderly unsubscribe rather than a dropped connection.
+  Best-effort: both steps are attempted, a socket the peer already closed is
+  `Ok(())`, and it never panics.
+
+#### `br-test-harness` — `FabricTestNats` delivery-failure injection
+
+- **`DeliveryOutage` — a real-broker delivery outage, no mock.**
+  `FabricTestNats::withhold_event_subject(&withheld, &[&keep, ...])` and
+  `withhold_command_subject(&withheld, &[&keep, ...])` rewrite the fixed
+  stream's `subjects` to **exactly** the `keep` set, so the withheld coordinate
+  is covered by no stream: the lib's own `Fabric::publish_event` /
+  `publish_command` on it fails
+  `FabricError::Publish { kind: PublishErrorKind::NoStream, .. }` while every
+  listed coordinate is still stored. A narrowing, **not** a deny-list — a
+  coordinate absent from `keep` also stops flowing, and an empty `keep`
+  withholds the whole grammar.
+- **`withhold_event_stream()` / `withhold_command_stream()`** — the coarse
+  variant: the binding is replaced by a placeholder
+  (`integration.evt.__withheld__.>` / `integration.cmd.__withheld__.>`) so
+  **every** coordinate on that stream fails, and the other fixed stream is
+  untouched.
+- **`DeliveryOutage::restore(self)`** puts the **pre-outage** binding back (the
+  one read at `withhold_*` time, not a pristine `integration.evt.>`, so nested
+  outages restore LIFO) and fails loud if the broker refuses. The guard is
+  `#[must_use]` and has **no `Drop` net**: a guard dropped without `restore()`
+  leaves the stream narrowed — beyond the run on a persistent broker, until
+  gitops re-declares the stream — which is a test bug.
+  `stream()`, `live_subjects()` and `withheld_subjects()` are the assertion
+  surface — the latter is the one concrete coordinate for `withhold_*_subject`
+  and the previous binding patterns for `withhold_*_stream`.
+- **Misuse panics before the stream is touched** — withholding a coordinate the
+  stream does not currently carry (a `withhold_*_subject` nested inside
+  another), the same coordinate in both `withheld` and `keep`, the same
+  coordinate twice in `keep`, and a `withhold_*_stream` on a stream already
+  bound to the placeholder. The coverage check copies the lib's
+  `subject_covered` semantics as of br-rust-common v1.3.0 (inner `>` is a
+  literal, `*` is exactly one token, an empty pattern or subject covers
+  nothing); the lib's function is crate-private, so nothing gates the mirror.
+- **A durable is untouched by an outage** — it keeps its filter and its
+  position: a message stored before the narrowing survives it and is delivered
+  after `restore()`, ahead of anything published since.
+- **An outage rewrites a GLOBAL fixed stream**, so a withholding scenario needs
+  its own `start()` server or a serialized `connect(url)` group — it makes every
+  concurrent scenario's publishes fail, and a lost guard is never repaired
+  (`get_or_create_fixed_stream` returns early on an existing stream) — on a
+  persistent broker the narrowing outlives the run until gitops re-declares the
+  stream; never run one against a broker whose streams gitops declares for
+  anything but tests. The two `withhold_*_stream()` methods go beyond #97's
+  per-subject toggle and are a deliberate addition (they overlap
+  `withhold_*_subject(&c, &[])`); they are the practical form for a
+  best-effort-delivery scenario, where the `_subject` form would require
+  enumerating every coordinate to keep.
+
+#### `br-test-harness` — the `spawned-nats` slice is provably fabric-free
+
+- **A CI gate pins `spawned-nats` to zero `br-rust-common` crates.**
+  `cargo tree -p br-test-harness --no-default-features --features spawned-nats
+  -e normal` must not mention `br-rust-common`, and the slice must `cargo check`;
+  both run in the `fmt-clippy-test` job. `SpawnedNats` needs only `tokio` +
+  `tempfile` and already exposes `url()` / `shutdown()`, so br-rust-common can
+  dev-depend on this crate by tag for a per-test broker with **no dependency
+  cycle** — and no innocuous feature edit can quietly re-create one. Stated in
+  the crate README beside the feature table. **Deferred:** actually moving
+  br-rust-common's `fabric_e2e.rs` off its ambient `NATS_URL` onto `SpawnedNats`
+  is a change in *that* repo and is not part of this release; only the harness
+  side of the enabler ships here.
+
+#### Workspace re-pin to `br-rust-common` v1.3.0
+
+- **`FabricTestNats::attach_without_provisioning(url)`** — attaches to an
+  existing NATS without get-or-creating the two fixed streams, for a caller whose
+  job is to *observe* the topology rather than establish it.
+- **`FabricTestNats::durable_filter_subjects_if_present(stream, durable) ->
+  Option<Vec<String>>`** — the non-panicking sibling of
+  `durable_filter_subjects`, so "the durable is absent" is a value rather than a
+  panic.
+- **`BareFabricNats::assert_missing_stream_on_bind` /
+  `assert_missing_command_stream_on_bind` / `event_stream_absent`** — the bind-path
+  guard of the never-auto-provision invariant. Until 1.3.0 the `verify_*_durable`
+  sites covered it incidentally, because the probe created the consumer; now that
+  the probe creates nothing, `ensure_*_durable` against a NATS with no fixed
+  stream needs its own black-box assertion. Exercised by a new
+  `conformance-nats-fabric` check
+  (`a_missing_fixed_stream_fails_the_durable_bind_loud_and_provisions_nothing`)
+  and a harness test, both asserting `Consume(NoStream)` **and** that the stream
+  is still absent afterwards.
+- **`conformance-directory` C6 — the directory stager path, black-box**
+  (`stager_stages_in_the_projection_transaction`, `CheckId::ConsumerStagerTransaction`,
+  code `c6`). It registers a real `ImpactStager` that writes every
+  `Impact::ForeignChanged` into an **adopter-owned** `conformance_impacts`
+  table on the very `PgConnection` the sink hands it, over real NATS + real
+  Postgres, and pins five properties of br-rust-common v1.3.0's transactional
+  sink: (a) **atomicity** — a committed roster write and its impacts are durable
+  together, and the stager reads the still-uncommitted roster row through its own
+  `conn`; (b) **rollback** — a stager that refuses one key leaves **every column**
+  of that key's `known_users` row exactly as it was, while a lower-ordered sibling
+  key stays converged and the refused value converges on the next accepting
+  reconcile; (c) the **impact set** of the six roster writes the Go anchor can
+  drive — user upsert stages that user; a group upsert that *adds* members stages
+  the group only; one that *drops* a member stages the group **plus** the removed
+  member; a name-only group upsert stages the group; a user delete stages that
+  user **plus** every group still holding it; a group delete stages the group
+  **plus** every member the cascade unlinks (the stager-only `GroupSink::retract`
+  branch); (d) a converged mirror stages nothing; (e) a projector with **no**
+  stager registered converges the roster and stages nothing at all. The
+  service-account sink is **not** exercised — the anchor publishes no
+  service-account key. `RecordingStager`, `StagerFault`, `StagedImpact`,
+  `IMPACT_TABLE` and the `create_impact_table` / `staged_impacts` /
+  `clear_impacts` helpers are exported beside the check, so an adopter can wire
+  its own impact table. Runs under the crate's existing `--test-threads=1` mode.
+- `tests/fabric_nats_cli.rs` — real-infra coverage of the `verify` subcommand:
+  it fails loud without creating the fixed streams it probes or the KV bucket the
+  manifest declares, reports every failing entry, fails while the durable is
+  absent and passes once provisioned, and rejects a durable whose filter is not
+  the coordinate.
+
+#### `conformance-passport` — seal side frozen in the Go anchor
+
+- **P9 — an unreadable envelope fails closed.** The frozen contract already required
+  it; nothing covered it. A bearer that resolves is replaced, at its own KV key, by a
+  genuine **openable** seal carrying one unknown field, so only the strict parse can
+  reject it → anonymous.
+- **P10 — a tampered nonce fails closed.** Same shape, with byte 0 of the envelope's
+  nonce flipped: the carried nonce no longer matches the tag → anonymous.
+- P7, P9 and P10 share one *resolved-then-corrupted* shape, and their corrupt vectors
+  are **controlled twins**: each is generated from the exact sealed bytes of its
+  faithful vector — same token, same key, same nonce, same ciphertext — with only the
+  declared mutation applied (flip byte 0 of the base64-decoded ciphertext or nonce,
+  or add one unknown field to the same envelope). The faithful half must resolve
+  first, then the twin is written at the same KV key, so the mutation is provably the
+  only difference between the two resolutions rather than one of many. Both languages
+  enforce it: `vector_twins_test.go` re-applies each mutation to the faithful bytes
+  and byte-compares the result with the committed corrupt half, and Rust re-checks
+  the same rule while parsing the vector file, so a non-twin file panics before any
+  scenario runs. The check closes the table rather than a hard-coded list of three:
+  any entry declaring a `corruption` must be named as a corrupt half by the twin
+  table, and a corrupt half must declare its own mutation. (P6's `wrong-key` is the
+  one negative vector with no twin — a KV key holds a single value — so it rests on
+  a `pl_get_raw` presence assertion instead.)
+
+### Changed
+
+**Deliberate behaviour changes — a suite that newly fails is a false pass
+surfacing, not a regression.**
+
+1. **`SseSubscription::expect_silence` now panics when the server closed the
+   stream** — the deliberate *semantic* change: a closed stream is not silence.
+   In 1.1.3 a quiet window and a stream end were the same `next_event() -> None`,
+   so every `expect_silence` (and every drain-to-quiet loop) on a subscription
+   the service had hung up on passed **vacuously** — a test that asserted
+   nothing now fails.
+2. **An SSE block left unterminated when the stream ends now fails loud.** The
+   reader frames on `\n\n` **only**, so anything still buffered when the server
+   hangs up is a truncated push — and a CRLF-framed (`\r\n\r\n`) body, though
+   legal SSE, is *entirely* residual because the splitter never cuts it. In 1.1.3
+   both vanished into a `next_event() -> None` a scenario read as silence.
+   `next_outcome` panics naming the residual bytes instead. Deliberately **not**
+   CRLF support: the harness refuses to certify a silence it did not observe
+   rather than guess at a framing it does not implement.
+3. **Two `WsSubscription` messages move**, both from the single 1.1.3 close arm
+   (`ws: server closed: {c:?}`, which covered a close frame with *and* without a
+   payload): a close frame **with** a payload now renders as the stable
+   `ws: server closed: code={code} reason={reason}` (never tungstenite's `Debug`,
+   which a dependency bump could silently reword), and a close frame **without**
+   one now renders as ``ws: socket closed before a `next` push`` — the same fact
+   as an exhausted stream — instead of `ws: server closed: None`. Every other
+   `next_data` / `next_matching` string is byte-identical to 1.1.3.
+4. **`WsSubscription::open` / `open_at` / `open_with` / `open_at_with` trim a
+   trailing `/` on the base URL.** In 1.1.3 a base ending in `/` — the shape a
+   `GATEWAY_WS_URL`-style environment value often takes — built a `//graphql/ws`
+   path, which no router matches, so the handshake failed with a connect error.
+   Existing callers passing a slash-terminated base now reach the intended path;
+   a base without a trailing slash is unaffected.
+5. **The harness call sites that *assert* the anti-over-delivery narrow-back moved
+   to `ensure_event_durable`** (`conformance-nats-fabric`'s
+   `assert_widened_durable_converges` and the harness's own
+   `a_widened_durable_is_converged_back_to_the_exact_filter`): br-rust-common
+   v1.3.0 turned `verify_command_durable` / `verify_event_durable` into a
+   stream-coverage probe that **creates nothing**, so under 1.3.0 only `ensure_*`
+   converges a widened durable back to the coordinate filter. The assertions are
+   unchanged — they are the only black-box guard of that guarantee.
+   `start_provisions_the_two_fixed_streams_and_a_filter_identical_durable` keeps
+   `verify_command_durable` as the coverage probe and now proves the filter
+   identity through `durable_filter_subjects`. The two `BareFabricNats` negative
+   paths keep `verify_*` (the `Consume(NoStream)` fail-loud is unchanged) with
+   expect messages reworded to what they now prove.
+6. **`fabric-nats verify` is a genuine read-only check.** Because the lib probe
+   now creates nothing, the old `verify` would have printed `ok cmd <durable>`
+   for a NATS carrying no durable at all. It now checks, per manifest entry,
+   (a) the fixed stream exists and its `subjects` cover the rendered coordinate
+   (the lib probe, `Consume(NoStream)` / `SubjectNotCovered`) **and** (b) the
+   durable exists on that stream filtering **exactly** that coordinate; either
+   miss exits `4` naming the stream, the durable and the filter found, and the
+   `ok` line states both checks. It now covers the `[published_language]` /
+   `[bearer_tokens]` manifest flags too (bucket presence, read-only), reports
+   **every** failing entry rather than only the first, and discriminates an
+   absent stream from an uncovered subject in the message.
+7. **`conformance-passport`'s `ALL` grows from 8 to 10 mandatory scenarios**
+   (P9 and P10). A consumer asserting `report.passed() == ALL.len()` picks them
+   up automatically; one pinning the literal `8` must move to `ALL.len()`.
+
+#### `br-test-harness` — SSE and WS subscription handles
+
+Non-behavioural, text only:
+
+- `expect_event` / `expect_event_on` panic messages name the outcome they got
+  (`got Timeout: …` / `got Closed: …`) instead of `got none`. Observable only to
+  a consumer asserting on the old text (`#[should_panic(expected = "got none")]`).
+
+#### Workspace re-pin to `br-rust-common` v1.3.0
+
+- **Every `br-rust-common` pin in the workspace moves from `v1.2.0` to
+  `v1.3.0`** — 25 declarations across the 6 workspace-member `Cargo.toml`
+  carrying one (`{ tag, version }` both bumped; no workspace-level pin
+  introduced). `conformance-passport` is among them: it now pins
+  `br-rust-common` alone (see its own entry below).
+  `conformance-directory` C1–C5 therefore re-run against 1.3.0 on the
+  **no-stager** path — where a single-statement projection still runs on a pooled
+  connection, exactly as in 1.2.0 — and the new **C6** covers the stager
+  path and the transactional sink. The workspace resolves to a single
+  br-rust-common source.
+- Lockfile: `chacha20` `0.10.0` → `0.10.2` (the resolved version was yanked;
+  `cargo deny check` advisories were failing on it). It reaches the tree through
+  `async-nats` → `rand`, unrelated to the re-pin itself.
+
+#### `conformance-passport` — seal side frozen in the Go anchor
+
+- **`conformance-passport` no longer depends on `svc-auth`.** The crate imported
+  `br-auth-contract` + `br-auth-identity-util` for one job — seeding — which
+  transitively pinned br-rust-common and made every lib bump break the crate (the
+  1.1.2 exclude / 1.1.3 re-enter dance). Its only BotResources dependencies are now
+  `br-rust-common` (`br-core-auth`, `br-util-nats-fabric`) and the sibling
+  `br-test-harness`. The unused `br-core-kernel` dep is dropped with them, and the
+  now-unused `svc-auth` entry leaves `deny.toml`'s git source allow-list.
+- **The sealed wire is frozen as committed vectors produced by the Go anchor.** A
+  contract that must stay constant is frozen by an independent implementation, never
+  by a Rust contract crate — otherwise Rust and the wire evolve together silently.
+  `crates/conformance-passport/vectors/passport-wire-v1.json` carries, per case, the
+  token, the KV key, the sealed identity and the exact `value_b64` bytes; the
+  `identity-passport` anchor generates it deterministically (`make vectors`: fixed
+  keys, fixed ids, one fixed nonce per **token** — so distinct tokens have distinct
+  nonces and a corrupted twin shares its faithful half's nonce), and
+  `vectors_test.go` regenerates it
+  in memory and asserts **byte-equality** with the committed file, so anchor drift
+  or a hand edit fails `make check` and CI. `SealedSeeder` `include_str!`s the file
+  and writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or
+  mutates a sealed envelope. A vector may declare `resolves: unasserted` — used for
+  the service actor, whose *cleartext* is frozen but whose *resolution* this contract
+  deliberately leaves to the subject.
+- **The subject under test only ever serves.** The battery no longer asks any binary
+  to seal, so a consuming service driven by `run_spawn` needs no credential-forging
+  subcommand — `SubjectConfig` / `Subject::spawn` / `run_spawn` keep their contract,
+  and `BEARER_SEAL_KEY` now comes straight out of the vector file. The anchor's
+  `seal` subcommand remains a dev-time generator only and takes its key from
+  `BEARER_SEAL_KEY`, exactly as serve mode does.
+- `PassportHarness::seeder()` is now synchronous and infallible, and
+  `wrong_key_seeder()` is gone (the wrong-key case is a vector, not a second
+  publisher). `SealedSeeder::seed` takes a `Vector` and the harness; `SealedSeed`
+  carries its `kv_key`. `CheckContext` loses its `namespace` field — vector tokens
+  are fixed, so per-run namespacing no longer exists. `SEAL_KEY` / `WRONG_SEAL_KEY`
+  / `seal_key()` / `wrong_seal_key()` are replaced by the vector file plus
+  `vectors::seal_key_b64()`.
+- **CI now runs the Go anchor's tests** — a new `identity-passport anchor tests` step
+  in `infra-e2e` (`go vet` + `go test -count=1`), placed before the passport battery.
+  Without it the byte-equality guard on the committed vectors never executed in CI,
+  so the "a hand edit fails CI" claim in the READMEs was not yet true. The Makefile
+  `test` target gains `-count=1` (Go caches across edits of the out-of-package vector
+  file), and `check` no longer depends on `fmt` (which rewrote sources): it runs a
+  `fmt-check` instead, with `fmt` kept as its own target.
+- CI runs the passport battery with `--test-threads=1`, matching the README.
+
+**Migration.** Every `br-rust-common` pin in a consuming repo must move to
+`v1.3.0` in the same change that takes this tag: two refs of one git URL are two
+distinct sources and duplicate `br-core-*` in the graph. No harness signature
+changed, so a suite on 1.1.x compiles untouched — what it may hit is the class-B
+false passes above surfacing as new failures (a vacuous `expect_silence` on a
+closed stream, a drain-to-quiet loop over an ended stream). Those are the bug the
+release exists to expose; budget for the assertions, not for the edits. A
+consumer pinning `conformance-passport`'s scenario count as a literal moves to
+`ALL.len()`; one driving a subject through `run_spawn` needs no change (the
+battery no longer asks any binary to seal, and needs no `go` on `PATH`).
+
+**Deferred.** The consumer-side follow-ups this release enables stay in their own
+repos and are not part of it: svc-jobs dropping the `Budget` / `ended_early`
+heuristic now that `Closed` is readable, svc-notifier's drain loops, bma-identity's
+five drain-to-quiet loops and its `assert_stream_stays_open` helper (now
+redundant), be-botresources.ai's svc-identity / svc-tasks helpers (optional:
+better panic messages), the deletion of the gateway's duplicated
+`crates/e2e/src/ws.rs` in favour of `WsCredential`, and un-ignoring svc-charter
+`s19` on `DeliveryOutage`. The Rust-side guard for
+svc-auth's `br-auth-contract` — the pin `conformance-passport` dropped — belongs
+to the svc-auth repo. Migrating br-rust-common's own `fabric_e2e.rs` off an
+ambient `NATS_URL` onto `SpawnedNats` is a br-rust-common change (the harness
+side of it ships here, see Added).
+
+
+### Fixed
+
+- **`fabric-nats verify` no longer provisions the topology it is checking.** It
+  attaches through the new `FabricTestNats::attach_without_provisioning`, so the
+  subcommand stops get-or-creating the two fixed streams it exists to probe. This
+  was a 1.1.3 bug — `verify` attached through `FabricTestNats::connect`, which
+  get-or-creates the two fixed streams — not a consequence of the v1.3.0 re-pin;
+  the re-pin only made it visible by turning the durable probe read-only.
+
+
 ## 1.1.3 - 2026-07-23
 
 ### Changed
