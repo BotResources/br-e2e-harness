@@ -61,6 +61,33 @@ single git tag `v{version}` releases the set. Format follows
   Best-effort: both steps are attempted, a socket the peer already closed is
   `Ok(())`, and it never panics.
 
+#### `br-test-harness` — `FabricTestNats` delivery-failure injection
+
+- **`DeliveryOutage` — a real-broker delivery outage, no mock.**
+  `FabricTestNats::withhold_event_subject(&withheld, &[&keep, ...])` and
+  `withhold_command_subject(&withheld, &[&keep, ...])` rewrite the fixed
+  stream's `subjects` to **exactly** the `keep` set, so the withheld coordinate
+  is covered by no stream: the lib's own `Fabric::publish_event` /
+  `publish_command` on it fails
+  `FabricError::Publish { kind: PublishErrorKind::NoStream, .. }` while every
+  listed coordinate is still stored. A narrowing, **not** a deny-list — a
+  coordinate absent from `keep` also stops flowing, and an empty `keep`
+  withholds the whole grammar.
+- **`withhold_event_stream()` / `withhold_command_stream()`** — the coarse
+  variant: the binding is replaced by a placeholder
+  (`integration.evt.__withheld__.>` / `integration.cmd.__withheld__.>`) so
+  **every** coordinate on that stream fails, and the other fixed stream is
+  untouched.
+- **`DeliveryOutage::restore(self)`** puts the original `subjects` back and
+  fails loud if the broker refuses. The guard is `#[must_use]` and has **no
+  `Drop` net**: a guard dropped without `restore()` leaves the stream narrowed
+  for the rest of the run, which is a test bug. `stream()`,
+  `withheld_subjects()` and `live_subjects()` are the assertion surface.
+- **Misuse panics before the stream is touched** — withholding a coordinate the
+  stream does not currently carry (a second outage nested inside a first), or a
+  `keep` list containing the withheld coordinate. A durable bound before the
+  outage keeps its filter and receives again after `restore()`.
+
 #### Workspace re-pin to `br-rust-common` v1.3.0
 
 - **`FabricTestNats::attach_without_provisioning(url)`** — attaches to an

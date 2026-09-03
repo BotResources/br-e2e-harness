@@ -5,6 +5,7 @@ mod connect;
 mod kv;
 mod namespace;
 mod negative;
+mod outage;
 mod provision;
 
 pub use bearer::{BEARER_BUCKET, BearerSeedError, BearerSeeder, SeededToken, unknown_bearer};
@@ -14,6 +15,7 @@ pub use connect::NatsBacking;
 pub use kv::FabricKvError;
 pub use namespace::RunNamespace;
 pub use negative::{BareFabricNats, WidenedDurable};
+pub use outage::DeliveryOutage;
 
 use std::collections::{BTreeMap, BTreeSet};
 
