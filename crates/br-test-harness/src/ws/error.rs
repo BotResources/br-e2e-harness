@@ -5,6 +5,8 @@ pub enum WsError {
     Timeout,
     #[error("ws: socket closed before a `next` push")]
     Closed,
+    #[error("ws: server closed: code={code} reason={reason}")]
+    ServerClosed { code: u16, reason: String },
     #[error("ws: subscription completed before any push")]
     Completed,
     #[error("ws: subscription error frame: {0}")]

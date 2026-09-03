@@ -6,7 +6,9 @@ use std::time::Duration;
 use br_core_auth::Passport;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
+use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::error::ProtocolError;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 pub use credential::WsCredential;
@@ -51,7 +53,8 @@ impl WsSubscription {
     ) -> Result<Self, String> {
         let ws_url = format!(
             "{}{ws_path}",
-            base.replacen("https://", "wss://", 1)
+            base.trim_end_matches('/')
+                .replacen("https://", "wss://", 1)
                 .replacen("http://", "ws://", 1)
         );
 
@@ -138,20 +141,17 @@ impl WsSubscription {
     }
 
     pub async fn close(mut self) -> Result<(), WsError> {
-        let completed = self
-            .socket
-            .send(Message::Text(
-                json!({ "id": SUBSCRIPTION_ID, "type": "complete" })
-                    .to_string()
-                    .into(),
-            ))
-            .await
-            .map_err(|e| WsError::Transport(format!("send complete: {e}")));
-        let closed = self
-            .socket
-            .close(None)
-            .await
-            .map_err(|e| WsError::Transport(format!("close socket: {e}")));
+        let completed = tolerate_already_closed(
+            self.socket
+                .send(Message::Text(
+                    json!({ "id": SUBSCRIPTION_ID, "type": "complete" })
+                        .to_string()
+                        .into(),
+                ))
+                .await,
+            "send complete",
+        );
+        let closed = tolerate_already_closed(self.socket.close(None).await, "close socket");
         completed.and(closed)
     }
 
@@ -169,7 +169,13 @@ impl WsSubscription {
             let text = match frame {
                 Message::Text(t) => t.to_string(),
                 Message::Ping(_) | Message::Pong(_) => continue,
-                Message::Close(_) => return Err(WsError::Closed),
+                Message::Close(None) => return Err(WsError::Closed),
+                Message::Close(Some(frame)) => {
+                    return Err(WsError::ServerClosed {
+                        code: u16::from(frame.code),
+                        reason: frame.reason.to_string(),
+                    });
+                }
                 _ => continue,
             };
             let msg: Value = serde_json::from_str(&text)
@@ -205,5 +211,20 @@ impl WsSubscription {
         } else {
             Err(format!("ws: expected `{want}`, got `{text}`"))
         }
+    }
+}
+
+fn tolerate_already_closed(
+    outcome: Result<(), TungsteniteError>,
+    step: &str,
+) -> Result<(), WsError> {
+    match outcome {
+        Ok(())
+        | Err(
+            TungsteniteError::ConnectionClosed
+            | TungsteniteError::AlreadyClosed
+            | TungsteniteError::Protocol(ProtocolError::SendAfterClosing),
+        ) => Ok(()),
+        Err(e) => Err(WsError::Transport(format!("{step}: {e}"))),
     }
 }

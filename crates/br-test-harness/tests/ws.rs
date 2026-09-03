@@ -1,145 +1,24 @@
 #![cfg(all(feature = "ws", feature = "server", feature = "passport"))]
 
-use std::sync::{Arc, Mutex};
+#[path = "ws/fake_endpoint.rs"]
+mod fake_endpoint;
+
+use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
-use axum::extract::State;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::http::HeaderMap;
-use axum::response::Response;
-use axum::routing::any;
-use br_test_harness::{
-    PassportBuilder, TestServer, WsCredential, WsError, WsSubscription, wait_until,
-};
+use br_core_auth::PassportHeader;
+use br_test_harness::{PassportBuilder, WsCredential, WsError, WsSubscription, wait_until};
+use fake_endpoint::{FakeEndpoint, Step, spawn};
 
 const PUSH: Duration = Duration::from_millis(500);
 const QUERY: &str = "subscription { tick }";
-
-#[derive(Clone, Copy)]
-enum Step {
-    Next,
-    ErrorFrame,
-    Complete,
-    Close,
-}
-
-#[derive(Default)]
-struct Observed {
-    request_headers: HeaderMap,
-    client_frames: Vec<String>,
-}
-
-struct FakeEndpoint {
-    steps: Vec<Step>,
-    observed: Mutex<Observed>,
-}
-
-impl FakeEndpoint {
-    fn header(&self, name: &str) -> Option<String> {
-        self.observed
-            .lock()
-            .unwrap()
-            .request_headers
-            .get(name)
-            .map(|v| v.to_str().expect("header is not ascii").to_string())
-    }
-
-    fn client_frames(&self) -> Vec<String> {
-        self.observed.lock().unwrap().client_frames.clone()
-    }
-}
-
-async fn upgrade(
-    State(endpoint): State<Arc<FakeEndpoint>>,
-    headers: HeaderMap,
-    ws: WebSocketUpgrade,
-) -> Response {
-    endpoint.observed.lock().unwrap().request_headers = headers;
-    ws.protocols(["graphql-transport-ws"])
-        .on_upgrade(move |socket| drive(socket, endpoint))
-}
-
-async fn drive(mut socket: WebSocket, endpoint: Arc<FakeEndpoint>) {
-    if !await_client_type(&mut socket, &endpoint, "connection_init").await {
-        return;
-    }
-    if socket
-        .send(Message::Text(r#"{"type":"connection_ack"}"#.into()))
-        .await
-        .is_err()
-    {
-        return;
-    }
-    if !await_client_type(&mut socket, &endpoint, "subscribe").await {
-        return;
-    }
-
-    for step in &endpoint.steps {
-        let frame = match step {
-            Step::Next => {
-                Message::Text(r#"{"id":"1","type":"next","payload":{"data":{"tick":7}}}"#.into())
-            }
-            Step::ErrorFrame => {
-                Message::Text(r#"{"id":"1","type":"error","payload":[{"message":"boom"}]}"#.into())
-            }
-            Step::Complete => Message::Text(r#"{"id":"1","type":"complete"}"#.into()),
-            Step::Close => Message::Close(None),
-        };
-        if socket.send(frame).await.is_err() {
-            return;
-        }
-    }
-
-    while let Some(Ok(frame)) = socket.recv().await {
-        record(&endpoint, &frame);
-    }
-}
-
-async fn await_client_type(
-    socket: &mut WebSocket,
-    endpoint: &Arc<FakeEndpoint>,
-    want: &str,
-) -> bool {
-    while let Some(Ok(frame)) = socket.recv().await {
-        record(endpoint, &frame);
-        if let Message::Text(text) = &frame {
-            let msg: serde_json::Value =
-                serde_json::from_str(text.as_str()).expect("client frame is json");
-            if msg["type"] == want {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn record(endpoint: &Arc<FakeEndpoint>, frame: &Message) {
-    if let Message::Text(text) = frame {
-        endpoint
-            .observed
-            .lock()
-            .unwrap()
-            .client_frames
-            .push(text.to_string());
-    }
-}
 
 async fn open(
     steps: Vec<Step>,
     credential: WsCredential<'_>,
 ) -> (WsSubscription, Arc<FakeEndpoint>) {
-    let endpoint = Arc::new(FakeEndpoint {
-        steps,
-        observed: Mutex::new(Observed::default()),
-    });
-    let server = TestServer::spawn(
-        Router::new()
-            .route("/graphql/ws", any(upgrade))
-            .with_state(endpoint.clone()),
-    )
-    .await;
-    let subscription = WsSubscription::open_with(&server.base_url, credential, QUERY)
+    let (endpoint, base_url) = spawn(steps).await;
+    let subscription = WsSubscription::open_with(&base_url, credential, QUERY)
         .await
         .expect("the fake endpoint completes the graphql-transport-ws handshake");
     (subscription, endpoint)
@@ -164,9 +43,10 @@ async fn a_passport_credential_sends_the_passport_header_and_no_cookie() {
 
     let (_subscription, endpoint) = open(vec![], WsCredential::Passport(&passport)).await;
 
-    assert!(
-        endpoint.header("x-passport").is_some(),
-        "a Passport credential must reach the server as X-Passport"
+    assert_eq!(
+        endpoint.header("x-passport"),
+        Some(passport.to_header()),
+        "a Passport credential must reach the server as the encoded X-Passport header"
     );
     assert_eq!(
         endpoint.header("cookie"),
@@ -215,8 +95,66 @@ async fn silence_until_the_deadline_is_a_timeout_outcome() {
 }
 
 #[tokio::test]
-async fn a_server_close_is_a_closed_outcome() {
+async fn a_close_frame_without_a_payload_is_a_closed_outcome() {
     assert_eq!(first_outcome(vec![Step::Close]).await, Err(WsError::Closed));
+}
+
+#[tokio::test]
+async fn a_close_frame_surfaces_the_rejection_code_and_reason() {
+    let outcome = first_outcome(vec![Step::CloseWith(4401, "unauthorized")]).await;
+
+    assert_eq!(
+        outcome,
+        Err(WsError::ServerClosed {
+            code: 4401,
+            reason: "unauthorized".to_string(),
+        }),
+        "graphql-transport-ws encodes the rejection in the close code — it must survive"
+    );
+    assert_eq!(
+        outcome.unwrap_err().to_string(),
+        "ws: server closed: code=4401 reason=unauthorized"
+    );
+}
+
+#[tokio::test]
+async fn an_unparsable_frame_is_a_transport_failure() {
+    let outcome = first_outcome(vec![Step::Garbage]).await;
+
+    let Err(WsError::Transport(_)) = outcome else {
+        panic!("an unparsable frame must surface as WsError::Transport, got {outcome:?}");
+    };
+    assert!(
+        first_error_string(vec![Step::Garbage])
+            .await
+            .starts_with("ws: parse frame `not json`: "),
+        "the transport failure keeps the pre-1.2.0 message"
+    );
+}
+
+#[tokio::test]
+async fn a_ping_frame_is_ponged_and_the_read_loop_continues() {
+    let (mut subscription, endpoint) =
+        open(vec![Step::Ping, Step::Next], WsCredential::Anonymous).await;
+
+    let data = subscription
+        .next_data_outcome(PUSH)
+        .await
+        .expect("a ping must not end the read loop");
+
+    assert_eq!(data["tick"], 7);
+    let ponged = wait_until(PUSH, || async {
+        endpoint
+            .client_frames()
+            .iter()
+            .any(|f| f.contains("\"type\":\"pong\""))
+    })
+    .await;
+    assert!(
+        ponged,
+        "a `ping` frame must be answered with a `pong`, saw {:?}",
+        endpoint.client_frames()
+    );
 }
 
 #[tokio::test]
@@ -254,6 +192,10 @@ async fn next_data_renders_every_outcome_through_display() {
         first_error_string(vec![Step::Complete]).await,
         "ws: subscription completed before any push"
     );
+    assert_eq!(
+        first_error_string(vec![Step::CloseWith(4403, "forbidden")]).await,
+        "ws: server closed: code=4403 reason=forbidden"
+    );
     assert!(
         first_error_string(vec![Step::ErrorFrame])
             .await
@@ -278,5 +220,42 @@ async fn close_sends_a_complete_frame_for_the_open_subscription() {
         saw_complete,
         "close() must end the subscription with a `complete` frame, saw {:?}",
         endpoint.client_frames()
+    );
+}
+
+#[tokio::test]
+async fn close_is_ok_when_the_server_already_closed_the_socket() {
+    let (mut subscription, _endpoint) = open(vec![Step::Close], WsCredential::Anonymous).await;
+    assert_eq!(
+        subscription.next_data_outcome(PUSH).await,
+        Err(WsError::Closed)
+    );
+
+    assert_eq!(
+        subscription.close().await,
+        Ok(()),
+        "closing an already-closed socket is the ordinary end of a test, not a failure"
+    );
+}
+
+#[tokio::test]
+async fn a_trailing_slash_on_the_base_url_still_resolves_the_ws_path() {
+    let (_endpoint, base_url) = spawn(vec![Step::Next]).await;
+
+    let mut subscription = WsSubscription::open_at_with(
+        &format!("{base_url}/"),
+        "/graphql/ws",
+        WsCredential::Anonymous,
+        QUERY,
+    )
+    .await
+    .expect("a trailing slash on the base must not build a `//graphql/ws` path");
+
+    assert_eq!(
+        subscription
+            .next_data_outcome(PUSH)
+            .await
+            .expect("the endpoint pushes on the resolved path")["tick"],
+        7
     );
 }

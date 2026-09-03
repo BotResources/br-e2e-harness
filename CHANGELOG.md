@@ -19,18 +19,33 @@ single git tag `v{version}` releases the set. Format follows
   hand-rolling its own WS client. `open` / `open_at(&Passport)` keep their exact
   signatures and delegate with `WsCredential::Passport`.
 - **`WsError` — a typed WS outcome.** `#[non_exhaustive] enum WsError {
-  Timeout, Closed, Completed, ErrorFrame(String), Transport(String) }` (with
-  `Display` + `Error`) and `WsSubscription::next_data_outcome(timeout) ->
-  Result<Value, WsError>`: a deadline with no push, a socket the server ended, a
-  `complete` before any push and an `error` frame are now four distinct
-  verdicts. `next_data` / `next_matching` keep `Result<Value, String>` and
-  render the variants through `Display` — the strings are unchanged, except the
-  server close-frame path, which now reports ``ws: socket closed before a `next`
-  push`` instead of `ws: server closed: …`.
+  Timeout, Closed, ServerClosed { code: u16, reason: String }, Completed,
+  ErrorFrame(String), Transport(String) }` (with `Display` + `Error`) and
+  `WsSubscription::next_data_outcome(timeout) -> Result<Value, WsError>`: a
+  deadline with no push, a stream that ended, a server that refused with a close
+  code, a `complete` before any push, an `error` frame and a broken exchange are
+  now six distinct verdicts — the handle says *why* it went quiet.
+  `ServerClosed` keeps the `graphql-transport-ws` rejection code (`4400`,
+  `4401`, `4403`, `4409`, `4429`) an assertion needs. `next_data` /
+  `next_matching` keep `Result<Value, String>` and render the variants through
+  `Display`.
+
 - **`WsSubscription::close(self) -> Result<(), WsError>`** — ends the
   subscription with a `complete` frame, then closes the socket, so the service
   observes an orderly unsubscribe rather than a dropped connection.
-  Best-effort: both steps are attempted, it never panics.
+  Best-effort: both steps are attempted, a socket the peer already closed is
+  `Ok(())`, and it never panics.
+- `WsSubscription` trims a trailing `/` on the base URL, so a
+  `GATEWAY_WS_URL`-style value ending in `/` no longer builds a `//graphql/ws`
+  path.
+
+### Changed
+
+- **One `WsSubscription` message moves**: a server **close frame** now renders as
+  `ws: server closed: code={code} reason={reason}` — a stable format — instead of
+  1.1.3's `ws: server closed: {c:?}` (tungstenite's `Debug`, which a dependency
+  bump could silently reword). Every other `next_data` / `next_matching` string is
+  byte-identical to 1.1.3.
 
 ## 1.1.3 - 2026-07-23
 
