@@ -521,7 +521,7 @@ on an absent gitops stream, or `FilterMismatch` on an empty coordinate set).
 
 ### The de-flake primitives
 
-Three helpers exist specifically to kill the classic e2e flakes:
+These helpers exist specifically to kill the classic e2e flakes:
 
 - **`WsSubscription::next_matching(predicate, timeout)`** — drain-until-match.
   A broadcast subscription is woken by *every* event in its class, so a socket
@@ -545,9 +545,6 @@ Three helpers exist specifically to kill the classic e2e flakes:
   `Timeout` is an open stream with nothing to say. `expect_silence` passes only
   on `Timeout`; `expect_event` / `expect_event_on` name which one they got.
   `next_event` is unchanged, so a suite migrates on its own schedule.
-- **`SseSubscription::with_logs(&SpawnedProcess)`** — attach the spawned
-  service's captured output, so a `Closed` panic carries the last 80 lines the
-  service printed before it hung up.
 - **`SseSubscription::expect_event_on(field, timeout) -> Value`** — the channel-3
   ergonomic. `next_event` / `expect_event` already unwrap the SSE frame to the
   GraphQL `data` object (failing loud on an `errors` payload); `expect_event_on`
@@ -560,6 +557,25 @@ Three helpers exist specifically to kill the classic e2e flakes:
 - **`wait_until(timeout, predicate)`** — poll an async condition (a projection
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
+
+### When a subscription goes quiet — attach the service log
+
+Not a de-flake primitive: a **diagnostic**. `with_logs` is an opt-in attachment
+on the subscription builder, so a quiet-outcome panic carries the last 80 lines
+the service printed:
+
+```rust
+let service = SpawnedProcess::spawn(bin, &args, &envs);
+let mut sub = SseSubscription::open(&base_url, &passport, QUERY)
+    .await
+    .with_logs(&service);
+```
+
+`expect_event` / `expect_event_on` / `expect_silence` append that tail on both
+`Closed` and `Timeout` — the two cases where the answer is in the service's own
+stderr, not in the test. The tail is read **at panic time**, so a line printed
+after the attach still lands in the message. Attach nothing and the panic still
+names the outcome; there is no global state and no second mechanism.
 
 ### Boot classification — happy path *and* fail-loud
 
@@ -639,7 +655,8 @@ here, synthetically:
 | `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
 | Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_outcome` returns a quiet outcome **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
 | `expect_silence` panics on `Closed`, and `next_event` still flattens it | A closed stream is not silence: every `expect_silence` and drain-to-quiet loop on a subscription the service had hung up on passed **vacuously**, because a timeout and a stream end were the same `None`. `expect_silence` therefore rejects `Closed` — the one deliberate behaviour change of 1.2.0. `next_event` keeps flattening both to `None` so no consumer's signature breaks; a suite that wants the distinction reads `next_outcome` / `drain_outcome` when it migrates. |
-| Log attachment is `with_logs(&SpawnedProcess)`, cloning the process's log handle | A `Closed` is almost always the service dying or refusing the subscription, and the answer is in *its* stderr — but `SseSubscription` is opened from a URL and knows nothing about the process behind it. `with_logs` clones the `Arc<Mutex<String>>` the `SpawnedProcess` drain tasks already write into, so the panic reads the tail **live**, at panic time, not a snapshot taken at attach time (and it recovers a poisoned mutex rather than panicking while formatting a panic). One opt-in mechanism, no global state: unattached, the panic still names `Closed`. |
+| Log attachment is `with_logs(&SpawnedProcess)`, cloning the process's log handle | A quiet outcome is almost always the service dying, refusing the subscription, or never pushing — and the answer is in *its* stderr, but `SseSubscription` is opened from a URL and knows nothing about the process behind it. `with_logs` clones the `Arc<Mutex<String>>` the `SpawnedProcess` drain tasks already write into, so the panic reads the tail **live**, at panic time, not a snapshot taken at attach time (and it recovers a poisoned mutex rather than panicking while formatting a panic). One opt-in mechanism, no global state: unattached, the panic still names the outcome. |
+| A block left unterminated at stream end is a panic, never a quiet `Closed` | The reader frames on `\n\n` only. Anything still in the buffer when the server hangs up is therefore a push that was **truncated** — or a legal CRLF-framed (`\r\n\r\n`) stream the reader never split at all, in which case *every* frame is residual. Both used to vanish into a clean `Closed`, so a scenario asserting "the service pushed nothing" passed on a service that pushed a broken frame. `next_outcome` panics naming the residual bytes instead: the harness would rather fail loud on a stream it cannot frame than certify a silence it did not observe. |
 | `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
 | `SpawnedProcess` has both `wait_for_http_ok` and `await_boot` | A nominal scenario wants "ready or fail the test" (`wait_for_http_ok` → `Result`); a fail-loud scenario wants to **assert** the boot *did not* succeed and inspect *why* (`await_boot` → `BootOutcome::{Ready, Exited(status), TimedOut}`). Both are kept — the classifier adds the three-outcome verdict, it does not replace the happy-path checker. |
 | `await_boot` drains the pipes to EOF before returning `Exited` | The drain runs as background tasks, so `try_wait()` can observe the exit before those tasks have read the binary's final stderr/stdout. Awaiting them on `Exited` guarantees `proc.logs()` holds the full tail — the line naming the missing declared resource an S0-style scenario asserts on. The continuous-drain model means no kill-before-drain dance (the prod-side reference used a sync `std::process` and had to). |

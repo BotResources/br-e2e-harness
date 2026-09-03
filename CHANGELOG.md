@@ -15,8 +15,7 @@ single git tag `v{version}` releases the set. Format follows
   ended the stream now reads as `Closed`, a stream held open with nothing to say
   as `Timeout`. `next_event` is unchanged (`Event(v) => Some(v)`, otherwise
   `None`), so every existing suite compiles as-is and migrates on its own
-  schedule. `expect_event` / `expect_event_on` panic messages now name which of
-  the two they got.
+  schedule.
 - **`SseSubscription::drain_outcome(max, timeout) -> (usize, DrainStop)`** — the
   drain reports why it stopped (`DrainStop::{ Limit, Timeout, Closed }`);
   `drain(max, timeout) -> usize` keeps its signature and delegates.
@@ -24,7 +23,10 @@ single git tag `v{version}` releases the set. Format follows
   spawned service's captured output. When attached, a `Closed` panic from
   `expect_event` / `expect_event_on` / `expect_silence` carries the last 80 lines
   of the service log, so "the server closed the subscription" arrives with the
-  reason the service printed. Unattached, the panic still names `Closed`.
+  reason the service printed — read **at panic time**, so a line the service
+  prints after the attach still lands in the message. `Timeout` carries the tail
+  too ("alive but pushed nothing" is the frequent diagnosis). Unattached, the
+  panic still names the outcome.
 
 ### Changed
 
@@ -34,6 +36,14 @@ single git tag `v{version}` releases the set. Format follows
   `expect_silence` (and every drain-to-quiet loop) on a subscription the service
   had hung up on passed **vacuously**. A suite that newly fails after this bump
   is a false pass surfacing, not a regression.
+- `expect_event` / `expect_event_on` panic messages name the outcome they got
+  (`got Timeout: …` / `got Closed: …`) instead of `got none`. Observable only to
+  a consumer asserting on the old text (`#[should_panic(expected = "got none")]`).
+- **A block left unterminated when the stream ends now fails loud.** The harness
+  frames on `\n\n` only; a body that ends mid-block, or a CRLF-framed
+  (`\r\n\r\n`) stream, was dropped silently and reported as a clean `Closed`.
+  `next_outcome` panics naming the residual bytes instead — a truncated push is
+  a defect, not a quiet stream.
 
 ## 1.1.3 - 2026-07-23
 

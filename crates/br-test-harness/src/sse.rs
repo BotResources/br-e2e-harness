@@ -68,6 +68,12 @@ impl SseSubscription {
                 continue;
             }
             if self.closed {
+                assert!(
+                    self.buffer.trim().is_empty(),
+                    "subscription stream closed with an unterminated block: {:?}{}",
+                    self.buffer,
+                    self.log_tail()
+                );
                 return SseOutcome::Closed;
             }
 
@@ -98,7 +104,8 @@ impl SseSubscription {
         match outcome {
             SseOutcome::Event(data) => data,
             SseOutcome::Timeout => panic!(
-                "expected subscription event ({what}), got Timeout: nothing arrived within {timeout:?}"
+                "expected subscription event ({what}), got Timeout: nothing arrived within {timeout:?}{}",
+                self.log_tail()
             ),
             SseOutcome::Closed => panic!(
                 "expected subscription event ({what}), got Closed: the server closed the stream{}",

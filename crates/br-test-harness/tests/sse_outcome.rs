@@ -1,23 +1,9 @@
 #![cfg(all(feature = "sse", feature = "server", feature = "passport"))]
 
-use std::future::Future;
-use std::panic::AssertUnwindSafe;
-use std::time::Duration;
+mod sse_support;
 
-use axum::Router;
-use axum::body::Body;
-use axum::http::header;
-use axum::response::IntoResponse;
-use axum::routing::post;
-use br_test_harness::{
-    DrainStop, PassportBuilder, SpawnedProcess, SseOutcome, SseSubscription, TestServer, wait_until,
-};
-use bytes::Bytes;
-use futures_util::FutureExt as _;
-
-const SERVICE_MARKER: &str = "service-refused-to-serve";
-const QUIET: Duration = Duration::from_millis(300);
-const PUSH: Duration = Duration::from_secs(2);
+use br_test_harness::{DrainStop, SseOutcome};
+use sse_support::{PUSH, QUIET, open_closing_after, open_silent};
 
 fn next_frames(count: usize) -> String {
     (0..count)
@@ -29,70 +15,8 @@ fn error_frame() -> String {
     "event: next\ndata: {\"errors\":[{\"message\":\"boom\"}]}\n\n".to_string()
 }
 
-async fn serve_finite(body: String) -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/event-stream")], body)
-}
-
-async fn serve_open_forever() -> impl IntoResponse {
-    let never = futures_util::stream::pending::<Result<Bytes, std::io::Error>>();
-    (
-        [(header::CONTENT_TYPE, "text/event-stream")],
-        Body::from_stream(never),
-    )
-}
-
-async fn open_against(router: Router) -> SseSubscription {
-    let server = TestServer::spawn(router).await;
-    SseSubscription::open(
-        &server.base_url,
-        &PassportBuilder::new().build(),
-        "subscription { tick }",
-    )
-    .await
-}
-
-async fn open_closing_after(body: String) -> SseSubscription {
-    open_against(Router::new().route(
-        "/graphql",
-        post(move || {
-            let frames = body.clone();
-            async move { serve_finite(frames).await }
-        }),
-    ))
-    .await
-}
-
-async fn open_silent() -> SseSubscription {
-    open_against(Router::new().route("/graphql", post(serve_open_forever))).await
-}
-
-async fn spawn_logging_service() -> SpawnedProcess {
-    let proc = SpawnedProcess::spawn(
-        "/bin/sh",
-        &["-c", &format!("echo {SERVICE_MARKER} >&2; exec sleep 30")],
-        &[],
-    );
-    let captured = wait_until(Duration::from_secs(5), || async {
-        proc.logs().contains(SERVICE_MARKER)
-    })
-    .await;
-    assert!(
-        captured,
-        "the spawned service must have flushed its log line"
-    );
-    proc
-}
-
-async fn panic_message<F: Future<Output = ()>>(call: F) -> String {
-    let payload = AssertUnwindSafe(call)
-        .catch_unwind()
-        .await
-        .expect_err("the call under test must panic");
-    payload
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
-        .expect("a panic payload the test can read")
+fn crlf_frame() -> String {
+    "event: next\r\ndata: {\"data\":{\"tick\":0}}\r\n\r\n".to_string()
 }
 
 #[tokio::test]
@@ -132,6 +56,24 @@ async fn next_outcome_carries_the_pushed_payload() {
         SseOutcome::Event(event) => assert_eq!(event["tick"], 0),
         other => panic!("a pushed frame must read as Event: {other:?}"),
     }
+}
+
+#[tokio::test]
+#[should_panic(expected = "closed with an unterminated block")]
+async fn a_frame_left_unterminated_at_stream_end_fails_loud() {
+    let tail = "event: next\ndata: {\"data\":{\"tick\":9}}";
+    let mut sub = open_closing_after(format!("{}{tail}", next_frames(1))).await;
+
+    assert!(matches!(sub.next_outcome(PUSH).await, SseOutcome::Event(_)));
+    sub.next_outcome(PUSH).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "closed with an unterminated block")]
+async fn a_crlf_framed_body_fails_loud_instead_of_reading_as_a_clean_close() {
+    let mut sub = open_closing_after(crlf_frame()).await;
+
+    sub.next_outcome(PUSH).await;
 }
 
 #[tokio::test]
@@ -191,59 +133,6 @@ async fn expect_event_on_names_closed_when_the_server_ended_the_stream() {
     let mut sub = open_closing_after(String::new()).await;
 
     sub.expect_event_on("tick", PUSH).await;
-}
-
-#[tokio::test]
-async fn expect_event_dumps_the_attached_service_log_on_a_closed_stream() {
-    let proc = spawn_logging_service().await;
-    let mut sub = open_closing_after(String::new()).await.with_logs(&proc);
-
-    let message = panic_message(async move {
-        sub.expect_event("a tick", PUSH).await;
-    })
-    .await;
-
-    assert!(message.contains("got Closed"), "{message}");
-    assert!(message.contains("service log tail"), "{message}");
-    assert!(message.contains(SERVICE_MARKER), "{message}");
-    proc.shutdown().await;
-}
-
-#[tokio::test]
-async fn expect_silence_dumps_the_attached_service_log_on_a_closed_stream() {
-    let proc = spawn_logging_service().await;
-    let mut sub = open_closing_after(String::new()).await.with_logs(&proc);
-
-    let message = panic_message(async move {
-        sub.expect_silence("no push", QUIET).await;
-    })
-    .await;
-
-    assert!(
-        message.contains("the server closed the stream"),
-        "{message}"
-    );
-    assert!(message.contains(SERVICE_MARKER), "{message}");
-    proc.shutdown().await;
-}
-
-#[tokio::test]
-async fn a_closed_stream_still_names_closed_with_no_log_attached() {
-    let mut sub = open_closing_after(String::new()).await;
-
-    let message = panic_message(async move {
-        sub.expect_silence("no push", QUIET).await;
-    })
-    .await;
-
-    assert!(
-        message.contains("the server closed the stream"),
-        "{message}"
-    );
-    assert!(
-        !message.contains("service log tail"),
-        "an unattached subscription must not claim a log dump: {message}"
-    );
 }
 
 #[tokio::test]
