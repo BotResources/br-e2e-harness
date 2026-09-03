@@ -275,3 +275,19 @@ async fn next_matching_keeps_its_skipped_frame_report() {
          skipped 1 non-matching frame(s): [{\"tick\":7}]"
     );
 }
+
+#[tokio::test]
+async fn the_legacy_open_constructor_still_sends_the_passport_header() {
+    let passport = PassportBuilder::new().build();
+    let (endpoint, base_url) = spawn(vec![]).await;
+
+    let _subscription = WsSubscription::open(&base_url, &passport, QUERY)
+        .await
+        .expect("`open` keeps the pre-1.2.0 default path and credential");
+
+    assert_eq!(
+        endpoint.header("x-passport"),
+        Some(passport.to_header()),
+        "`open` must still delegate to WsCredential::Passport"
+    );
+}

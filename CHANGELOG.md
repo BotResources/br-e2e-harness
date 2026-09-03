@@ -40,9 +40,6 @@ single git tag `v{version}` releases the set. Format follows
   observes an orderly unsubscribe rather than a dropped connection.
   Best-effort: both steps are attempted, a socket the peer already closed is
   `Ok(())`, and it never panics.
-- `WsSubscription` trims a trailing `/` on the base URL, so a
-  `GATEWAY_WS_URL`-style value ending in `/` no longer builds a `//graphql/ws`
-  path.
 
 ### Changed
 
@@ -54,6 +51,12 @@ single git tag `v{version}` releases the set. Format follows
   one now renders as ``ws: socket closed before a `next` push`` — the same fact
   as an exhausted stream — instead of `ws: server closed: None`. Every other
   `next_data` / `next_matching` string is byte-identical to 1.1.3.
+- **`open` / `open_at` / `open_with` / `open_at_with` trim a trailing `/` on the
+  base URL.** In 1.1.3 a base ending in `/` — the shape a `GATEWAY_WS_URL`-style
+  environment value often takes — built a `//graphql/ws` path, which no router
+  matches, so the handshake failed with a connect error. Existing callers passing
+  a slash-terminated base now reach the intended path; a base without a trailing
+  slash is unaffected.
 
 ## 1.1.3 - 2026-07-23
 
