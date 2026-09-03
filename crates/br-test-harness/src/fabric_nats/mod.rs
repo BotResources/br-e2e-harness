@@ -6,6 +6,7 @@ mod kv;
 mod namespace;
 mod negative;
 mod observe;
+mod outage;
 mod provision;
 mod purge;
 mod raw_publish;
@@ -20,6 +21,7 @@ pub use kv::FabricKvError;
 pub use namespace::RunNamespace;
 pub use negative::{BareFabricNats, WidenedDurable};
 pub use observe::FixedStream;
+pub use outage::DeliveryOutage;
 pub use tap::{DurableTap, TappedDelivery};
 pub use tuning::DurableConfig;
 

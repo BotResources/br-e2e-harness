@@ -33,9 +33,10 @@ pub use wait::wait_until;
 #[cfg(feature = "nats-fabric")]
 pub use fabric_nats::{
     BEARER_BUCKET, BareFabricNats, BearerSeedError, BearerSeeder, CapturedMessage, CommandAwaiter,
-    CommandCapture, DurableConfig, DurableTap, EventCapture, FabricAwaiter, FabricKvError,
-    FabricTestNats, FixedStream, Manifest, ManifestError, NatsBacking, Rendered, RenderedCommand,
-    RenderedEvent, RunNamespace, SeededToken, TappedDelivery, WidenedDurable, unknown_bearer,
+    CommandCapture, DeliveryOutage, DurableConfig, DurableTap, EventCapture, FabricAwaiter,
+    FabricKvError, FabricTestNats, FixedStream, Manifest, ManifestError, NatsBacking, Rendered,
+    RenderedCommand, RenderedEvent, RunNamespace, SeededToken, TappedDelivery, WidenedDurable,
+    unknown_bearer,
 };
 #[cfg(feature = "nats")]
 pub use nats::TestNats;
