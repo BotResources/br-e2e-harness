@@ -7,6 +7,8 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.2.0 - 2026-09-03
+
 ### Added
 
 #### `br-test-harness` — `FabricTestNats` adversarial provisioning, observation and purge
@@ -156,6 +158,20 @@ single git tag `v{version}` releases the set. Format follows
   best-effort-delivery scenario, where the `_subject` form would require
   enumerating every coordinate to keep.
 
+#### `br-test-harness` — the `spawned-nats` slice is provably fabric-free
+
+- **A CI gate pins `spawned-nats` to zero `br-rust-common` crates.**
+  `cargo tree -p br-test-harness --no-default-features --features spawned-nats
+  -e normal` must not mention `br-rust-common`, and the slice must `cargo check`;
+  both run in the `fmt-clippy-test` job. `SpawnedNats` needs only `tokio` +
+  `tempfile` and already exposes `url()` / `shutdown()`, so br-rust-common can
+  dev-depend on this crate by tag for a per-test broker with **no dependency
+  cycle** — and no innocuous feature edit can quietly re-create one. Stated in
+  the crate README beside the feature table. **Deferred:** actually moving
+  br-rust-common's `fabric_e2e.rs` off its ambient `NATS_URL` onto `SpawnedNats`
+  is a change in *that* repo and is not part of this release; only the harness
+  side of the enabler ships here.
+
 #### Workspace re-pin to `br-rust-common` v1.3.0
 
 - **`FabricTestNats::attach_without_provisioning(url)`** — attaches to an
@@ -205,7 +221,7 @@ single git tag `v{version}` releases the set. Format follows
   absent and passes once provisioned, and rejects a durable whose filter is not
   the coordinate.
 
-#### `conformance-passport` — seal side frozen in the Go anchor (WP7)
+#### `conformance-passport` — seal side frozen in the Go anchor
 
 - **P9 — an unreadable envelope fails closed.** The frozen contract already required
   it; nothing covered it. A bearer that resolves is replaced, at its own KV key, by a
@@ -222,9 +238,7 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
-#### `br-test-harness` — SSE and WS subscription handles
-
-**Deliberate behaviour changes. A suite that newly fails is a false pass
+**Deliberate behaviour changes — a suite that newly fails is a false pass
 surfacing, not a regression.**
 
 1. **`SseSubscription::expect_silence` now panics when the server closed the
@@ -233,28 +247,57 @@ surfacing, not a regression.**
    so every `expect_silence` (and every drain-to-quiet loop) on a subscription
    the service had hung up on passed **vacuously** — a test that asserted
    nothing now fails.
-2. **A block left unterminated when the stream ends now fails loud.** The reader
-   frames on `\n\n` **only**, so anything still buffered when the server hangs
-   up is a truncated push — and a CRLF-framed (`\r\n\r\n`) body, though legal
-   SSE, is *entirely* residual because the splitter never cuts it. In 1.1.3 both
-   vanished into a `next_event() -> None` a scenario read as silence.
+2. **An SSE block left unterminated when the stream ends now fails loud.** The
+   reader frames on `\n\n` **only**, so anything still buffered when the server
+   hangs up is a truncated push — and a CRLF-framed (`\r\n\r\n`) body, though
+   legal SSE, is *entirely* residual because the splitter never cuts it. In 1.1.3
+   both vanished into a `next_event() -> None` a scenario read as silence.
    `next_outcome` panics naming the residual bytes instead. Deliberately **not**
    CRLF support: the harness refuses to certify a silence it did not observe
    rather than guess at a framing it does not implement.
 3. **Two `WsSubscription` messages move**, both from the single 1.1.3 close arm
-  (`ws: server closed: {c:?}`, which covered a close frame with *and* without a
-  payload): a close frame **with** a payload now renders as the stable
-  `ws: server closed: code={code} reason={reason}` (never tungstenite's `Debug`,
-  which a dependency bump could silently reword), and a close frame **without**
-  one now renders as ``ws: socket closed before a `next` push`` — the same fact
-  as an exhausted stream — instead of `ws: server closed: None`. Every other
-  `next_data` / `next_matching` string is byte-identical to 1.1.3.
-4. **`open` / `open_at` / `open_with` / `open_at_with` trim a trailing `/` on the
-  base URL.** In 1.1.3 a base ending in `/` — the shape a `GATEWAY_WS_URL`-style
-  environment value often takes — built a `//graphql/ws` path, which no router
-  matches, so the handshake failed with a connect error. Existing callers passing
-  a slash-terminated base now reach the intended path; a base without a trailing
-  slash is unaffected.
+   (`ws: server closed: {c:?}`, which covered a close frame with *and* without a
+   payload): a close frame **with** a payload now renders as the stable
+   `ws: server closed: code={code} reason={reason}` (never tungstenite's `Debug`,
+   which a dependency bump could silently reword), and a close frame **without**
+   one now renders as ``ws: socket closed before a `next` push`` — the same fact
+   as an exhausted stream — instead of `ws: server closed: None`. Every other
+   `next_data` / `next_matching` string is byte-identical to 1.1.3.
+4. **`WsSubscription::open` / `open_at` / `open_with` / `open_at_with` trim a
+   trailing `/` on the base URL.** In 1.1.3 a base ending in `/` — the shape a
+   `GATEWAY_WS_URL`-style environment value often takes — built a `//graphql/ws`
+   path, which no router matches, so the handshake failed with a connect error.
+   Existing callers passing a slash-terminated base now reach the intended path;
+   a base without a trailing slash is unaffected.
+5. **The harness call sites that *assert* the anti-over-delivery narrow-back moved
+   to `ensure_event_durable`** (`conformance-nats-fabric`'s
+   `assert_widened_durable_converges` and the harness's own
+   `a_widened_durable_is_converged_back_to_the_exact_filter`): br-rust-common
+   v1.3.0 turned `verify_command_durable` / `verify_event_durable` into a
+   stream-coverage probe that **creates nothing**, so under 1.3.0 only `ensure_*`
+   converges a widened durable back to the coordinate filter. The assertions are
+   unchanged — they are the only black-box guard of that guarantee.
+   `start_provisions_the_two_fixed_streams_and_a_filter_identical_durable` keeps
+   `verify_command_durable` as the coverage probe and now proves the filter
+   identity through `durable_filter_subjects`. The two `BareFabricNats` negative
+   paths keep `verify_*` (the `Consume(NoStream)` fail-loud is unchanged) with
+   expect messages reworded to what they now prove.
+6. **`fabric-nats verify` is a genuine read-only check.** Because the lib probe
+   now creates nothing, the old `verify` would have printed `ok cmd <durable>`
+   for a NATS carrying no durable at all. It now checks, per manifest entry,
+   (a) the fixed stream exists and its `subjects` cover the rendered coordinate
+   (the lib probe, `Consume(NoStream)` / `SubjectNotCovered`) **and** (b) the
+   durable exists on that stream filtering **exactly** that coordinate; either
+   miss exits `4` naming the stream, the durable and the filter found, and the
+   `ok` line states both checks. It now covers the `[published_language]` /
+   `[bearer_tokens]` manifest flags too (bucket presence, read-only), reports
+   **every** failing entry rather than only the first, and discriminates an
+   absent stream from an uncovered subject in the message.
+7. **`conformance-passport`'s `ALL` grows from 8 to 10 mandatory scenarios**
+   (P9 and P10). A consumer asserting `report.passed() == ALL.len()` picks them
+   up automatically; one pinning the literal `8` must move to `ALL.len()`.
+
+#### `br-test-harness` — SSE and WS subscription handles
 
 Non-behavioural, text only:
 
@@ -268,49 +311,25 @@ Non-behavioural, text only:
   `v1.3.0`** — 25 declarations across the 6 workspace-member `Cargo.toml`
   carrying one (`{ tag, version }` both bumped; no workspace-level pin
   introduced). `conformance-passport` is among them: it now pins
-  `br-rust-common` alone (see its own entry above).
+  `br-rust-common` alone (see its own entry below).
   `conformance-directory` C1–C5 therefore re-run against 1.3.0 on the
   **no-stager** path — where a single-statement projection still runs on a pooled
-  connection, exactly as in 1.2.0 — and the new **C6** below covers the stager
+  connection, exactly as in 1.2.0 — and the new **C6** covers the stager
   path and the transactional sink. The workspace resolves to a single
   br-rust-common source.
-
-- **`fabric-nats verify` is a genuine read-only check.** br-rust-common v1.3.0
-  turned `verify_command_durable` / `verify_event_durable` into a stream-coverage
-  probe that creates nothing, so the old `verify` would have printed
-  `ok cmd <durable>` for a NATS carrying no durable at all. It now checks, per
-  manifest entry, (a) the fixed stream exists and its `subjects` cover the
-  rendered coordinate (the lib probe, `Consume(NoStream)` / `SubjectNotCovered`)
-  **and** (b) the durable exists on that stream filtering **exactly** that
-  coordinate; either miss exits `4` naming the stream, the durable and the filter
-  found, and the `ok` line states both checks. It now covers the
-  `[published_language]` / `[bearer_tokens]` manifest flags too (bucket presence,
-  read-only), reports **every** failing entry rather than only the first, and
-  discriminates an absent stream from an uncovered subject in the message.
-
-- **The harness call sites that *assert* the anti-over-delivery narrow-back moved
-  to `ensure_event_durable`** (`conformance-nats-fabric`'s
-  `assert_widened_durable_converges` and the harness's own
-  `a_widened_durable_is_converged_back_to_the_exact_filter`): under 1.3.0 only
-  `ensure_*` converges a widened durable back to the coordinate filter. The
-  assertions are unchanged — they are the only black-box guard of that guarantee.
-  `start_provisions_the_two_fixed_streams_and_a_filter_identical_durable` keeps
-  `verify_command_durable` as the coverage probe and now proves the filter
-  identity through `durable_filter_subjects`. The two `BareFabricNats`
-  negative paths keep `verify_*` (the `Consume(NoStream)` fail-loud is unchanged)
-  with expect messages reworded to what they now prove.
-
 - Lockfile: `chacha20` `0.10.0` → `0.10.2` (the resolved version was yanked;
-  `cargo deny check` advisories were failing on it).
+  `cargo deny check` advisories were failing on it). It reaches the tree through
+  `async-nats` → `rand`, unrelated to the re-pin itself.
 
-#### `conformance-passport` — seal side frozen in the Go anchor (WP7)
+#### `conformance-passport` — seal side frozen in the Go anchor
 
 - **`conformance-passport` no longer depends on `svc-auth`.** The crate imported
   `br-auth-contract` + `br-auth-identity-util` for one job — seeding — which
   transitively pinned br-rust-common and made every lib bump break the crate (the
   1.1.2 exclude / 1.1.3 re-enter dance). Its only BotResources dependencies are now
   `br-rust-common` (`br-core-auth`, `br-util-nats-fabric`) and the sibling
-  `br-test-harness`. The unused `br-core-kernel` dep is dropped with them.
+  `br-test-harness`. The unused `br-core-kernel` dep is dropped with them, and the
+  now-unused `svc-auth` entry leaves `deny.toml`'s git source allow-list.
 - **The sealed wire is frozen as committed vectors produced by the Go anchor.** A
   contract that must stay constant is frozen by an independent implementation, never
   by a Rust contract crate — otherwise Rust and the wire evolve together silently.
@@ -330,9 +349,6 @@ Non-behavioural, text only:
   and `BEARER_SEAL_KEY` now comes straight out of the vector file. The anchor's
   `seal` subcommand remains a dev-time generator only and takes its key from
   `BEARER_SEAL_KEY`, exactly as serve mode does.
-- **`ALL` grows from 8 to 10 mandatory scenarios** (P9 and P10 below). A consumer
-  asserting `report.passed() == ALL.len()` picks them up automatically; one pinning
-  the literal `8` must move to `ALL.len()`.
 - `PassportHarness::seeder()` is now synchronous and infallible, and
   `wrong_key_seeder()` is gone (the wrong-key case is a vector, not a second
   publisher). `SealedSeeder::seed` takes a `Vector` and the harness; `SealedSeed`
@@ -340,11 +356,6 @@ Non-behavioural, text only:
   are fixed, so per-run namespacing no longer exists. `SEAL_KEY` / `WRONG_SEAL_KEY`
   / `seal_key()` / `wrong_seal_key()` are replaced by the vector file plus
   `vectors::seal_key_b64()`.
-- Bump every `br-rust-common` pin to `v1.3.0`, and drop the now-unused `svc-auth`
-  entry from `deny.toml`'s git source allow-list.
-- `cargo update -p chacha20` off the yanked `0.10.0` (it reaches the tree through
-  `async-nats` → `rand`, unrelated to the svc-auth removal): `cargo deny check`
-  advisories pass again.
 - **CI now runs the Go anchor's tests** — a new `identity-passport anchor tests` step
   in `infra-e2e` (`go vet` + `go test -count=1`), placed before the passport battery.
   Without it the byte-equality guard on the committed vectors never executed in CI,
@@ -353,6 +364,31 @@ Non-behavioural, text only:
   file), and `check` no longer depends on `fmt` (which rewrote sources): it runs a
   `fmt-check` instead, with `fmt` kept as its own target.
 - CI runs the passport battery with `--test-threads=1`, matching the README.
+
+**Migration.** Every `br-rust-common` pin in a consuming repo must move to
+`v1.3.0` in the same change that takes this tag: two refs of one git URL are two
+distinct sources and duplicate `br-core-*` in the graph. No harness signature
+changed, so a suite on 1.1.x compiles untouched — what it may hit is the class-B
+false passes above surfacing as new failures (a vacuous `expect_silence` on a
+closed stream, a drain-to-quiet loop over an ended stream). Those are the bug the
+release exists to expose; budget for the assertions, not for the edits. A
+consumer pinning `conformance-passport`'s scenario count as a literal moves to
+`ALL.len()`; one driving a subject through `run_spawn` needs no change (the
+battery no longer asks any binary to seal, and needs no `go` on `PATH`).
+
+**Deferred.** The consumer-side follow-ups this release enables stay in their own
+repos and are not part of it: svc-jobs dropping the `Budget` / `ended_early`
+heuristic now that `Closed` is readable, svc-notifier's drain loops, bma-identity's
+five drain-to-quiet loops and its `assert_stream_stays_open` helper (now
+redundant), be-botresources.ai's svc-identity / svc-tasks helpers (optional:
+better panic messages), the deletion of the gateway's duplicated
+`crates/e2e/src/ws.rs` in favour of `WsCredential`, and un-ignoring svc-charter
+`s19` on `DeliveryOutage`. The Rust-side guard for
+svc-auth's `br-auth-contract` — the pin `conformance-passport` dropped — belongs
+to the svc-auth repo. Migrating br-rust-common's own `fabric_e2e.rs` off an
+ambient `NATS_URL` onto `SpawnedNats` is a br-rust-common change (the harness
+side of it ships here, see Added).
+
 
 ### Fixed
 

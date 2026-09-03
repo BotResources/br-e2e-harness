@@ -856,6 +856,7 @@ here, synthetically:
 | `await_boot` drains the pipes to EOF before returning `Exited` | The drain runs as background tasks, so `try_wait()` can observe the exit before those tasks have read the binary's final stderr/stdout. Awaiting them on `Exited` guarantees `proc.logs()` holds the full tail — the line naming the missing declared resource an S0-style scenario asserts on. The continuous-drain model means no kill-before-drain dance (the prod-side reference used a sync `std::process` and had to). |
 | `deny.toml` ignores `RUSTSEC-2023-0071` (Marvin timing attack in `rsa`) | The advisory is a side-channel in `rsa` private-key *decryption*. This workspace only ships test fixtures that **sign** short-lived tokens on isolated test networks — no decryption path, no timing-oracle adversary in the threat model. Same ignore as `svc-auth`'s CI. |
 | `deny.toml` allows `CDLA-Permissive-2.0` | Mozilla's CA-root data set, vendored by `webpki-roots`, pulled in transitively by the rustls stack under `reqwest` / `sqlx` / `async-nats`. It is an OSI-recognized permissive *data* license with no copyleft and no patent traps — safe for a fixtures repo. Added when `br-test-harness` brought the rustls TLS stack in. |
+| The `spawned-nats` slice carries no `br-rust-common` crate, and CI asserts it | `br-rust-common`'s own fabric e2e wants a per-test `nats-server` instead of an ambient `NATS_URL`, which means dev-depending on this harness — impossible if the slice it needs dragged the lib back in. The slice is kept lib-free on purpose and gated by `cargo tree`, so an innocuous feature edit cannot re-create the cycle. Migrating `fabric_e2e.rs` onto it is a `br-rust-common` change, not a harness one. |
 
 ## Cargo features
 
@@ -883,6 +884,13 @@ are `tokio` + std — so the smallest useful dependency is `default-features =
 false` with no feature at all. `conformance-scope` rides exactly this: it takes
 `["nats", "spawned-nats"]`, so its CLI binary carries no `sqlx` / `axum` / `rsa`.
 
+**`spawned-nats` is fabric-free.** `default-features = false, features =
+["spawned-nats"]` pulls **no** `br-rust-common` crate — `SpawnedNats` needs only
+`tokio` + `tempfile` and gives you `url()` / `shutdown()`. That is what lets
+`br-rust-common` itself dev-depend on this crate by tag to get a per-test broker
+without a dependency cycle, and CI gates it (`cargo tree -e normal` on that
+slice must not mention `br-rust-common`).
+
 ## Install
 
 It is a **dev-dependency**. Pin it to a release tag (git-tag distribution; no
@@ -890,10 +898,10 @@ crates.io — same model as the rest of the platform):
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.3" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.1.3", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
