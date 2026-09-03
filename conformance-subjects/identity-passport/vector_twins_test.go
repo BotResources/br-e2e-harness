@@ -8,6 +8,17 @@ import (
 	"testing"
 )
 
+func frozenTwinPairs() [][2]string {
+	specs := frozenVectorSpecs()
+	pairs := make([][2]string, 0, len(specs))
+	for _, spec := range specs {
+		if spec.twinOf != "" {
+			pairs = append(pairs, [2]string{spec.twinOf, spec.name})
+		}
+	}
+	return pairs
+}
+
 func decodeVectorValue(t *testing.T, v wireVector) []byte {
 	t.Helper()
 	raw, err := base64.StdEncoding.DecodeString(v.ValueB64)
@@ -114,14 +125,17 @@ func assertOneByteFlipped(t *testing.T, name, field string, faithful, corrupt wi
 	if len(from) != len(to) {
 		t.Fatalf("%s: the %s changed length (%d → %d), a flip keeps it", name, field, len(from), len(to))
 	}
-	differing := 0
+	var differing []int
 	for i := range from {
 		if from[i] != to[i] {
-			differing++
+			differing = append(differing, i)
 		}
 	}
-	if differing != 1 {
-		t.Fatalf("%s: %d bytes of the %s differ, the declared mutation flips exactly one", name, differing, field)
+	if len(differing) != 1 || differing[0] != 0 {
+		t.Fatalf("%s: bytes %v of the %s differ, the declared mutation flips byte 0 alone", name, differing, field)
+	}
+	if to[0] != from[0]^0xff {
+		t.Fatalf("%s: byte 0 of the %s is not its faithful byte xor 0xff", name, field)
 	}
 }
 
@@ -186,5 +200,22 @@ func TestMutatingRequiresAFaithfullyParsableEnvelope(t *testing.T) {
 	}
 	if _, err := mutateStoredValue([]byte(`{"nonce":"AA==","ciphertext":"AA=="}`), "shredded"); err == nil {
 		t.Fatalf("an unknown mutation must be refused")
+	}
+}
+
+func TestEveryCorruptVectorIsNamedByATwinPair(t *testing.T) {
+	parsed := decodeVectors(t, committedVectors(t))
+	corruptHalves := make(map[string]struct{}, len(parsed.Vectors))
+	for _, pair := range frozenTwinPairs() {
+		corruptHalves[pair[1]] = struct{}{}
+	}
+	for _, v := range parsed.Vectors {
+		_, twinned := corruptHalves[v.Name]
+		if v.Corruption != corruptionNone && !twinned {
+			t.Fatalf("vector %q declares corruption %q but no twin pair names it", v.Name, v.Corruption)
+		}
+		if v.Corruption == corruptionNone && twinned {
+			t.Fatalf("vector %q is the corrupt half of a pair but declares no corruption", v.Name)
+		}
 	}
 }

@@ -239,7 +239,11 @@ single git tag `v{version}` releases the set. Format follows
   enforce it: `vector_twins_test.go` re-applies each mutation to the faithful bytes
   and byte-compares the result with the committed corrupt half, and Rust re-checks
   the same rule while parsing the vector file, so a non-twin file panics before any
-  scenario runs. (P6 is not of that shape — it seeds the wrong-key vector once and
+  scenario runs. The check closes the table rather than a hard-coded list of three:
+  any entry declaring a `corruption` must be named as a corrupt half by the twin
+  table, and a corrupt half must declare its own mutation. (P6's `wrong-key` is the
+  one negative vector with no twin — a KV key holds a single value — so it rests on
+  a `pl_get_raw` presence assertion instead.) (P6 is not of that shape — it seeds the wrong-key vector once and
   asserts the value is present before checking the endpoint went anonymous.)
 
 ### Changed

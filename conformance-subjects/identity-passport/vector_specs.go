@@ -130,13 +130,3 @@ func frozenVectorSpecs() []vectorSpec {
 		},
 	}
 }
-
-func frozenTwinPairs() [][2]string {
-	pairs := make([][2]string, 0, len(frozenVectorSpecs()))
-	for _, spec := range frozenVectorSpecs() {
-		if spec.twinOf != "" {
-			pairs = append(pairs, [2]string{spec.twinOf, spec.name})
-		}
-	}
-	return pairs
-}

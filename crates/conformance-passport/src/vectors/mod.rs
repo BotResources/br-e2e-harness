@@ -1,5 +1,6 @@
 mod catalogue;
 mod frozen;
+pub(crate) mod mutation;
 mod twins;
 
 pub use catalogue::{EVERY_VECTOR, Vector};

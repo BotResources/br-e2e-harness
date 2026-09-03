@@ -4,45 +4,12 @@ use serde_json::{Map, Value};
 
 use super::catalogue::Vector;
 use super::frozen::WireVector;
+use super::mutation::{Mutation, SealField, TWINS, declared_mutation_of, wire_label};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mutation {
-    CiphertextByteFlip,
-    NonceByteFlip,
-    UnknownField,
-}
-
-impl Mutation {
-    fn declared_field(self) -> &'static str {
-        match self {
-            Mutation::CiphertextByteFlip => "ciphertext",
-            Mutation::NonceByteFlip => "nonce",
-            Mutation::UnknownField => "",
-        }
-    }
-}
-
-pub const TWINS: [(Vector, Vector, Mutation); 3] = [
-    (
-        Vector::TamperedCiphertextFaithful,
-        Vector::TamperedCiphertextCorrupt,
-        Mutation::CiphertextByteFlip,
-    ),
-    (
-        Vector::TamperedNonceFaithful,
-        Vector::TamperedNonceCorrupt,
-        Mutation::NonceByteFlip,
-    ),
-    (
-        Vector::UnreadableFaithful,
-        Vector::UnreadableCorrupt,
-        Mutation::UnknownField,
-    ),
-];
-
-pub(super) fn assert_every_twin_is_its_faithful_plus_the_declared_mutation(
+pub(super) fn assert_every_corrupt_vector_is_a_controlled_twin(
     vectors: &[WireVector],
 ) -> Result<(), String> {
+    assert_declared_corruptions_match_the_twin_table(vectors)?;
     for (faithful, corrupt, mutation) in TWINS {
         let faithful = named(vectors, faithful)?;
         let corrupt = named(vectors, corrupt)?;
@@ -51,7 +18,7 @@ pub(super) fn assert_every_twin_is_its_faithful_plus_the_declared_mutation(
         let after = envelope(corrupt)?;
         let outcome = match mutation {
             Mutation::UnknownField => assert_only_an_unknown_key_was_added(&before, &after),
-            flip => assert_one_byte_flipped(&before, &after, flip.declared_field()),
+            Mutation::ByteFlip(field) => assert_byte_zero_flipped(&before, &after, field),
         };
         outcome.map_err(|detail| {
             format!(
@@ -59,6 +26,29 @@ pub(super) fn assert_every_twin_is_its_faithful_plus_the_declared_mutation(
                 corrupt.name, faithful.name
             )
         })?;
+    }
+    Ok(())
+}
+
+fn assert_declared_corruptions_match_the_twin_table(vectors: &[WireVector]) -> Result<(), String> {
+    for vector in vectors {
+        let declared = declared_mutation_of(&vector.name);
+        if vector.corruption == declared {
+            continue;
+        }
+        return Err(match declared {
+            None => format!(
+                "vector {} declares corruption {:?} but no twin pair names it as a corrupt half",
+                vector.name,
+                wire_label(vector.corruption)
+            ),
+            Some(expected) => format!(
+                "vector {} declares corruption {:?} where its twin pair names {:?}",
+                vector.name,
+                wire_label(vector.corruption),
+                wire_label(Some(expected))
+            ),
+        });
     }
     Ok(())
 }
@@ -104,31 +94,40 @@ fn envelope(vector: &WireVector) -> Result<Map<String, Value>, String> {
     }
 }
 
-fn assert_one_byte_flipped(
+fn assert_byte_zero_flipped(
     before: &Map<String, Value>,
     after: &Map<String, Value>,
-    field: &str,
+    field: SealField,
 ) -> Result<(), String> {
-    let untouched = if field == "nonce" {
-        "ciphertext"
-    } else {
-        "nonce"
-    };
     if before.len() != 2 || after.len() != 2 {
         return Err("a tampered twin carries exactly nonce and ciphertext".to_string());
     }
+    let untouched = field.untouched();
     if field_of(before, untouched)? != field_of(after, untouched)? {
-        return Err(format!("the {untouched} changed too"));
+        return Err(format!("the {} changed too", untouched.name()));
     }
     let from = decode(&field_of(before, field)?, field)?;
     let to = decode(&field_of(after, field)?, field)?;
     if from.len() != to.len() {
-        return Err(format!("the {field} changed length"));
+        return Err(format!("the {} changed length", field.name()));
     }
-    let differing = from.iter().zip(to.iter()).filter(|(a, b)| a != b).count();
-    if differing != 1 {
+    let differing: Vec<usize> = from
+        .iter()
+        .zip(to.iter())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(index, _)| index)
+        .collect();
+    if differing != [0] {
         return Err(format!(
-            "{differing} bytes of the {field} differ, the declared mutation flips exactly one"
+            "bytes {differing:?} of the {} differ, the declared mutation flips byte 0 alone",
+            field.name()
+        ));
+    }
+    if to[0] != from[0] ^ 0xff {
+        return Err(format!(
+            "byte 0 of the {} is not its faithful byte xor 0xff",
+            field.name()
         ));
     }
     Ok(())
@@ -159,125 +158,20 @@ fn assert_only_an_unknown_key_was_added(
     Ok(())
 }
 
-fn field_of(object: &Map<String, Value>, field: &str) -> Result<String, String> {
+fn field_of(object: &Map<String, Value>, field: SealField) -> Result<String, String> {
     object
-        .get(field)
+        .get(field.name())
         .and_then(Value::as_str)
         .map(str::to_string)
-        .ok_or_else(|| format!("the envelope has no string field {field:?}"))
+        .ok_or_else(|| format!("the envelope has no string field {:?}", field.name()))
 }
 
-fn decode(b64: &str, field: &str) -> Result<Vec<u8>, String> {
+fn decode(b64: &str, field: SealField) -> Result<Vec<u8>, String> {
     STANDARD
         .decode(b64)
-        .map_err(|e| format!("the {field} is not base64-std: {e}"))
+        .map_err(|e| format!("the {} is not base64-std: {e}", field.name()))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::vectors::frozen::{FROZEN, parse};
-
-    fn doctored(name: &str, mutate: impl Fn(&mut Value)) -> String {
-        let mut root: Value = serde_json::from_str(FROZEN).expect("the frozen file is JSON");
-        let entry = root["vectors"]
-            .as_array_mut()
-            .expect("vectors is an array")
-            .iter_mut()
-            .find(|entry| entry["name"] == Value::String(name.to_string()))
-            .expect("the named vector exists");
-        mutate(entry);
-        serde_json::to_string(&root).expect("the doctored file serialises")
-    }
-
-    fn envelope_of(entry: &Value) -> Map<String, Value> {
-        let raw = STANDARD
-            .decode(entry["value_b64"].as_str().expect("value_b64 is a string"))
-            .expect("value_b64 is base64-std");
-        serde_json::from_slice(&raw).expect("the value is a JSON object")
-    }
-
-    fn store(entry: &mut Value, envelope: &Map<String, Value>) {
-        let body = serde_json::to_vec(envelope).expect("the envelope serialises");
-        entry["value_b64"] = Value::String(STANDARD.encode(body));
-    }
-
-    fn flip(envelope: &mut Map<String, Value>, field: &str, index: usize) {
-        let mut raw = STANDARD
-            .decode(envelope[field].as_str().expect("the field is a string"))
-            .expect("the field is base64-std");
-        raw[index] ^= 0xff;
-        envelope[field] = Value::String(STANDARD.encode(raw));
-    }
-
-    #[test]
-    fn the_embedded_file_carries_only_controlled_twins() {
-        parse(FROZEN).expect("the committed vector file must pass the twin check");
-    }
-
-    #[test]
-    fn a_corrupt_vector_sealed_under_another_nonce_is_rejected() {
-        let foreign = doctored("tampered-ciphertext-corrupt", |entry| {
-            let mut envelope = envelope_of(entry);
-            flip(&mut envelope, "nonce", 0);
-            store(entry, &envelope);
-        });
-        let err = parse(&foreign).expect_err("a twin sealed under another nonce must be rejected");
-        assert!(err.contains("tampered-ciphertext-corrupt"), "{err}");
-        assert!(err.contains("nonce changed too"), "{err}");
-    }
-
-    #[test]
-    fn a_corrupt_vector_differing_by_more_than_the_declared_flip_is_rejected() {
-        let widened = doctored("tampered-nonce-corrupt", |entry| {
-            let mut envelope = envelope_of(entry);
-            flip(&mut envelope, "nonce", 1);
-            store(entry, &envelope);
-        });
-        let err = parse(&widened).expect_err("a two-byte difference must be rejected");
-        assert!(err.contains("flips exactly one"), "{err}");
-    }
-
-    #[test]
-    fn an_unreadable_twin_that_also_touched_the_seal_is_rejected() {
-        let widened = doctored("unreadable-corrupt", |entry| {
-            let mut envelope = envelope_of(entry);
-            flip(&mut envelope, "ciphertext", 0);
-            store(entry, &envelope);
-        });
-        let err = parse(&widened).expect_err("an unreadable twin must not re-seal");
-        assert!(err.contains("and nothing else"), "{err}");
-    }
-
-    #[test]
-    fn an_unreadable_twin_carrying_no_unknown_key_is_rejected() {
-        let stripped = doctored("unreadable-corrupt", |entry| {
-            let mut envelope = envelope_of(entry);
-            envelope.remove("evil");
-            store(entry, &envelope);
-        });
-        let err = parse(&stripped).expect_err("an unreadable twin must add its unknown key");
-        assert!(err.contains("exactly one unknown key"), "{err}");
-    }
-
-    #[test]
-    fn a_twin_pair_that_stopped_sharing_its_identity_is_rejected() {
-        let split = doctored("tampered-ciphertext-corrupt", |entry| {
-            entry["token_id"] = Value::String("0190c0de-9999-7e5f-8a9b-0c1d2e3f4a5b".to_string());
-        });
-        let err = parse(&split).expect_err("a twin carrying another identity must be rejected");
-        assert!(err.contains("not a twin pair"), "{err}");
-    }
-
-    #[test]
-    fn a_missing_twin_half_is_rejected() {
-        let mut root: Value = serde_json::from_str(FROZEN).expect("the frozen file is JSON");
-        root["vectors"]
-            .as_array_mut()
-            .expect("vectors is an array")
-            .retain(|entry| entry["name"] != Value::String("unreadable-corrupt".to_string()));
-        let err = parse(&serde_json::to_string(&root).expect("serialises"))
-            .expect_err("a half-declared pair must be rejected");
-        assert!(err.contains("unreadable-corrupt"), "{err}");
-    }
-}
+#[path = "twins_tests.rs"]
+mod tests;

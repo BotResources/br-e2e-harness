@@ -112,7 +112,9 @@ the subject's `BEARER_SEAL_KEY`, and `wrong_seal_key_b64`) plus one entry per ca
 Twelve entries: two distinct faithful humans, a faithful **service** actor (freezing
 the `{"kind":"service",…}` cleartext), `revoked`, `kv-error`, `wrong-key`, and three
 **controlled twin pairs** — `tampered-ciphertext`, `tampered-nonce`, `unreadable`.
-A corrupt entry is never sealed on its own: the generator takes its faithful twin's
+A corrupt entry — every entry whose `corruption` is not `none`; `wrong-key` is a
+faithful seal under another key, not a corruption — is never sealed on its own: the
+generator takes its faithful twin's
 **exact sealed bytes** and applies only the declared mutation (flip byte 0 of the
 base64-decoded ciphertext or nonce, or add one unknown key to the same envelope), so
 the pair shares one token, one KV key, one identity, one nonce and one ciphertext,
@@ -135,8 +137,12 @@ Two anchors keep it honest:
   never opens (the `unreadable` one must fail the *parse*, and would open without
   its unknown field). `vector_twins_test.go` re-applies each declared mutation to the
   faithful bytes and byte-compares the result with the committed corrupt half, then
-  asserts the difference is exactly the declared one; the Rust side re-checks the
-  same rule when it parses the file, so neither language can accept a non-twin. The Go-internal `wire_test.go` vectors (`kvKey`, `aad`, the
+  asserts the difference is exactly the declared one (byte 0 xor `0xff` in the named
+  field). Both languages also close the table: **any** entry whose `corruption` is
+  not `none` must be named as a corrupt half by the twin table, and a corrupt half
+  must declare its own mutation — so neither language can accept a non-twin, and an
+  untwinned corrupt vector cannot be smuggled into the file. Rust runs the whole
+  check while parsing the vector file, before any scenario. The Go-internal `wire_test.go` vectors (`kvKey`, `aad`, the
   fixed-nonce frozen ciphertext, the golden `Passport`) still pin the primitives.
 
 ---

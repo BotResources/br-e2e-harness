@@ -6,6 +6,7 @@ use br_util_nats_fabric::KvKey;
 use uuid::Uuid;
 
 use super::catalogue::Vector;
+use super::mutation::{Mutation, corruption_from_wire};
 
 pub(super) const FROZEN: &str = include_str!("../../vectors/passport-wire-v1.json");
 
@@ -19,6 +20,7 @@ pub struct WireVector {
     pub actor_id: Uuid,
     pub token_id: Uuid,
     pub value: Vec<u8>,
+    pub(crate) corruption: Option<Mutation>,
 }
 
 #[derive(Debug)]
@@ -87,7 +89,7 @@ pub(super) fn parse(raw: &str) -> std::result::Result<FrozenWire, String> {
     for entry in entries {
         vectors.push(parse_vector(entry)?);
     }
-    super::twins::assert_every_twin_is_its_faithful_plus_the_declared_mutation(&vectors)?;
+    super::twins::assert_every_corrupt_vector_is_a_controlled_twin(&vectors)?;
     Ok(FrozenWire {
         seal_key_b64,
         vectors,
@@ -106,6 +108,8 @@ fn parse_vector(entry: &serde_json::Value) -> std::result::Result<WireVector, St
     let value = STANDARD
         .decode(string_at(entry, "value_b64")?)
         .map_err(|e| format!("vector {name}: value_b64 is not base64-std: {e}"))?;
+    let corruption = corruption_from_wire(&string_at(entry, "corruption")?)
+        .map_err(|detail| format!("vector {name}: {detail}"))?;
     Ok(WireVector {
         name,
         token,
@@ -113,6 +117,7 @@ fn parse_vector(entry: &serde_json::Value) -> std::result::Result<WireVector, St
         actor_id,
         token_id,
         value,
+        corruption,
     })
 }
 
