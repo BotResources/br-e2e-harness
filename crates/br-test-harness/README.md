@@ -484,7 +484,8 @@ service e2e used to hand-roll on a retained raw `jetstream::Context` (#87):
 - **Counters** (read-only `consumer_info` / stream state, no handle exposed):
   `.consumer_pending(FixedStream, durable) -> u64`,
   `.consumer_delivered(FixedStream, durable) -> u64` (the consumer sequence —
-  counts redeliveries), `.consumer_redelivered(FixedStream, durable) -> u64`,
+  counts redeliveries), `.consumer_redelivered(FixedStream, durable) -> u64`
+  (deliveries **past the first**: an exhausted budget of `n` reads `n - 1`),
   `.command_stream_len()` / `.event_stream_len()` / `.stream_len(FixedStream)`.
   `FixedStream::{Cmd, Evt}` is the typed stand-in for the two fixed stream names;
   `.name()` yields `INTEGRATION_CMD` / `INTEGRATION_EVT` for the `&str`-taking

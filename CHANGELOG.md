@@ -36,7 +36,8 @@ single git tag `v{version}` releases the set. Format follows
   back to the lib's config, erasing the budget under test.
 - **Typed read-only counters.** `consumer_pending(FixedStream, durable)`,
   `consumer_delivered(FixedStream, durable)`,
-  `consumer_redelivered(FixedStream, durable)`, `command_stream_len()`,
+  `consumer_redelivered(FixedStream, durable)` (deliveries past the first),
+  `command_stream_len()`,
   `event_stream_len()`, `stream_len(FixedStream)` — `consumer_info` / stream state
   without exposing a JetStream handle. `FixedStream::{Cmd, Evt}` is the typed
   stand-in for the two fixed stream names (`.name()` bridges to the `&str`-taking
