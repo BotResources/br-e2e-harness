@@ -259,8 +259,7 @@ single git tag `v{version}` releases the set. Format follows
   any entry declaring a `corruption` must be named as a corrupt half by the twin
   table, and a corrupt half must declare its own mutation. (P6's `wrong-key` is the
   one negative vector with no twin — a KV key holds a single value — so it rests on
-  a `pl_get_raw` presence assertion instead.) (P6 is not of that shape — it seeds the wrong-key vector once and
-  asserts the value is present before checking the endpoint went anonymous.)
+  a `pl_get_raw` presence assertion instead.)
 
 ### Changed
 
@@ -363,7 +362,8 @@ Non-behavioural, text only:
   token, the KV key, the sealed identity and the exact `value_b64` bytes; the
   `identity-passport` anchor generates it deterministically (`make vectors`: fixed
   keys, fixed ids, one fixed nonce per **token** — so distinct tokens have distinct
-  nonces and a corrupted twin shares its faithful half's), and `vectors_test.go` regenerates it
+  nonces and a corrupted twin shares its faithful half's nonce), and
+  `vectors_test.go` regenerates it
   in memory and asserts **byte-equality** with the committed file, so anchor drift
   or a hand edit fails `make check` and CI. `SealedSeeder` `include_str!`s the file
   and writes `value_b64` verbatim through `pl_put_raw`; Rust never parses, builds or
