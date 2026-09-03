@@ -27,7 +27,7 @@ server = ["dep:axum", "http-client"]
 passport = ["dep:br-core-auth"]
 graphql = ["passport", "http-client"]
 sse = ["passport", "http-client", "dep:bytes", "dep:futures-util"]
-ws = ["passport", "dep:tokio-tungstenite", "dep:futures-util"]
+ws = ["passport", "dep:tokio-tungstenite", "dep:futures-util", "dep:thiserror"]
 oidc = ["dep:oidc-test-idp"]
 
 http-client = ["dep:reqwest"]
@@ -74,5 +74,7 @@ tempfile = { version = "3", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+axum = { workspace = true, features = ["ws"] }
+br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-auth", tag = "v1.2.0", version = "1.2.0", features = ["test-support"] }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.2.0", version = "1.2.0" }
 br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "v1.2.0", version = "1.2.0" }

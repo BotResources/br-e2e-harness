@@ -27,10 +27,41 @@ single git tag `v{version}` releases the set. Format follows
   prints after the attach still lands in the message. `Timeout` carries the tail
   too ("alive but pushed nothing" is the frequent diagnosis). Unattached, the
   panic still names the outcome.
+- **`WsCredential` — `WsSubscription` takes a generic credential.**
+  `#[non_exhaustive] enum WsCredential<'a> { Passport(&Passport), Cookie(&str),
+  Anonymous }` plus `WsSubscription::open_with(base, credential, query)` and
+  `open_at_with(base, ws_path, credential, query)`. `Passport` sends
+  `X-Passport` (unchanged), `Cookie` sends `Cookie` and no `X-Passport`,
+  `Anonymous` sends neither — so a suite can drive a subscription through the
+  real edge, where a client-forged `X-Passport` is stripped, without
+  hand-rolling its own WS client. `open` / `open_at(&Passport)` keep their exact
+  signatures and delegate with `WsCredential::Passport`.
+- **`WsError` — a typed WS outcome.** `#[non_exhaustive] enum WsError {
+  Timeout, Closed, ServerClosed { code: u16, reason: String }, Completed,
+  ErrorFrame(String), Transport(String) }` (with `Display` + `Error`) and
+  `WsSubscription::next_data_outcome(timeout) -> Result<Value, WsError>`: a
+  deadline with no push, a stream that ended, a server that refused with a close
+  code, a `complete` before any push, an `error` frame and a broken exchange are
+  now six distinct verdicts — the handle says *why* it went quiet.
+  `ServerClosed` keeps the `graphql-transport-ws` rejection code (`4400`,
+  `4401`, `4403`, `4409`, `4429`) an assertion needs. `next_data` /
+  `next_matching` keep `Result<Value, String>` and render the variants through
+  `Display`.
+- **`WsSubscription::next_matching_outcome(predicate, timeout) -> Result<Value,
+  WsError>`** — the typed sibling of `next_matching`, for a drain-until-match
+  that needs the reason it stopped rather than the skipped-frames report.
+  `next_matching` delegates to the same loop and its message — reason **and**
+  skipped frames — is unchanged.
+
+- **`WsSubscription::close(self) -> Result<(), WsError>`** — ends the
+  subscription with a `complete` frame, then closes the socket, so the service
+  observes an orderly unsubscribe rather than a dropped connection.
+  Best-effort: both steps are attempted, a socket the peer already closed is
+  `Ok(())`, and it never panics.
 
 ### Changed
 
-**Two deliberate behaviour changes. A suite that newly fails is a false pass
+**Deliberate behaviour changes. A suite that newly fails is a false pass
 surfacing, not a regression.**
 
 1. **`SseSubscription::expect_silence` now panics when the server closed the
@@ -47,6 +78,20 @@ surfacing, not a regression.**
    `next_outcome` panics naming the residual bytes instead. Deliberately **not**
    CRLF support: the harness refuses to certify a silence it did not observe
    rather than guess at a framing it does not implement.
+3. **Two `WsSubscription` messages move**, both from the single 1.1.3 close arm
+  (`ws: server closed: {c:?}`, which covered a close frame with *and* without a
+  payload): a close frame **with** a payload now renders as the stable
+  `ws: server closed: code={code} reason={reason}` (never tungstenite's `Debug`,
+  which a dependency bump could silently reword), and a close frame **without**
+  one now renders as ``ws: socket closed before a `next` push`` — the same fact
+  as an exhausted stream — instead of `ws: server closed: None`. Every other
+  `next_data` / `next_matching` string is byte-identical to 1.1.3.
+4. **`open` / `open_at` / `open_with` / `open_at_with` trim a trailing `/` on the
+  base URL.** In 1.1.3 a base ending in `/` — the shape a `GATEWAY_WS_URL`-style
+  environment value often takes — built a `//graphql/ws` path, which no router
+  matches, so the handshake failed with a connect error. Existing callers passing
+  a slash-terminated base now reach the intended path; a base without a trailing
+  slash is unaffected.
 
 Non-behavioural, text only:
 
