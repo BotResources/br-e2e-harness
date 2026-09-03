@@ -2,40 +2,13 @@
 
 #[path = "ws/fake_endpoint.rs"]
 mod fake_endpoint;
-
-use std::sync::Arc;
-use std::time::Duration;
+#[path = "ws/scenario.rs"]
+mod scenario;
 
 use br_core_auth::PassportHeader;
 use br_test_harness::{PassportBuilder, WsCredential, WsError, WsSubscription, wait_until};
-use fake_endpoint::{FakeEndpoint, Step, spawn};
-
-const PUSH: Duration = Duration::from_millis(500);
-const QUERY: &str = "subscription { tick }";
-
-async fn open(
-    steps: Vec<Step>,
-    credential: WsCredential<'_>,
-) -> (WsSubscription, Arc<FakeEndpoint>) {
-    let (endpoint, base_url) = spawn(steps).await;
-    let subscription = WsSubscription::open_with(&base_url, credential, QUERY)
-        .await
-        .expect("the fake endpoint completes the graphql-transport-ws handshake");
-    (subscription, endpoint)
-}
-
-async fn first_outcome(steps: Vec<Step>) -> Result<serde_json::Value, WsError> {
-    let (mut subscription, _endpoint) = open(steps, WsCredential::Anonymous).await;
-    subscription.next_data_outcome(PUSH).await
-}
-
-async fn first_error_string(steps: Vec<Step>) -> String {
-    let (mut subscription, _endpoint) = open(steps, WsCredential::Anonymous).await;
-    subscription
-        .next_data(PUSH)
-        .await
-        .expect_err("the scripted endpoint never pushes a `next` frame")
-}
+use fake_endpoint::{Step, spawn};
+use scenario::{PUSH, QUERY, first_error_string, first_outcome, open};
 
 #[tokio::test]
 async fn a_passport_credential_sends_the_passport_header_and_no_cookie() {
@@ -257,5 +230,48 @@ async fn a_trailing_slash_on_the_base_url_still_resolves_the_ws_path() {
             .await
             .expect("the endpoint pushes on the resolved path")["tick"],
         7
+    );
+}
+
+#[tokio::test]
+async fn next_matching_outcome_surfaces_the_close_code_raised_mid_match() {
+    let (mut subscription, _endpoint) = open(
+        vec![
+            Step::Next,
+            Step::CloseWith(4409, "subscriber-already-exists"),
+        ],
+        WsCredential::Anonymous,
+    )
+    .await;
+
+    let outcome = subscription
+        .next_matching_outcome(|data| data["tick"] == 99, PUSH)
+        .await;
+
+    assert_eq!(
+        outcome,
+        Err(WsError::ServerClosed {
+            code: 4409,
+            reason: "subscriber-already-exists".to_string(),
+        }),
+        "a drain-until-match that dies must report why, not just that it missed"
+    );
+}
+
+#[tokio::test]
+async fn next_matching_keeps_its_skipped_frame_report() {
+    let (mut subscription, _endpoint) =
+        open(vec![Step::Next, Step::Complete], WsCredential::Anonymous).await;
+
+    let message = subscription
+        .next_matching(|data| data["tick"] == 99, PUSH)
+        .await
+        .expect_err("no frame matches the predicate");
+
+    assert_eq!(
+        message,
+        "ws: no matching `next` push within the bounded window \
+         (ws: subscription completed before any push); \
+         skipped 1 non-matching frame(s): [{\"tick\":7}]"
     );
 }

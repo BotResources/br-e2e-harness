@@ -29,6 +29,11 @@ single git tag `v{version}` releases the set. Format follows
   `4401`, `4403`, `4409`, `4429`) an assertion needs. `next_data` /
   `next_matching` keep `Result<Value, String>` and render the variants through
   `Display`.
+- **`WsSubscription::next_matching_outcome(predicate, timeout) -> Result<Value,
+  WsError>`** — the typed sibling of `next_matching`, for a drain-until-match
+  that needs the reason it stopped rather than the skipped-frames report.
+  `next_matching` delegates to the same loop and its message — reason **and**
+  skipped frames — is unchanged.
 
 - **`WsSubscription::close(self) -> Result<(), WsError>`** — ends the
   subscription with a `complete` frame, then closes the socket, so the service
@@ -41,11 +46,14 @@ single git tag `v{version}` releases the set. Format follows
 
 ### Changed
 
-- **One `WsSubscription` message moves**: a server **close frame** now renders as
-  `ws: server closed: code={code} reason={reason}` — a stable format — instead of
-  1.1.3's `ws: server closed: {c:?}` (tungstenite's `Debug`, which a dependency
-  bump could silently reword). Every other `next_data` / `next_matching` string is
-  byte-identical to 1.1.3.
+- **Two `WsSubscription` messages move**, both from the single 1.1.3 close arm
+  (`ws: server closed: {c:?}`, which covered a close frame with *and* without a
+  payload): a close frame **with** a payload now renders as the stable
+  `ws: server closed: code={code} reason={reason}` (never tungstenite's `Debug`,
+  which a dependency bump could silently reword), and a close frame **without**
+  one now renders as ``ws: socket closed before a `next` push`` — the same fact
+  as an exhausted stream — instead of `ws: server closed: None`. Every other
+  `next_data` / `next_matching` string is byte-identical to 1.1.3.
 
 ## 1.1.3 - 2026-07-23
 

@@ -528,7 +528,9 @@ Three helpers exist specifically to kill the classic e2e flakes:
   opened mid-chain can receive an in-flight earlier-transition frame before the
   one the assertion wants. `next_matching` skips non-matching frames until the
   predicate holds, and on timeout reports every frame it skipped — so a *genuine*
-  miss is still fully diagnosable. (`next_data` remains, for the single-push case.)
+  miss is still fully diagnosable. (`next_data` remains, for the single-push case;
+  `next_matching_outcome` is the typed sibling that yields the `WsError` instead of
+  the skipped-frames report.)
 - **`SseSubscription::drain(max, timeout) -> usize`** — drain-to-quiescence.
   A scenario that has already asserted the push it cares about often needs to
   flush the *rest* of a known burst before opening the next leg, so a stale
@@ -579,9 +581,10 @@ sends `Cookie` and **no** `X-Passport`, `Anonymous` sends neither.
 
 Why a subscription that goes quiet went quiet is a typed verdict:
 
-- **`next_data_outcome(timeout) -> Result<Value, WsError>`** — six distinct
-  verdicts, so a suite asserting "nothing was pushed" cannot pass on a socket that
-  died:
+- **`next_data_outcome(timeout)`** and **`next_matching_outcome(predicate,
+  timeout)` `-> Result<Value, WsError>`** — six distinct verdicts, so a suite
+  asserting "nothing was pushed" cannot pass on a socket that died, and a
+  drain-until-match that dies reports *why* instead of only that it missed:
 
   | Variant | `Display` | Raised by |
   |---|---|---|
@@ -590,12 +593,15 @@ Why a subscription that goes quiet went quiet is a typed verdict:
   | `ServerClosed { code: u16, reason: String }` | `ws: server closed: code={code} reason={reason}` | a close frame — `graphql-transport-ws` puts the rejection in the code (`4400`, `4401`, `4403`, `4409`, `4429`) |
   | `Completed` | `ws: subscription completed before any push` | a `complete` frame before any `next` |
   | `ErrorFrame(String)` | `ws: subscription error frame: {0}` | a subscription `error` frame, carrying it whole |
-  | `Transport(String)` | `ws: {0}` | a broken exchange: read, frame parse, or pong send |
+  | `Transport(String)` | `ws: {0}` | a broken exchange: read, frame parse, pong send, or either `close()` step (`send complete`, `close socket`) |
 
   `next_data` / `next_matching` keep their `Result<Value, String>` signature and
-  render these through `Display`. Every string is what 1.1.3 returned **except**
-  the close-frame path, which now reports the stable `ws: server closed:
-  code=… reason=…` instead of tungstenite's `Debug` of the frame.
+  render these through `Display` — `next_matching` still appends its
+  skipped-frames report. Every string is what 1.1.3 returned **except** the two
+  the close-frame arm produced: a close frame **with** a payload now reports the
+  stable `ws: server closed: code=… reason=…` (was tungstenite's `Debug` of the
+  frame), and one **without** a payload now reports ``ws: socket closed before a
+  `next` push`` (was `ws: server closed: None`).
 - **`close(self) -> Result<(), WsError>`** — ends the subscription with a
   `complete` frame and then closes the socket, so the service sees an orderly
   unsubscribe instead of a dropped TCP connection. Best-effort: it never panics,
@@ -667,7 +673,7 @@ here, synthetically:
 | Interpolated identifiers go through `quote_ident` / literals through `quote_literal` | The public `create_named` / `create_with_app_role` / `with_app_role` surface takes role and DB **names** as arbitrary `&str`. Names were previously interpolated raw into DDL (only the password was escaped); a `"`-bearing name broke the statement (and the `rolname = '…'` existence check). A single quote helper escapes every interpolated name and literal so the DDL is well-formed whatever the caller passes. |
 | The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
 | `WsCredential` carries a `Cookie` arm, not just a `Passport` | `X-Passport` is trusted **only** because the edge strips any client-forged copy and re-injects the resolved one (platform security invariant #4). So a test that traverses the real edge cannot forge a Passport — the edge would strip it — it must authenticate the way a browser does, with the session cookie; the gateway's e2e crate had hand-rolled its own cookie-carrying WS client for exactly this. A test that talks to a service *behind* the frontier keeps `WsCredential::Passport`, and `Anonymous` presents neither header, for the unauthenticated-reject path. |
-| A server close **frame** is its own `ServerClosed { code, reason }`, and its `Display` is the one string 1.2.0 changes | `graphql-transport-ws` encodes *why* the server refused in the close code (`4401` unauthorized, `4403` forbidden, `4409` subscriber-already-exists, `4429` too-many-initialisation-requests) — the whole point of a typed outcome is that the handle says why it went quiet, so folding that into the payload-less `Closed` would drop the reason a scenario asserts on. `Closed` therefore keeps the *reasonless* endings (stream exhausted, close frame with no payload). The rendering is a stable `code=… reason=…`, never tungstenite's `Debug`, so an assertion can't be broken by a dependency bump; it is deliberately **not** byte-identical to 1.1.3's `ws: server closed: {c:?}`, and it is the only `next_data` string that moved. A read/parse/pong failure stays distinct as `Transport(String)`: a broken exchange, not an ended one. |
+| A server close **frame** is its own `ServerClosed { code, reason }`, and the close arm is where 1.2.0's two string changes are | `graphql-transport-ws` encodes *why* the server refused in the close code (`4401` unauthorized, `4403` forbidden, `4409` subscriber-already-exists, `4429` too-many-initialisation-requests) — the whole point of a typed outcome is that the handle says why it went quiet, so folding that into the payload-less `Closed` would drop the reason a scenario asserts on. `Closed` therefore keeps the *reasonless* endings (stream exhausted, close frame with no payload). 1.1.3 rendered **both** through one arm (`ws: server closed: {c:?}`), so both moved: a frame with a payload is now a stable `code=… reason=…` (never tungstenite's `Debug`, which a dependency bump could reword), and a frame without one folds into ``ws: socket closed before a `next` push`` — the same fact as an exhausted stream. Those two are the only `next_data` / `next_matching` strings that moved; every other is byte-identical to 1.1.3. A read/parse/pong/`close()` failure stays distinct as `Transport(String)`: a broken exchange, not an ended one. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `FabricTestNats` binds durables from typed coords, never a subject string | The hand-rolled `NatsEnv` it generalises wrote the declare subject as a `const &str`, so a drift in the lib's subject grammar slipped past the harness. Binding through `command_subject(&coords)` / `event_subject(&coords)` makes the durable's `filter_subjects` byte-identical to what the lib's `Fabric` binds at runtime — drift now breaks the bind, which is the point. |
 | `FabricTestNats::with_published_language()` is get-or-create, never wiped | The `PUBLISHED_LANGUAGE` bucket is **reconcile-no-wipe** state (the #73 fix): a directory consumer folds it and a wipe would replay-from-empty. It is created if absent and otherwise left exactly as found — unlike `recreate_*`, which delete-then-create per-scenario throwaway streams. |

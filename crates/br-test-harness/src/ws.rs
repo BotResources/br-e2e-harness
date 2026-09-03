@@ -112,9 +112,42 @@ impl WsSubscription {
 
     pub async fn next_matching<F>(
         &mut self,
-        mut predicate: F,
+        predicate: F,
         timeout: Duration,
     ) -> Result<Value, String>
+    where
+        F: FnMut(&Value) -> bool,
+    {
+        self.next_matching_frame(predicate, timeout)
+            .await
+            .map_err(|(error, skipped)| {
+                format!(
+                    "ws: no matching `next` push within the bounded window ({error}); \
+                     skipped {} non-matching frame(s): {}",
+                    skipped.len(),
+                    serde_json::to_string(&skipped).unwrap_or_else(|_| "<unprintable>".into())
+                )
+            })
+    }
+
+    pub async fn next_matching_outcome<F>(
+        &mut self,
+        predicate: F,
+        timeout: Duration,
+    ) -> Result<Value, WsError>
+    where
+        F: FnMut(&Value) -> bool,
+    {
+        self.next_matching_frame(predicate, timeout)
+            .await
+            .map_err(|(error, _skipped)| error)
+    }
+
+    async fn next_matching_frame<F>(
+        &mut self,
+        mut predicate: F,
+        timeout: Duration,
+    ) -> Result<Value, (WsError, Vec<Value>)>
     where
         F: FnMut(&Value) -> bool,
     {
@@ -128,14 +161,7 @@ impl WsSubscription {
                     }
                     skipped.push(data);
                 }
-                Err(e) => {
-                    return Err(format!(
-                        "ws: no matching `next` push within the bounded window ({e}); \
-                         skipped {} non-matching frame(s): {}",
-                        skipped.len(),
-                        serde_json::to_string(&skipped).unwrap_or_else(|_| "<unprintable>".into())
-                    ));
-                }
+                Err(error) => return Err((error, skipped)),
             }
         }
     }
