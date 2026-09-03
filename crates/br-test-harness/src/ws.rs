@@ -1,13 +1,21 @@
+mod credential;
+mod error;
+
 use std::time::Duration;
 
-use br_core_auth::{Passport, PassportHeader};
+use br_core_auth::Passport;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
+pub use credential::WsCredential;
+pub use error::WsError;
+
 type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+const SUBSCRIPTION_ID: &str = "1";
 
 pub struct WsSubscription {
     socket: Socket,
@@ -22,6 +30,23 @@ impl WsSubscription {
         base: &str,
         ws_path: &str,
         passport: &Passport,
+        query: &str,
+    ) -> Result<Self, String> {
+        Self::open_at_with(base, ws_path, WsCredential::Passport(passport), query).await
+    }
+
+    pub async fn open_with(
+        base: &str,
+        credential: WsCredential<'_>,
+        query: &str,
+    ) -> Result<Self, String> {
+        Self::open_at_with(base, "/graphql/ws", credential, query).await
+    }
+
+    pub async fn open_at_with(
+        base: &str,
+        ws_path: &str,
+        credential: WsCredential<'_>,
         query: &str,
     ) -> Result<Self, String> {
         let ws_url = format!(
@@ -41,13 +66,7 @@ impl WsSubscription {
                 .parse()
                 .map_err(|e| format!("ws: subprotocol header: {e}"))?,
         );
-        headers.insert(
-            "X-Passport",
-            passport
-                .to_header()
-                .parse()
-                .map_err(|e| format!("ws: X-Passport header: {e}"))?,
-        );
+        credential.apply(headers)?;
 
         let (mut socket, _resp) = tokio_tungstenite::connect_async(request)
             .await
@@ -64,7 +83,7 @@ impl WsSubscription {
         socket
             .send(Message::Text(
                 json!({
-                    "id": "1",
+                    "id": SUBSCRIPTION_ID,
                     "type": "subscribe",
                     "payload": { "query": query },
                 })
@@ -78,6 +97,12 @@ impl WsSubscription {
     }
 
     pub async fn next_data(&mut self, timeout: Duration) -> Result<Value, String> {
+        self.next_data_outcome(timeout)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn next_data_outcome(&mut self, timeout: Duration) -> Result<Value, WsError> {
         let deadline = tokio::time::Instant::now() + timeout;
         self.next_frame_data(deadline).await
     }
@@ -112,36 +137,52 @@ impl WsSubscription {
         }
     }
 
-    async fn next_frame_data(&mut self, deadline: tokio::time::Instant) -> Result<Value, String> {
+    pub async fn close(mut self) -> Result<(), WsError> {
+        let completed = self
+            .socket
+            .send(Message::Text(
+                json!({ "id": SUBSCRIPTION_ID, "type": "complete" })
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .map_err(|e| WsError::Transport(format!("send complete: {e}")));
+        let closed = self
+            .socket
+            .close(None)
+            .await
+            .map_err(|e| WsError::Transport(format!("close socket: {e}")));
+        completed.and(closed)
+    }
+
+    async fn next_frame_data(&mut self, deadline: tokio::time::Instant) -> Result<Value, WsError> {
         loop {
             let remaining = deadline
                 .checked_duration_since(tokio::time::Instant::now())
-                .ok_or_else(|| "ws: timed out waiting for a `next` push".to_string())?;
+                .ok_or(WsError::Timeout)?;
             let frame = tokio::time::timeout(remaining, self.socket.next())
                 .await
-                .map_err(|_| "ws: timed out waiting for a `next` push".to_string())?
-                .ok_or_else(|| "ws: socket closed before a `next` push".to_string())?
-                .map_err(|e| format!("ws: read frame: {e}"))?;
+                .map_err(|_| WsError::Timeout)?
+                .ok_or(WsError::Closed)?
+                .map_err(|e| WsError::Transport(format!("read frame: {e}")))?;
 
             let text = match frame {
                 Message::Text(t) => t.to_string(),
                 Message::Ping(_) | Message::Pong(_) => continue,
-                Message::Close(c) => return Err(format!("ws: server closed: {c:?}")),
+                Message::Close(_) => return Err(WsError::Closed),
                 _ => continue,
             };
             let msg: Value = serde_json::from_str(&text)
-                .map_err(|e| format!("ws: parse frame `{text}`: {e}"))?;
+                .map_err(|e| WsError::Transport(format!("parse frame `{text}`: {e}")))?;
             match msg["type"].as_str() {
                 Some("next") => return Ok(msg["payload"]["data"].clone()),
-                Some("error") => return Err(format!("ws: subscription error frame: {msg}")),
-                Some("complete") => {
-                    return Err("ws: subscription completed before any push".to_string());
-                }
+                Some("error") => return Err(WsError::ErrorFrame(msg.to_string())),
+                Some("complete") => return Err(WsError::Completed),
                 Some("ping") => {
                     self.socket
                         .send(Message::Text(json!({ "type": "pong" }).to_string().into()))
                         .await
-                        .map_err(|e| format!("ws: send pong: {e}"))?;
+                        .map_err(|e| WsError::Transport(format!("send pong: {e}")))?;
                 }
                 _ => {}
             }

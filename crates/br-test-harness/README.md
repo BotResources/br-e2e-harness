@@ -44,7 +44,7 @@ for one; that the workspace compiles with the handles unexposed is the proof.
 | A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
 | A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
 | Verdict helpers over a GraphQL response — ack / rejection / stable-code | `verdict::*` | `graphql` |
-| A live GraphQL `graphql-transport-ws` subscription (with drain-until-match) | `WsSubscription` | `ws` |
+| A live GraphQL `graphql-transport-ws` subscription (drain-until-match, typed outcome, Passport / cookie / anonymous) | `WsSubscription`, `WsCredential`, `WsError` | `ws` |
 | A live GraphQL Server-Sent-Events subscription | `SseSubscription` | `sse` |
 | Poll an async condition until it holds or times out | `wait_until` | *(always on)* |
 | A pilotable in-process OIDC IdP (discovery, JWKS, mint, rotate) | `oidc` | `oidc` |
@@ -551,6 +551,45 @@ Three helpers exist specifically to kill the classic e2e flakes:
   row landed, an integration event was published, a NATS consumer count moved)
   up to a bounded deadline, instead of sleeping a fixed amount and hoping.
 
+### The WS credential and the typed outcome (`ws`)
+
+`WsSubscription` opens a `graphql-transport-ws` socket with whatever credential
+the frontier under test expects:
+
+```rust
+// Behind the trusted frontier: the service reads the Passport the edge injected.
+let mut sub = WsSubscription::open(&base, &passport, SUBSCRIPTION).await?;
+let mut sub = WsSubscription::open_at(&base, "/ws", &passport, SUBSCRIPTION).await?;
+
+// Through the real edge: authenticate the way a browser does.
+let mut sub = WsSubscription::open_with(
+    &base,
+    WsCredential::Cookie(&session_cookie),
+    SUBSCRIPTION,
+).await?;
+
+// No credential at all — the reject path.
+let mut sub = WsSubscription::open_at_with(
+    &base, "/ws", WsCredential::Anonymous, SUBSCRIPTION,
+).await?;
+```
+
+`WsCredential::Passport` sends `X-Passport` (what `open` / `open_at` do), `Cookie`
+sends `Cookie` and **no** `X-Passport`, `Anonymous` sends neither.
+
+Why a subscription that goes quiet went quiet is a typed verdict:
+
+- **`next_data_outcome(timeout) -> Result<Value, WsError>`** — `WsError::{Timeout,
+  Closed, Completed, ErrorFrame(String), Transport(String)}`. A deadline with no
+  push, a socket the server ended, a `complete` before any push, and a subscription
+  `error` frame are four different failures; a suite asserting "nothing was pushed"
+  must not pass on a socket that died. `next_data` / `next_matching` keep their
+  `Result<Value, String>` signature and render the same variants through `Display`.
+- **`close(self) -> Result<(), WsError>`** — ends the subscription with a
+  `complete` frame and then closes the socket, so the service sees an orderly
+  unsubscribe instead of a dropped TCP connection. Best-effort: it never panics,
+  and both steps are attempted even if the first fails.
+
 ### Boot classification — happy path *and* fail-loud
 
 `SpawnedProcess` has two readiness paths against the service's own health URL,
@@ -615,6 +654,8 @@ here, synthetically:
 | `with_app_role` ensures-not-creates, and `cleanup` never drops the app role | The app role is a cluster-global object that a **shared name** (`svc_app`) leaves in use across parallel worktrees — so it is ensured idempotently and under the advisory lock above (so a true concurrent ensure serializes rather than racing), `ALTER`ed in place if present, and **left standing** on cleanup. Only the per-test DB + the per-test (unique-suffixed) owner are dropped. Same posture as `managed_roles`: a shared role is the cluster's, not one test's to delete. |
 | Interpolated identifiers go through `quote_ident` / literals through `quote_literal` | The public `create_named` / `create_with_app_role` / `with_app_role` surface takes role and DB **names** as arbitrary `&str`. Names were previously interpolated raw into DDL (only the password was escaped); a `"`-bearing name broke the statement (and the `rolname = '…'` existence check). A single quote helper escapes every interpolated name and literal so the DDL is well-formed whatever the caller passes. |
 | The owner-grant dance covers TABLES + SEQUENCES, not FUNCTIONS | `ALTER DEFAULT PRIVILEGES … GRANT … ON TABLES / ON SEQUENCES` makes the owner's later-migrated tables and sequences reachable by the app role — the universal projection-store needs. It matches the charter backend's own provisioning (`svc-charter/tests/common/infra/pg.rs`), which grants the same two and no `EXECUTE ON FUNCTIONS`. A service that exposes owner-created functions to the runtime role grants `EXECUTE` itself, in its own migrations — the harness does not assume that surface. |
+| `WsCredential` carries a `Cookie` arm, not just a `Passport` | `X-Passport` is trusted **only** because the edge strips any client-forged copy and re-injects the resolved one (platform security invariant #4). So a test that traverses the real edge cannot forge a Passport — the edge would strip it — it must authenticate the way a browser does, with the session cookie; the gateway's e2e crate had hand-rolled its own cookie-carrying WS client for exactly this. A test that talks to a service *behind* the frontier keeps `WsCredential::Passport`, and `Anonymous` presents neither header, for the unauthenticated-reject path. |
+| A server close **frame** is `WsError::Closed`, not its own variant | The two ways a socket ends before a push — the stream running out and the server sending a close frame — are the same fact for an assertion ("the subscription died"), so they collapse to one variant; a transport-level read/parse/pong failure stays distinct as `Transport(String)` because it is a broken client-server exchange, not an ended one. `Display` is frozen on all five: `next_data` (the pre-1.2.0 `Result<Value, String>` surface) is byte-identical to what it returned before the enum existed. |
 | `TestNats` always creates **two** KV buckets | The second (`bearer_kv`) stands in for the shared `bearer_tokens` bucket `svc-auth` reads for PAT lookup; inject it wherever production expects that bucket. |
 | `FabricTestNats` binds durables from typed coords, never a subject string | The hand-rolled `NatsEnv` it generalises wrote the declare subject as a `const &str`, so a drift in the lib's subject grammar slipped past the harness. Binding through `command_subject(&coords)` / `event_subject(&coords)` makes the durable's `filter_subjects` byte-identical to what the lib's `Fabric` binds at runtime — drift now breaks the bind, which is the point. |
 | `FabricTestNats::with_published_language()` is get-or-create, never wiped | The `PUBLISHED_LANGUAGE` bucket is **reconcile-no-wipe** state (the #73 fix): a directory consumer folds it and a wipe would replay-from-empty. It is created if absent and otherwise left exactly as found — unlike `recreate_*`, which delete-then-create per-scenario throwaway streams. |
@@ -652,7 +693,7 @@ transitive deps out of its binary:
 | `passport` | `PassportBuilder` | `br-core-auth` |
 | `graphql` | `GraphqlClient`, `verdict::*` | `reqwest` (+ `passport`) |
 | `sse` | `SseSubscription` | `reqwest`, `futures-util` (+ `passport`) |
-| `ws` | `WsSubscription` | `tokio-tungstenite`, `futures-util` (+ `passport`) |
+| `ws` | `WsSubscription`, `WsCredential`, `WsError` | `tokio-tungstenite`, `futures-util`, `thiserror` (+ `passport`) |
 | `oidc` | the in-process OIDC IdP | `oidc-test-idp` → `rsa` |
 
 `SpawnedProcess` / `run_once` / `wait_until` are always compiled — their only deps

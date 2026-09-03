@@ -7,6 +7,31 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`WsCredential` — `WsSubscription` takes a generic credential.**
+  `#[non_exhaustive] enum WsCredential<'a> { Passport(&Passport), Cookie(&str),
+  Anonymous }` plus `WsSubscription::open_with(base, credential, query)` and
+  `open_at_with(base, ws_path, credential, query)`. `Passport` sends
+  `X-Passport` (unchanged), `Cookie` sends `Cookie` and no `X-Passport`,
+  `Anonymous` sends neither — so a suite can drive a subscription through the
+  real edge, where a client-forged `X-Passport` is stripped, without
+  hand-rolling its own WS client. `open` / `open_at(&Passport)` keep their exact
+  signatures and delegate with `WsCredential::Passport`.
+- **`WsError` — a typed WS outcome.** `#[non_exhaustive] enum WsError {
+  Timeout, Closed, Completed, ErrorFrame(String), Transport(String) }` (with
+  `Display` + `Error`) and `WsSubscription::next_data_outcome(timeout) ->
+  Result<Value, WsError>`: a deadline with no push, a socket the server ended, a
+  `complete` before any push and an `error` frame are now four distinct
+  verdicts. `next_data` / `next_matching` keep `Result<Value, String>` and
+  render the variants through `Display` — the strings are unchanged, except the
+  server close-frame path, which now reports ``ws: socket closed before a `next`
+  push`` instead of `ws: server closed: …`.
+- **`WsSubscription::close(self) -> Result<(), WsError>`** — ends the
+  subscription with a `complete` frame, then closes the socket, so the service
+  observes an orderly unsubscribe rather than a dropped connection.
+  Best-effort: both steps are attempted, it never panics.
+
 ## 1.1.3 - 2026-07-23
 
 ### Changed
