@@ -7,6 +7,49 @@ single git tag `v{version}` releases the set. Format follows
 
 ## [Unreleased]
 
+## 1.2.1 - 2026-09-28
+
+### Security
+
+Security release, `Cargo.lock` only: no source, API, feature or dependency-range
+change. The `conformance-scope-cli` release binaries of 1.2.0 ship rustls
+0.23.40; the 1.2.1 binaries are built on the fixed versions. Consumers of the
+library fixtures resolve their own lockfile, so a pin move to `v1.2.1` changes
+nothing in their build; take it with your next test change.
+
+- **rustls 0.23.40 → 0.23.45, rustls-webpki 0.103.13 → 0.103.15** —
+  RUSTSEC-2026-0285 (GHSA-2mjx-qc3c-rqvc, CVSS 5.3): rustls accepted TLS 1.3
+  handshake messages across encryption-level boundaries. Paths: `reqwest` /
+  `hyper-rustls`, `tokio-tungstenite`, `sqlx-core` (`tls-rustls`) and
+  `async-nats`. The `conformance-scope-cli` binary links it.
+- **quinn-proto 0.11.14 → 0.11.18** — RUSTSEC-2026-0185 (CVE-2026-25800:
+  remote memory exhaustion in out-of-order stream reassembly), and the later
+  fixes of 0.11.17 (GHSA-qfwj-vfxf-92j2, GHSA-2hv7-gw8g-gpq5,
+  GHSA-hmxj-32vh-65vr) and 0.11.18 (GHSA-465w-v9q3-7j98, GHSA-ppcp-v39w-8jq2,
+  GHSA-3g6h-r5qx-f6hq). Lockfile-only here: the `http3` feature of reqwest is
+  off, so no crate builds quinn. 0.11.18 moves to `rand` 0.10 and adds
+  `rand_pcg` 0.10.2 to the lockfile.
+- **event-listener 5.4.1 → 5.4.2** — RUSTSEC-2026-0221 (unsound: `!Send` tags
+  can cross threads through `StackSlot`). Path: `sqlx-core → event-listener`
+  (br-test-harness `e2e-db`, conformance-directory). 5.4.2 drops its
+  `concurrent-queue` dependency, which leaves the lockfile.
+- Resolver side effects of the quinn-proto move to getrandom 0.4: `tempfile`
+  (br-test-harness `spawned-nats`) now resolves `getrandom` 0.4.2 instead of
+  0.3.4, and the wasm-only `js-sys` / `wasm-bindgen` edges move from
+  `getrandom` 0.3.4 to 0.4.2. Both getrandom versions were already in the
+  lockfile, and the `tempfile` range accepts both.
+- `deny.toml`: the `RUSTSEC-2023-0071` ignore (rsa 0.9.10, Marvin Attack) now
+  carries its full reason — who pulls rsa in (oidc-test-idp, for key
+  generation only), why the timing leak is unreachable (jsonwebtoken on ring
+  makes the RS256 signature; no rsa private-key operation runs), the upstream
+  status checked on 2026-09-28 (newest stable 0.9.10, 0.10 only as release
+  candidates) and what retires the ignore. No fixed rsa exists, so the ignore
+  stays.
+
+`cargo audit -f Cargo.lock`: 1.2.0 reports 3 vulnerabilities (rustls, quinn-proto,
+rsa) and 1 unsound warning (event-listener); 1.2.1 reports only
+RUSTSEC-2023-0071 (rsa), the documented ignore.
+
 ## 1.2.0 - 2026-09-03
 
 ### Added
