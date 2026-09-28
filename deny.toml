@@ -4,8 +4,39 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Resolve advisories by bumping, not by ignoring them. An entry added here MUST
+# say which crate pulls the vulnerable code in, why that path is unreachable in
+# this workspace's threat model, the upstream status with the date it was
+# checked, and what retires the ignore.
 ignore = [
-    "RUSTSEC-2023-0071",
+    # RUSTSEC-2023-0071 — rsa 0.9.10 (Marvin Attack: a timing side channel in
+    # the RSA private-key operations, decryption and signing, that can leak the
+    # private key to a network observer).
+    #
+    # Who pulls it in: oidc-test-idp, directly (`rsa = "0.9"` in the workspace
+    # manifest, used in crates/oidc-test-idp/src/keys.rs), so also the
+    # `br-oidc-test-idp` image and br-test-harness with its `oidc` feature.
+    # sqlx-mysql lists rsa in Cargo.lock, but no crate here enables the mysql
+    # backend, so that path is never built: `cargo tree -i rsa -e all
+    # --all-features --target all` shows oidc-test-idp only. The
+    # conformance-scope-cli release binary does not link rsa.
+    #
+    # Why the vulnerable path is unreachable: oidc-test-idp calls rsa only to
+    # generate its key pool (`RsaPrivateKey::new`) and to export each key as
+    # PKCS#1 DER and as a public JWK. The RS256 signature is made by
+    # jsonwebtoken on its ring backend, so no code in this workspace runs an
+    # rsa private-key operation (decrypt or sign), which is where the timing
+    # leak is. The keys are generated fresh in each IdP process, sign only the
+    # test tokens of an e2e run, and protect nothing outside that run.
+    #
+    # Upstream status (checked 2026-09-28): the newest stable rsa is 0.9.10;
+    # the constant-time rewrite exists only as 0.10 release candidates. No
+    # patched version.
+    #
+    # Retire this ignore when a stable rsa release carries the fix and
+    # oidc-test-idp moves to it, or when key generation moves off the rsa
+    # crate.
+    { id = "RUSTSEC-2023-0071" },
 ]
 
 [licenses]

@@ -237,7 +237,7 @@ identical to `br-test-harness`'s (`v1.3.0`) so Cargo resolves a single source of
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.1" }
 ```
 
 ## License
