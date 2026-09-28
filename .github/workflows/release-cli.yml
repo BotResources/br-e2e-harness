@@ -78,11 +78,19 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: setup zig
+      # Zig (cargo-zigbuild's linker) is copied out of the org runner image rather
+      # than fetched by mlugg/setup-zig, whose community-mirror download has no
+      # timeout and once held a publish job for 2h (BotResources/infra.botresources.ai#241).
+      # The job itself stays on the bare VM (not `container:`): the matrix has a
+      # macOS leg, where job containers aren't supported.
+      - name: zig (from br-arc-runner)
         if: matrix.builder == 'zigbuild'
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.13.0
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${RUNNER_TEMP}:/out" ghcr.io/botresources/br-arc-runner:stable \
+            sh -c 'cp -a "$(dirname "$(readlink -f "$(command -v zig)")")" /out/zig'
+          echo "${RUNNER_TEMP}/zig" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/zig/zig" version
 
       - name: install cargo-zigbuild
         if: matrix.builder == 'zigbuild'
