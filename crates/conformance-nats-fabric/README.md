@@ -67,7 +67,7 @@ Add it as a dev-dependency, pinned to the same harness tag as `br-test-harness`:
 
 ```toml
 [dev-dependencies]
-conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.1" }
+conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.0", version = "0.1.0" }
 ```
 
 The real-infra tests in `tests/conformance.rs` are `#[ignore]`-gated and require
