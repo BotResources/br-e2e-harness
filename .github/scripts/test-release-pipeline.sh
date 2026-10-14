@@ -58,6 +58,13 @@ expect 0 'matrix=[]' "workspace and legacy tags change nothing for the detection
 expect_equal "$(in_dev bash .github/scripts/previous-tag.sh br-alpha)" "br-alpha/v0.1.0" "previous tag of br-alpha ignores v1.2.1"
 expect_equal "$(in_dev bash .github/scripts/previous-tag.sh br-beta)" "" "br-beta has no baseline: legacy and prerelease tags are not baselines"
 expect 0 'first release' "semver gate on br-beta: first release, no baseline" in_dev bash .github/scripts/semver-check.sh br-beta
+g checkout -q -b side-line
+g commit -q --allow-empty -m side
+g tag -a br-alpha/v9.0.0 -m other-line
+g checkout -q main
+expect_equal "$(in_dev bash .github/scripts/previous-tag.sh br-alpha)" "br-alpha/v0.1.0" "a tag that HEAD does not reach is not a baseline"
+g tag -d br-alpha/v9.0.0 >/dev/null
+g branch -q -D side-line
 
 echo "== the release-line law"
 g branch release/br-alpha-0.1 "br-alpha/v0.1.0"
