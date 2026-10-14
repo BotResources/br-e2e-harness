@@ -42,7 +42,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 toml = { version = "0.8", optional = true }
 thiserror = { workspace = true, optional = true }
 
-oidc-test-idp = { path = "../oidc-test-idp", version = "0.7.0", optional = true }
+oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", package = "oidc-test-idp", tag = "oidc-test-idp/v0.7.0", version = "0.7.0", optional = true }
 
 tokio = { workspace = true }
 serde = { workspace = true }
