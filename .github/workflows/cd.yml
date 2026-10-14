@@ -1,25 +1,17 @@
 name: cd
 
-# Triggered by push to main (after a PR merge). For each fixture crate,
-# publishes ghcr.io/botresources/br-<crate>:<version> if that version's image
-# does not exist yet. Git tags + GitHub Releases are owned by the
-# release-tags workflow — this one only ships images. Both are idempotent,
-# so their relative order does not matter.
-#
-# No `latest` tag, on purpose: consumers pin `:<version>` (same posture as
-# the unified `v<version>` git tag), and a mutable `latest` could silently drift
-# from the newest version because the publish gate only checks `:<version>`.
-#
-# Per-arch tags are suffixed with the commit SHA so a re-run after a partial
-# failure can never assemble a manifest from another commit's artifacts.
-
 on:
   push:
-    branches: [main]
+    tags: ["oidc-test-idp/v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag of oidc-test-idp whose image to publish
+        required: true
+        type: string
 
 concurrency:
-  group: cd-${{ github.ref }}
+  group: cd-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -37,27 +29,31 @@ jobs:
     env:
       CRATE: oidc-test-idp
       IMAGE: ghcr.io/botresources/br-oidc-test-idp
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
 
       - name: login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # -----------------------------------------------------------------------
-      # Gate: skip if this version's image already exists on GHCR
-      # -----------------------------------------------------------------------
-      - name: resolve version + gate
+      - name: resolve version from the crate tag + gate
         id: ver
         run: |
-          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')"
+          set -euo pipefail
+          version="$(bash .github/scripts/artifact-tag.sh "${CRATE}" "${RELEASE_TAG}")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           if docker manifest inspect "${IMAGE}:${version}" >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -66,42 +62,33 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: verify changelog entry
-        if: steps.ver.outputs.skip == 'false'
-        run: bash .github/scripts/check-changelog.sh
-
-      # -----------------------------------------------------------------------
-      # Toolchain: static-musl cross-compile via cargo-zigbuild
-      # -----------------------------------------------------------------------
       - name: setup rust targets
         if: steps.ver.outputs.skip == 'false'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
+          toolchain: stable
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
 
       - name: setup zig
         if: steps.ver.outputs.skip == 'false'
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7 # v1.2.2
         with:
           version: 0.13.0
 
       - name: install cargo-zigbuild
         if: steps.ver.outputs.skip == 'false'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: cargo-zigbuild
 
       - name: cargo cache
         if: steps.ver.outputs.skip == 'false'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: setup buildx
         if: steps.ver.outputs.skip == 'false'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      # -----------------------------------------------------------------------
-      # Build: cross-compile both targets
-      # -----------------------------------------------------------------------
       - name: cargo zigbuild (x86_64-musl)
         if: steps.ver.outputs.skip == 'false'
         run: cargo zigbuild --release --locked -p "${CRATE}" --target x86_64-unknown-linux-musl
@@ -110,9 +97,6 @@ jobs:
         if: steps.ver.outputs.skip == 'false'
         run: cargo zigbuild --release --locked -p "${CRATE}" --target aarch64-unknown-linux-musl
 
-      # -----------------------------------------------------------------------
-      # Assert: binaries are truly static (no PT_INTERP segment)
-      # -----------------------------------------------------------------------
       - name: assert static (no PT_INTERP)
         if: steps.ver.outputs.skip == 'false'
         run: |
@@ -127,35 +111,37 @@ jobs:
             echo "ok: $path is static"
           done
 
-      # -----------------------------------------------------------------------
-      # Package: one image per arch, then multi-arch manifest
-      # -----------------------------------------------------------------------
       - name: docker build + push (amd64)
         if: steps.ver.outputs.skip == 'false'
         run: |
-          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${GITHUB_SHA::12}-amd64"
+          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${COMMIT:0:12}-amd64"
           docker build --provenance=false --platform linux/amd64 \
             --build-arg "BIN_PATH=target/x86_64-unknown-linux-musl/release/${CRATE}" \
             --file "crates/${CRATE}/Dockerfile" \
             --tag "${ARCH_TAG}" .
           docker push "${ARCH_TAG}"
+        env:
+          COMMIT: ${{ steps.ver.outputs.commit }}
 
       - name: docker build + push (arm64)
         if: steps.ver.outputs.skip == 'false'
         run: |
-          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${GITHUB_SHA::12}-arm64"
+          ARCH_TAG="${IMAGE}:${{ steps.ver.outputs.version }}-${COMMIT:0:12}-arm64"
           docker build --provenance=false --platform linux/arm64 \
             --build-arg "BIN_PATH=target/aarch64-unknown-linux-musl/release/${CRATE}" \
             --file "crates/${CRATE}/Dockerfile" \
             --tag "${ARCH_TAG}" .
           docker push "${ARCH_TAG}"
+        env:
+          COMMIT: ${{ steps.ver.outputs.commit }}
 
       - name: create + push multi-arch manifest
         if: steps.ver.outputs.skip == 'false'
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           docker manifest create "${IMAGE}:${VERSION}" \
-            "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-amd64" \
-            "${IMAGE}:${VERSION}-${GITHUB_SHA::12}-arm64"
+            "${IMAGE}:${VERSION}-${COMMIT:0:12}-amd64" \
+            "${IMAGE}:${VERSION}-${COMMIT:0:12}-arm64"
           docker manifest push "${IMAGE}:${VERSION}"
-
+        env:
+          COMMIT: ${{ steps.ver.outputs.commit }}
