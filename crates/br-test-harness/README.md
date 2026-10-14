@@ -906,24 +906,27 @@ slice must not mention `br-rust-common`).
 
 ## Install
 
-It is a **dev-dependency**. Pin it to a release tag (git-tag distribution; no
-crates.io — same model as the rest of the platform):
+It is a **dev-dependency**. Pin it to its own per-crate release tag
+`br-test-harness/v{version}` with the `version` beside it (git-tag distribution;
+no crates.io — same model as the rest of the platform). The `v1.x` workspace
+tags are the legacy line of this crate and are not moved forward.
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.1" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.0", version = "0.1.0" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.1", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.0", version = "0.1.0", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`
-(its `test-support` feature, which ships `PassportBuilder`) pinned to
-`br-rust-common` `tag = "v1.3.0"`. A slim build that omits the
-passport-bearing features drops the dependency. If your service already pins
-`br-rust-common`, keep both on the **same ref** so Cargo resolves a single
-source (two refs of one git URL are two distinct sources and duplicate
-`br-core-*` in the graph).
+(its `test-support` feature, which ships `PassportBuilder`) and on other
+`br-rust-common` crates, each pinned to its per-crate tag
+`tag = "<crate>/v0.1.0"` (for example `br-core-auth/v0.1.0`). A slim build that
+omits the passport-bearing features drops the dependency. If your service
+already pins `br-rust-common` crates, keep each one on the **same tag string**
+as the harness so Cargo resolves a single source (two tags of one git URL are
+two distinct sources and duplicate `br-core-*` types in the graph).
 
 ## Running the tests it powers
 

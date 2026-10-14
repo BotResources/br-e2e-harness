@@ -33,6 +33,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 
+[patch."https://github.com/BotResources/br-e2e-harness"]
+oidc-test-idp = { path = "crates/oidc-test-idp" }
+br-test-harness = { path = "crates/br-test-harness" }
+
 [profile.dev.package.rsa]
 opt-level = 3
 
