@@ -154,7 +154,7 @@ stub_error() {
 }
 
 eligible_target() {
-    stub_response librariesValidateReleaseTarget "{\"data\":{\"librariesValidateReleaseTarget\":{\"baselineTag\":${1:-null},\"baselineVersion\":null,\"libraryId\":\"$ALPHA_ID\",\"line\":\"0.1\",\"opensLine\":${2:-true},\"version\":\"$3\"}}}"
+    stub_response librariesValidateReleaseTarget "{\"data\":{\"librariesValidateReleaseTarget\":{\"baselineTag\":${1:-null},\"baselineVersion\":null,\"libraryId\":\"$ALPHA_ID\",\"line\":\"${4:-0.1}\",\"opensLine\":${2:-true},\"version\":\"$3\"}}}"
 }
 
 write_crate() {

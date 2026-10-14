@@ -112,6 +112,15 @@ expect 1 'BR_REGISTRY_KEY is not set' "bump with no registry key (fork PR): fail
 stub_reset
 eligible_target null true 0.1.0
 expect 0 'eligible for release' "bump with an eligible target: passes" in_dev env BASE_REF=main BR_REGISTRY_KEY=k bash .github/scripts/pr-registry-gate.sh
+g checkout -q -b feat/imported main
+set_version br-delta 0.7.0
+commit_all "delta 0.7.0, an imported library opening its line at 0.7" >/dev/null
+stub_reset
+eligible_target null true 0.7.0 0.7
+expect 0 'line=0.7' "first release at 0.7.0 opening line 0.7, no baseline: passes the law and the gate" in_dev env BASE_REF=main BR_REGISTRY_KEY=k bash .github/scripts/pr-registry-gate.sh
+g checkout -q main
+g branch -q -D feat/imported
+g checkout -q feat/bump
 stub_error librariesValidateReleaseTarget PATCH_NOT_SEALED "not sealed"
 expect 1 'not sealed' "bump on an unsealed patch: fails" in_dev env BASE_REF=main BR_REGISTRY_KEY=k bash .github/scripts/pr-registry-gate.sh
 stub_error librariesValidateReleaseTarget PATCH_IMPLEMENTED "implemented"
@@ -153,8 +162,8 @@ expect 1 "br-comp/v0.2.0 has no" "and fails when its own library is released" in
 
 echo "== artifact workflows are dispatched from the release"
 stub_reset
-expect 0 'dispatched cd.yml for oidc-test-idp/v0.1.0 on main' "the image workflow for the image crate" in_dev bash .github/scripts/dispatch-artifacts.sh oidc-test-idp 0.1.0 main
-expect_file_has "$STUB_DIR/gh.log" 'workflow run cd.yml --ref main -f tag=oidc-test-idp/v0.1.0' "gh receives the crate tag, not a workspace version"
+expect 0 'dispatched cd.yml for oidc-test-idp/v0.7.0 on main' "the image workflow for the image crate" in_dev bash .github/scripts/dispatch-artifacts.sh oidc-test-idp 0.7.0 main
+expect_file_has "$STUB_DIR/gh.log" 'workflow run cd.yml --ref main -f tag=oidc-test-idp/v0.7.0' "gh receives the crate tag, not a workspace version"
 expect 0 'dispatched release-cli.yml for conformance-scope/v0.3.1 on release/conformance-scope-0.3' "the binaries workflow for the CLI's library, from a release line" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-scope 0.3.1 release/conformance-scope-0.3
 expect_file_has "$STUB_DIR/gh.log" 'workflow run release-cli.yml --ref release/conformance-scope-0.3 -f tag=conformance-scope/v0.3.1' "gh receives the library tag"
 stub_reset
@@ -162,18 +171,18 @@ expect 0 'no artifact beyond the tag' "any other crate: nothing dispatched" in_d
 expect_equal "$(cat "$STUB_DIR/gh.log" 2>/dev/null | wc -l | tr -d ' ')" 0 "gh is not called"
 
 echo "== image gate"
-img=ghcr.io/o/oidc-test-idp
+img=ghcr.io/o/br-oidc-test-idp
 c=0123456789abcdef0123456789abcdef01234567
 stub_reset
-expect 0 'skip=false' "no image of this version: build" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
-printf '%s\n' "$img:0.1.0" "$img:0.1.0-0123456789ab-amd64" "$img:0.1.0-0123456789ab-arm64" >"$STUB_DIR/images"
-expect 0 'skip=true' "version and both per-arch tags of this commit exist: skip" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
-printf '%s\n' "$img:0.1.0" "$img:0.1.0-ffffffffffff-amd64" "$img:0.1.0-ffffffffffff-arm64" >"$STUB_DIR/images"
-expect 1 'was not published from commit' "version exists from another commit: fails loud" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
-printf '%s\n' "$img:0.1.0" "$img:0.1.0-0123456789ab-amd64" >"$STUB_DIR/images"
-expect 1 '0.1.0-0123456789ab-arm64 missing' "one per-arch tag missing: fails loud" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
-printf '%s\n' "$img:0.1.0-0123456789ab-amd64" "$img:0.1.0-0123456789ab-arm64" >"$STUB_DIR/images"
-expect 0 'skip=false' "per-arch tags without the version manifest: finish the publish" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
+expect 0 'skip=false' "no image of this version: build" in_dev bash .github/scripts/image-gate.sh "$img" 0.7.0 "$c"
+printf '%s\n' "$img:0.7.0" "$img:0.7.0-0123456789ab-amd64" "$img:0.7.0-0123456789ab-arm64" >"$STUB_DIR/images"
+expect 0 'skip=true' "version and both per-arch tags of this commit exist: skip" in_dev bash .github/scripts/image-gate.sh "$img" 0.7.0 "$c"
+printf '%s\n' "$img:0.7.0" "$img:0.7.0-ffffffffffff-amd64" "$img:0.7.0-ffffffffffff-arm64" >"$STUB_DIR/images"
+expect 1 'was not published from commit' "version exists from another commit: fails loud" in_dev bash .github/scripts/image-gate.sh "$img" 0.7.0 "$c"
+printf '%s\n' "$img:0.7.0" "$img:0.7.0-0123456789ab-amd64" >"$STUB_DIR/images"
+expect 1 '0.7.0-0123456789ab-arm64 missing' "one per-arch tag missing: fails loud" in_dev bash .github/scripts/image-gate.sh "$img" 0.7.0 "$c"
+printf '%s\n' "$img:0.7.0-0123456789ab-amd64" "$img:0.7.0-0123456789ab-arm64" >"$STUB_DIR/images"
+expect 0 'skip=false' "per-arch tags without the version manifest: finish the publish" in_dev bash .github/scripts/image-gate.sh "$img" 0.7.0 "$c"
 
 echo "== artifacts are built only from a released tag of their crate"
 g checkout -q main

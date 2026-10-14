@@ -60,6 +60,9 @@ expect allowed "main / conformance 0.5.9: another crate that is a prefix"  check
 expect allowed "main / conformance-scope-cli 0.5.4: a longer name is another crate"  check conformance-scope-cli 0.5.4 refs/heads/main
 expect refused "main / oidc-test-idp 1.2.1: its own line owns 1.2"      check oidc-test-idp 1.2.1 refs/heads/main
 expect allowed "main / oidc-test-idp 1.3.0: the next minor"             check oidc-test-idp 1.3.0 main
+expect allowed "main / br-imported 0.7.0: a first release that opens its line at 0.7" check br-imported 0.7.0 refs/heads/main
+expect allowed "release/oidc-test-idp-0.7 / oidc-test-idp 0.7.1: a patch of the imported line" check oidc-test-idp 0.7.1 refs/heads/release/oidc-test-idp-0.7
+expect refused "main / oidc-test-idp 0.7.0: below the 1.2 range its release branch owns" check oidc-test-idp 0.7.0 refs/heads/main
 expect allowed "main / a prerelease of the next minor"                        check conformance-scope 0.6.0-rc.1 refs/heads/main
 expect refused "main / a prerelease inside the owned minor"                   check conformance-scope 0.5.9-rc.1 refs/heads/main
 
