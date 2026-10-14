@@ -56,9 +56,12 @@ jobs:
           set -euo pipefail
           version="$(bash .github/scripts/artifact-tag.sh "${CRATE}" "${RELEASE_TAG}")"
           commit="$(git rev-parse HEAD)"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
-          bash .github/scripts/image-gate.sh "${IMAGE}" "${version}" "${commit}" >> "$GITHUB_OUTPUT"
+          gate="$(bash .github/scripts/image-gate.sh "${IMAGE}" "${version}" "${commit}")"
+          {
+            echo "version=${version}"
+            echo "commit=${commit}"
+            echo "${gate}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: setup rust targets
         if: steps.ver.outputs.skip == 'false'
