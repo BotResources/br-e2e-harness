@@ -13,7 +13,7 @@ br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package
 ] }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "br-util-nats-fabric/v0.1.0", version = "0.1.0" }
 
-br-test-harness = { path = "../br-test-harness", version = "0.0.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "0.1.0", default-features = false, features = [
     "nats-fabric",
 ] }
 
