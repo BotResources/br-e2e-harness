@@ -231,9 +231,9 @@ cargo test -p conformance-passport --test conformance -- --ignored --test-thread
 
 ## Install
 
-A **dev-dependency**, pinned to a release tag. Keep its `br-rust-common` pin
-identical to `br-test-harness`'s (`v1.3.0`) so Cargo resolves a single source of
-`br-core-*`:
+A **dev-dependency**, pinned to a release tag. Keep each `br-rust-common` pin
+identical to `br-test-harness`'s (per-crate `<crate>/v0.1.0`) so Cargo resolves a
+single source of `br-core-*`:
 
 ```toml
 [dev-dependencies]

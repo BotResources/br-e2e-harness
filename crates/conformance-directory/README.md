@@ -152,7 +152,7 @@ PR, not just documented.
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
-crates.io). Keep its `br-rust-common` tag identical to `br-test-harness`'s so
+crates.io). Keep each `br-rust-common` crate tag identical to `br-test-harness`'s (per-crate `<crate>/v0.1.0`) so
 Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
