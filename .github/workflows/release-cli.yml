@@ -2,31 +2,42 @@ name: release-cli
 
 on:
   push:
-    branches: [main]
+    tags: ["conformance-scope/v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag of conformance-scope whose CLI binaries to build
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-cli-${{ github.ref }}
+  group: release-cli-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   CRATE: conformance-scope-cli
+  LIBRARY: conformance-scope
   BIN: conformance-scope
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   gate:
-    name: resolve version + gate
+    name: resolve version from the library tag + gate
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.gate.outputs.version }}
-      tag: ${{ steps.gate.outputs.tag }}
       skip: ${{ steps.gate.outputs.skip }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: resolve version + gate on existing assets
         id: gate
@@ -34,20 +45,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')"
-          if [ -z "$version" ]; then
-            echo "::error file=Cargo.toml::could not extract the workspace version"
-            exit 1
-          fi
-          tag="v${version}"
+          version="$(bash .github/scripts/artifact-tag.sh "${LIBRARY}" "${RELEASE_TAG}")"
+          bash .github/scripts/check-companions.sh "refs/tags/${RELEASE_TAG}" "${LIBRARY}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
           marker="${BIN}-${version}-x86_64-unknown-linux-musl.tar.gz"
-          if gh release view "${tag}" --json assets \
+          if gh release view "${RELEASE_TAG}" --json assets \
                --jq '.assets[].name' 2>/dev/null | grep -qx "${marker}"; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::${tag} already carries ${marker} — nothing to build"
+            echo "::notice::${RELEASE_TAG} already carries ${marker} — nothing to build"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -71,27 +77,31 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
 
       - name: setup rust target
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: setup zig
         if: matrix.builder == 'zigbuild'
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7 # v1.2.2
         with:
           version: 0.13.0
 
       - name: install cargo-zigbuild
         if: matrix.builder == 'zigbuild'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: cargo-zigbuild
 
       - name: cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: build (zigbuild)
         if: matrix.builder == 'zigbuild'
@@ -131,7 +141,7 @@ jobs:
           echo "asset=${asset}" >> "$GITHUB_OUTPUT"
 
       - name: upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ env.BIN }}-${{ matrix.target }}
           path: |
@@ -141,7 +151,7 @@ jobs:
           retention-days: 1
 
   publish:
-    name: publish to the unified release
+    name: attach the binaries to the library release
     needs: [gate, build]
     if: needs.gate.outputs.skip == 'false'
     runs-on: ubuntu-latest
@@ -151,50 +161,22 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
       - name: download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
 
-      - name: ensure tag + release, then upload assets
+      - name: upload assets to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          version="${{ needs.gate.outputs.version }}"
-          tag="${{ needs.gate.outputs.tag }}"
-
-          if ! git rev-parse --verify "refs/tags/${tag}" >/dev/null 2>&1; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "${tag}" -m "br-e2e-harness ${version}"
-            git push origin "${tag}"
-          fi
-
-          if ! gh release view "${tag}" >/dev/null 2>&1; then
-            notes_file="$(mktemp)"
-            awk -v target="## ${version}" '
-              $0 == target { in_section = 1; print; next }
-              in_section && /^## / { exit }
-              in_section { print }
-            ' CHANGELOG.md > "$notes_file"
-            if [ ! -s "$notes_file" ]; then
-              printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for changes.\n' \
-                "$GITHUB_REPOSITORY" "$tag" > "$notes_file"
-            fi
-            gh release create "${tag}" --title "br-e2e-harness ${version}" --notes-file "$notes_file" --verify-tag
-            rm -f "$notes_file"
-          fi
-
           shopt -s nullglob
           assets=(dist/*.tar.gz dist/*.sha256)
           if [ ${#assets[@]} -eq 0 ]; then
             echo "::error::no built assets found under dist/"
             exit 1
           fi
-          gh release upload "${tag}" "${assets[@]}" --clobber
+          gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber
