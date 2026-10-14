@@ -1,11 +1,10 @@
 # Changelog
 
-All notable changes to `br-e2e-harness` are documented here. The whole workspace
-ships **one version**: every crate inherits `version.workspace = true`, and a
-single git tag `v{version}` releases the set. Format follows
+History of the unified workspace releases, `v1.2.1` and earlier. The workspace
+version is gone: from now on every crate carries its own version and releases
+under its own git tag `{crate}/v{version}`, with its own `CHANGELOG.md` in
+`crates/{crate}/`. This file is frozen. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
-
-## [Unreleased]
 
 ## 1.2.1 - 2026-09-28
 

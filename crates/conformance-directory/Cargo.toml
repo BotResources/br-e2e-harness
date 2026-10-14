@@ -1,6 +1,6 @@
 [package]
 name = "conformance-directory"
-version.workspace = true
+version = "0.0.0"
 description = "Black-box conformance runner for the BotResources identity Published Language (directory) wire + publisher/consumer kit — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
@@ -15,7 +15,7 @@ br-util-directory = { git = "https://github.com/BotResources/br-rust-common", pa
 ] }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "v1.3.0", version = "1.3.0" }
 
-br-test-harness = { path = "../br-test-harness", version = "1.0.0", default-features = false, features = [
+br-test-harness = { path = "../br-test-harness", version = "0.0.0", default-features = false, features = [
     "nats-fabric",
     "e2e-db",
 ] }
