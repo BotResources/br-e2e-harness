@@ -237,7 +237,7 @@ single source of `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.1" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.0", version = "0.1.0" }
 ```
 
 ## License

@@ -44,9 +44,8 @@ shared by every repo that needs them.
 ## Catalog
 
 Every crate is its own library: it carries its own version, its own
-`CHANGELOG.md`, and releases under its own git tag `{crate}/v{version}`. A crate
-at `0.0.0` has not shipped on its own line yet; until it does, it is still
-consumed at the legacy workspace tag `v1.2.1` (`tag = "v1.2.1"`).
+`CHANGELOG.md`, and releases under its own git tag `{crate}/v{version}`. The
+workspace tag `v1.2.1` is the legacy line, no longer a way to consume a crate.
 
 The repo holds two kinds of fixture. **Service fixtures** are deployable
 controllable equivalents of a real dependency, consumed as a container image.
@@ -71,16 +70,21 @@ oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", packag
 | Fixture | Version | Gives you | Docs | Changelog |
 |---|---|---|---|---|
 | `br-test-harness` | 0.1.0 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
-| `conformance-scope` | 0.0.0 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
-| `conformance-identity` | 0.0.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
-| `conformance-passport` | 0.0.0 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
-| `conformance-directory` | 0.0.0 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
-| `conformance-nats-fabric` | 0.0.0 | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](crates/conformance-nats-fabric/CHANGELOG.md) |
+| `conformance-scope` | 0.1.0 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
+| `conformance-identity` | 0.1.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
+| `conformance-passport` | 0.1.0 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
+| `conformance-directory` | 0.1.0 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
+| `conformance-nats-fabric` | 0.1.0 | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](crates/conformance-nats-fabric/CHANGELOG.md) |
 
-`br-test-harness` install pin (dev-dependency):
+Install pins (dev-dependencies):
 
 ```toml
 br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.0", version = "0.1.0" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.0", version = "0.1.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.0", version = "0.1.0" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.0", version = "0.1.0" }
+conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.0", version = "0.1.0" }
 ```
 
 Planned: `identity-test` - a minimal, contract-conformant identity service
@@ -91,7 +95,7 @@ against *an* identity without depending on any project's private one.
 
 | Tool | Version | Consumed as | Gives you | Docs | Changelog |
 |---|---|---|---|---|---|
-| `conformance-scope-cli` (bin `conformance-scope`) | 0.0.0, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
+| `conformance-scope-cli` (bin `conformance-scope`) | 0.1.0, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
 
 `conformance-scope-cli` is not a library of its own: it is versioned with
 `conformance-scope`, and its binaries ride that crate's release.
@@ -121,7 +125,7 @@ local paths with `[patch]` once such a pin exists; two different tags give two c
 Crates that depend on a sibling therefore move together, and a crate releases
 only after the siblings it pins have released.
 
-`v1.2.1` is the legacy workspace tag. A crate at `0.0.0` is still consumed at it.
+`v1.2.1` is the legacy workspace tag.
 
 ## Release process
 

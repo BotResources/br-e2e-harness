@@ -154,7 +154,7 @@ Keep each `br-rust-common` crate tag identical to `br-test-harness`'s (per-crate
 
 ```toml
 [dev-dependencies]
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.1" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
 ```
 
 ## Why — the non-obvious bits
