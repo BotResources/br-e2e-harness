@@ -14,6 +14,16 @@ scripts="$(cd "$(dirname "$0")" && pwd)"
 changelog="crates/${crate}/CHANGELOG.md"
 tag="${crate}/v${version}"
 
+push_tag() {
+  local auth
+  if [[ -n "${GH_TOKEN:-}" && "$(git remote get-url origin)" == https://github.com/* ]]; then
+    auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+    git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" push origin "refs/tags/$1"
+  else
+    git push origin "refs/tags/$1"
+  fi
+}
+
 if [ "$(bash "$scripts/crate-version.sh" "$crate" "$commit")" != "$version" ]; then
   echo "::error::${crate} at ${commit} does not declare ${version}" >&2
   exit 1
@@ -26,7 +36,7 @@ else
   git tag -a "${tag}" "${commit}" \
     -m "${crate} ${version}" \
     -m "Auto-tagged from ${ref#refs/heads/}. See ${changelog} for the entry."
-  git push origin "refs/tags/${tag}"
+  push_tag "${tag}"
 fi
 
 if gh release view "${tag}" >/dev/null 2>&1; then

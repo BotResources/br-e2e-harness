@@ -69,7 +69,7 @@ expect 0 'creating tag br-alpha/v0.1.0' "tag br-alpha/v0.1.0 created" in_dev env
 expect_file_has "$gh_log" '--latest=true' "main moves Latest"
 expect 0 '' "tag pushed to origin" git -C "$ORIGIN" rev-parse -q --verify refs/tags/br-alpha/v0.1.0
 expect 0 'already exists' "second run: tag exists, nothing recreated" in_dev env GITHUB_REPOSITORY=o/r bash .github/scripts/release-crate.sh br-alpha 0.1.0 refs/heads/main "$RELEASE_COMMIT"
-expect 0 'creating tag br-beta/v0.1.0' "tag br-beta/v0.1.0 from a release line" in_dev env GITHUB_REPOSITORY=o/r bash .github/scripts/release-crate.sh br-beta 0.1.0 refs/heads/release/br-beta-0.1 "$RELEASE_COMMIT"
+expect 0 'creating tag br-beta/v0.1.0' "tag br-beta/v0.1.0 from a release line" in_dev env GITHUB_REPOSITORY=o/r GH_TOKEN=t bash .github/scripts/release-crate.sh br-beta 0.1.0 refs/heads/release/br-beta-0.1 "$RELEASE_COMMIT"
 expect_file_has "$gh_log" '--latest=false' "a release line never moves Latest"
 expect 1 'does not declare' "tagging a version the commit does not carry: refuses" in_dev env GITHUB_REPOSITORY=o/r bash .github/scripts/release-crate.sh br-alpha 0.9.0 refs/heads/main "$RELEASE_COMMIT"
 

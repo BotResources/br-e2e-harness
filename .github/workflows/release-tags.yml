@@ -15,8 +15,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: release-tags
@@ -33,6 +32,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Detect
         id: detect
         env:
@@ -64,6 +64,9 @@ jobs:
     needs: detect
     if: needs.detect.outputs.matrix != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -74,12 +77,11 @@ jobs:
       VERSION: ${{ matrix.version }}
       LINE: ${{ matrix.line }}
       COMMIT: ${{ matrix.commit }}
-      BR_REGISTRY_KEY: ${{ secrets.BR_REGISTRY_KEY }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Configure git identity
         run: |
@@ -110,22 +112,29 @@ jobs:
         run: bash .github/scripts/registry-gate.sh "$CRATE" "$VERSION" "$CRATE/v$VERSION"
         env:
           GATE_REV: ${{ matrix.commit }}
+          BR_REGISTRY_KEY: ${{ secrets.BR_REGISTRY_KEY }}
 
       - name: Compute API listing, API diff and dependencies
         if: steps.gate.outputs.implemented != 'true'
         env:
           BASELINE_TAG: ${{ steps.gate.outputs.baseline_tag }}
+          BR_REGISTRY_KEY: ${{ secrets.BR_REGISTRY_KEY }}
         run: bash .github/scripts/registry-prepare.sh "$CRATE" "$VERSION" "$COMMIT" "$BASELINE_TAG"
 
       - name: Tag and release
         if: steps.gate.outputs.implemented != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/scripts/release-crate.sh "$CRATE" "$VERSION" "refs/heads/$LINE" "$COMMIT"
 
       - name: Record in the registry
         if: steps.gate.outputs.implemented != 'true'
         env:
           BASELINE_TAG: ${{ steps.gate.outputs.baseline_tag }}
+          BR_REGISTRY_KEY: ${{ secrets.BR_REGISTRY_KEY }}
         run: bash .github/scripts/registry-record.sh "$CRATE" "$VERSION" "$CRATE/v$VERSION" "$COMMIT" "$BASELINE_TAG"
 
       - name: Dispatch the artifact workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/scripts/dispatch-artifacts.sh "$CRATE" "$VERSION" "$LINE"
