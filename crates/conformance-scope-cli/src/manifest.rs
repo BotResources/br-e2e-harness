@@ -55,7 +55,7 @@ fn default_timeout() -> String {
 }
 
 pub fn load(raw: &str) -> Result<Manifest> {
-    serde_yaml_ng::from_str(raw).map_err(|e| CliError::new(format!("invalid manifest: {e}")))
+    serde_saphyr::from_str(raw).map_err(|e| CliError::new(format!("invalid manifest: {e}")))
 }
 
 pub async fn run(manifest: &Manifest) -> Result<AggregateReport> {
@@ -132,5 +132,75 @@ fn build_behavior(spec: &ServiceSpec, expected: &ExpectedDeclaration) -> Result<
             Ok(AcceptorBehavior::reject(Some(reason_code), sample)?)
         }
         None => Ok(AcceptorBehavior::Accept),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load;
+
+    const SAMPLE: &str = "services:
+  - service_key: example-service
+    scopes:
+      - key: example:read
+        platform_only: false
+      - key: example:admin
+        platform_only: true
+    attach:
+      nats: nats://127.0.0.1:4222
+      readyz: http://127.0.0.1:8080/readyz
+  - service_key: other-service
+    scopes:
+      - key: other:read
+    scenarios: s1,s2
+    reject: scope_owned_by_another_service
+    timeout: 30s
+    spawn:
+      path: ./other-subject
+";
+
+    #[test]
+    fn given_the_documented_manifest_when_loaded_then_every_field_is_read() {
+        let manifest = load(SAMPLE).expect("the documented manifest loads");
+
+        assert_eq!(manifest.services.len(), 2);
+        let first = &manifest.services[0];
+        assert_eq!(first.service_key, "example-service");
+        assert_eq!(first.scopes.len(), 2);
+        assert_eq!(first.scopes[0].key, "example:read");
+        assert!(!first.scopes[0].platform_only);
+        assert!(first.scopes[1].platform_only);
+        assert_eq!(first.timeout, "10s");
+        let attach = first.attach.as_ref().expect("attach is read");
+        assert_eq!(attach.nats, "nats://127.0.0.1:4222");
+        assert_eq!(attach.readyz, "http://127.0.0.1:8080/readyz");
+        assert!(first.spawn.is_none());
+
+        let second = &manifest.services[1];
+        assert_eq!(second.scenarios.as_deref(), Some("s1,s2"));
+        assert_eq!(
+            second.reject.as_deref(),
+            Some("scope_owned_by_another_service")
+        );
+        assert_eq!(second.timeout, "30s");
+        assert_eq!(
+            second.spawn.as_ref().expect("spawn is read").path,
+            std::path::PathBuf::from("./other-subject")
+        );
+        assert!(second.attach.is_none());
+    }
+
+    #[test]
+    fn given_a_manifest_without_services_when_loaded_then_it_is_refused() {
+        let error = load("scopes: []").expect_err("services is required");
+
+        assert!(error.to_string().contains("invalid manifest"));
+    }
+
+    #[test]
+    fn given_malformed_yaml_when_loaded_then_it_is_refused() {
+        let error = load("services: [unclosed").expect_err("malformed yaml");
+
+        assert!(error.to_string().contains("invalid manifest"));
     }
 }
