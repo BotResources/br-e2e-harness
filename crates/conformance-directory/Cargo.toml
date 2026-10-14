@@ -1,6 +1,6 @@
 [package]
 name = "conformance-directory"
-version = "0.0.0"
+version = "0.1.0"
 description = "Black-box conformance runner for the BotResources identity Published Language (directory) wire + publisher/consumer kit — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true

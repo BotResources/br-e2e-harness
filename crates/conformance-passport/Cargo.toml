@@ -1,6 +1,6 @@
 [package]
 name = "conformance-passport"
-version = "0.0.0"
+version = "0.1.0"
 description = "Black-box conformance runner for the BotResources bearer/PAT -> Passport resolution endpoint — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true

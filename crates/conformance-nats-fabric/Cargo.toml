@@ -1,6 +1,6 @@
 [package]
 name = "conformance-nats-fabric"
-version = "0.0.0"
+version = "0.1.0"
 description = "Black-box conformance runner for the BotResources NATS Fabric v1 subject grammar and published-language KV — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
