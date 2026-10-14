@@ -57,7 +57,7 @@ consumed as a `git` + `tag` Cargo dependency (not an image).
 
 | Fixture | Version | Image | Replaces | Docs | Changelog |
 |---|---|---|---|---|---|
-| `oidc-test-idp` | 0.1.0 | `ghcr.io/botresources/br-oidc-test-idp:0.1.0` | A real OIDC identity provider (Entra, Google, ...) | [README](crates/oidc-test-idp/README.md) | [CHANGELOG](crates/oidc-test-idp/CHANGELOG.md) |
+| `oidc-test-idp` | 0.1.0 | `ghcr.io/botresources/oidc-test-idp:0.1.0` | A real OIDC identity provider (Entra, Google, ...) | [README](crates/oidc-test-idp/README.md) | [CHANGELOG](crates/oidc-test-idp/CHANGELOG.md) |
 
 `oidc-test-idp` is also a library (`br-test-harness` re-exports it in-process).
 Install pin:

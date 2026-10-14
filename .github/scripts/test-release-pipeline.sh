@@ -154,6 +154,20 @@ stub_reset
 expect 0 'no artifact beyond the tag' "any other crate: nothing dispatched" in_dev bash .github/scripts/dispatch-artifacts.sh br-test-harness 0.1.0 main
 expect_equal "$(cat "$STUB_DIR/gh.log" 2>/dev/null | wc -l | tr -d ' ')" 0 "gh is not called"
 
+echo "== image gate"
+img=ghcr.io/o/oidc-test-idp
+c=0123456789abcdef0123456789abcdef01234567
+stub_reset
+expect 0 'skip=false' "no image of this version: build" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
+printf '%s\n' "$img:0.1.0" "$img:0.1.0-0123456789ab-amd64" "$img:0.1.0-0123456789ab-arm64" >"$STUB_DIR/images"
+expect 0 'skip=true' "version and both per-arch tags of this commit exist: skip" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
+printf '%s\n' "$img:0.1.0" "$img:0.1.0-ffffffffffff-amd64" "$img:0.1.0-ffffffffffff-arm64" >"$STUB_DIR/images"
+expect 1 'was not published from commit' "version exists from another commit: fails loud" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
+printf '%s\n' "$img:0.1.0" "$img:0.1.0-0123456789ab-amd64" >"$STUB_DIR/images"
+expect 1 '0.1.0-0123456789ab-arm64 missing' "one per-arch tag missing: fails loud" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
+printf '%s\n' "$img:0.1.0-0123456789ab-amd64" "$img:0.1.0-0123456789ab-arm64" >"$STUB_DIR/images"
+expect 0 'skip=false' "per-arch tags without the version manifest: finish the publish" in_dev bash .github/scripts/image-gate.sh "$img" 0.1.0 "$c"
+
 echo "== artifacts are built only from a released tag of their crate"
 g checkout -q main
 g tag -a br-alpha/v0.2.0 -m t

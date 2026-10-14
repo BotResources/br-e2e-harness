@@ -25,12 +25,12 @@ env:
 jobs:
   publish-oidc-test-idp:
     name: publish oidc-test-idp image
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     env:
       CRATE: oidc-test-idp
-      IMAGE: ghcr.io/botresources/br-oidc-test-idp
+      IMAGE: ghcr.io/botresources/oidc-test-idp
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:
         shell: bash
@@ -39,6 +39,7 @@ jobs:
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -49,18 +50,15 @@ jobs:
 
       - name: resolve version from the crate tag + gate
         id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="$(bash .github/scripts/artifact-tag.sh "${CRATE}" "${RELEASE_TAG}")"
+          commit="$(git rev-parse HEAD)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-          if docker manifest inspect "${IMAGE}:${version}" >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::${IMAGE}:${version} already exists — nothing to publish"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          bash .github/scripts/image-gate.sh "${IMAGE}" "${version}" "${commit}" >> "$GITHUB_OUTPUT"
 
       - name: setup rust targets
         if: steps.ver.outputs.skip == 'false'

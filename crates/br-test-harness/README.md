@@ -1032,7 +1032,7 @@ OIDC `id_token` into an internal credential gets infra **and** a controllable Id
 from this single dev-dependency: build `oidc::IdpState`, mount `oidc::router` on a
 `TestServer`, point the system under test's `ISSUER` at its base URL, and mint /
 rotate keys straight from the test — no second container. (The same fixture also
-ships as `ghcr.io/botresources/br-oidc-test-idp` for the out-of-process case.)
+ships as `ghcr.io/botresources/oidc-test-idp` for the out-of-process case.)
 
 ## License
 

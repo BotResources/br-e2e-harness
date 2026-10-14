@@ -128,7 +128,15 @@ if [ "${1:-}" = public-api ]; then
 fi
 exec "$REAL_CARGO" "$@"
 STUB
-    chmod +x "$WORK/bin/curl" "$WORK/bin/gh" "$WORK/bin/cargo"
+    cat >"$WORK/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = manifest ] && [ "${2:-}" = inspect ]; then
+    grep -qxF "$3" "$STUB_DIR/images" 2>/dev/null
+    exit $?
+fi
+exit 1
+STUB
+    chmod +x "$WORK/bin/curl" "$WORK/bin/gh" "$WORK/bin/cargo" "$WORK/bin/docker"
     export PATH="$WORK/bin:$PATH"
 }
 

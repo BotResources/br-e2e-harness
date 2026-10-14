@@ -1,7 +1,7 @@
 # oidc-test-idp
 
 A **pilotable OIDC identity provider for end-to-end tests**, published as
-`ghcr.io/botresources/br-oidc-test-idp`.
+`ghcr.io/botresources/oidc-test-idp`.
 
 > ⚠️ **TEST FIXTURE ONLY.** It signs any requested token, and its `/admin/*`
 > surface has no authentication — by design. Never deploy it outside an
