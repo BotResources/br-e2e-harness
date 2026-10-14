@@ -1,0 +1,16 @@
+{
+  "required": [
+    "cargo fmt + clippy + test",
+    "harness self-test (real infra)",
+    "cargo doc",
+    "cargo-deny check",
+    "cargo-machete (unused deps)",
+    "cargo semver-checks",
+    "trufflehog (secret scan)",
+    "MSRV 1.88 build",
+    "changelog entry per Cargo.toml version",
+    "shellcheck",
+    "release-line law and registry wiring tests",
+    "registry gate"
+  ]
+}
