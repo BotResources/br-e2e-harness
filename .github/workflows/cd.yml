@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CRATE: oidc-test-idp
-      IMAGE: ghcr.io/botresources/oidc-test-idp
+      IMAGE: ghcr.io/botresources/br-oidc-test-idp
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     defaults:
       run:

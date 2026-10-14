@@ -15,7 +15,7 @@ ignore = [
     #
     # Who pulls it in: oidc-test-idp, directly (`rsa = "0.9"` in the workspace
     # manifest, used in crates/oidc-test-idp/src/keys.rs), so also the
-    # `oidc-test-idp` image and br-test-harness with its `oidc` feature.
+    # `br-oidc-test-idp` image and br-test-harness with its `oidc` feature.
     # sqlx-mysql lists rsa in Cargo.lock, but no crate here enables the mysql
     # backend, so that path is never built: `cargo tree -i rsa -e all
     # --all-features --target all` shows oidc-test-idp only. The
