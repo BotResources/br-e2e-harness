@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::process::{Child, Command};
 
+const LOOPBACK: &str = "127.0.0.1";
+
 pub struct SpawnedNats {
     child: Child,
     port: u16,
@@ -27,6 +29,8 @@ impl SpawnedNats {
 
         let mut child = Command::new("nats-server")
             .arg("-js")
+            .arg("-a")
+            .arg(LOOPBACK)
             .arg("-p")
             .arg("-1")
             .arg("-sd")
@@ -53,7 +57,7 @@ impl SpawnedNats {
     }
 
     pub fn url(&self) -> String {
-        format!("nats://127.0.0.1:{}", self.port)
+        format!("nats://{LOOPBACK}:{}", self.port)
     }
 
     pub fn port(&self) -> u16 {
@@ -92,7 +96,7 @@ async fn await_port(child: &mut Child, ports_file: &std::path::Path) -> u16 {
 }
 
 async fn await_accept(child: &mut Child, port: u16) {
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format!("{LOOPBACK}:{port}");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if tokio::net::TcpStream::connect(&addr).await.is_ok() {

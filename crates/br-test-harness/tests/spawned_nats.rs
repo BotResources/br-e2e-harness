@@ -46,6 +46,40 @@ async fn spawns_a_server_a_client_can_round_trip_against_its_reported_port() {
     );
 }
 
+fn non_loopback_local_ip() -> Option<std::net::IpAddr> {
+    let probe = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    probe.connect("192.0.2.1:9").ok()?;
+    let ip = probe.local_addr().ok()?.ip();
+    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn the_spawned_server_listens_on_loopback_only() {
+    let Some(lan_ip) = non_loopback_local_ip() else {
+        eprintln!("no non-loopback interface on this host: the exposure cannot exist here");
+        return;
+    };
+    let server = SpawnedNats::start().await;
+
+    let reachable_on_lan = tokio::time::timeout(
+        Duration::from_secs(2),
+        tokio::net::TcpStream::connect((lan_ip, server.port())),
+    )
+    .await;
+    let loopback = tokio::net::TcpStream::connect(("127.0.0.1", server.port())).await;
+    server.shutdown().await;
+
+    assert!(
+        loopback.is_ok(),
+        "the server must accept on 127.0.0.1, the address url() reports"
+    );
+    assert!(
+        !matches!(reachable_on_lan, Ok(Ok(_))),
+        "the unauthenticated JetStream server must not accept on the non-loopback address {lan_ip}"
+    );
+}
+
 fn server_port_from(url: &str) -> u16 {
     url.rsplit(':')
         .next()

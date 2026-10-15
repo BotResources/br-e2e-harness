@@ -69,9 +69,29 @@ async fn a_frame_left_unterminated_at_stream_end_fails_loud() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "closed with an unterminated block")]
-async fn a_crlf_framed_body_fails_loud_instead_of_reading_as_a_clean_close() {
+async fn a_crlf_framed_body_is_decoded_like_an_lf_framed_one() {
     let mut sub = open_closing_after(crlf_frame()).await;
+
+    match sub.next_outcome(PUSH).await {
+        SseOutcome::Event(event) => assert_eq!(event["tick"], 0),
+        other => panic!("a CRLF frame must read as Event: {other:?}"),
+    }
+    assert_eq!(sub.next_outcome(PUSH).await, SseOutcome::Closed);
+}
+
+#[tokio::test]
+#[should_panic(expected = "expected no subscription event")]
+async fn expect_silence_does_not_pass_while_crlf_frames_are_arriving() {
+    let mut sub = open_closing_after(crlf_frame()).await;
+
+    sub.expect_silence("no push", QUIET).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "closed with an unterminated block")]
+async fn a_crlf_frame_left_unterminated_at_stream_end_fails_loud() {
+    let mut sub =
+        open_closing_after("event: next\r\ndata: {\"data\":{\"tick\":9}}\r\n".to_string()).await;
 
     sub.next_outcome(PUSH).await;
 }
