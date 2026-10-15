@@ -18,6 +18,7 @@ form to decide whether a version ships.
 - `SpawnedNats` binds `nats-server` to `127.0.0.1` (`-a 127.0.0.1`); the unauthenticated JetStream server no longer listens on every interface of the machine.
 - `CommandAwaiter::await_correlation` panics when its subscription has ended, like the event awaiter, instead of returning the `None` of a passed deadline; a "no command was sent" assertion no longer passes on a dead subscription.
 - `GraphqlClient::query_unauthenticated`, `query_with_passport_header`, `post_raw` and `get_raw` panic when the response body cannot be read, instead of turning it into an empty string.
+- `EventCapture` and `CommandCapture` panic with `fabric capture drain failed` when their pull stream has ended (client drained, connection closed), instead of reporting `count() == 0` and `first() == None`; a "no event / no command was published" assertion no longer passes on a dead drain.
 
 ## 0.1.0
 
