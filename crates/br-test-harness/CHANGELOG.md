@@ -9,6 +9,16 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.1.1
+
+### Fixed
+
+- `verdict::is_ack` (and so `expect_ack`) is true only for a response carrying a non-empty `data` object; `{}`, `{"data": null}`, a JSON string (the non-JSON body of `GraphqlClient::post_raw` and `query_with_passport_header`) and an HTTP error page no longer ack. `expect_rejected` no longer says "got ack" when there is no rejection code.
+- `SseSubscription` frames on CRLF, CR and LF line ends, and carries a CRLF split across two chunks and a multi-byte character split across two chunks. A server ending lines with CRLF was never decoded: `next_outcome` read `Timeout` while events arrived and `expect_silence` passed.
+- `SpawnedNats` binds `nats-server` to `127.0.0.1` (`-a 127.0.0.1`); the unauthenticated JetStream server no longer listens on every interface of the machine.
+- `CommandAwaiter::await_correlation` panics when its subscription has ended, like the event awaiter, instead of returning the `None` of a passed deadline; a "no command was sent" assertion no longer passes on a dead subscription.
+- `GraphqlClient::query_unauthenticated`, `query_with_passport_header`, `post_raw` and `get_raw` panic when the response body cannot be read, instead of turning it into an empty string.
+
 ## 0.1.0
 
 ### Changed

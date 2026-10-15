@@ -246,7 +246,7 @@ impl CommandAwaiter {
             tokio::select! {
                 () = &mut wait => return None,
                 next = self.subscriber.next() => {
-                    let message = next?;
+                    let message = next.expect("command awaiter: subscription ended unexpectedly");
                     let payload = message.payload.to_vec();
                     let Ok(probe) = serde_json::from_slice::<CorrelationProbe>(&payload) else {
                         continue;
@@ -261,5 +261,52 @@ impl CommandAwaiter {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SpawnedNats;
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "subscription ended unexpectedly")]
+    async fn a_dead_command_subscription_panics_instead_of_reading_as_a_passed_deadline() {
+        let server = SpawnedNats::start().await;
+        let client = crate::nats::connect(&server.url())
+            .await
+            .expect("connect to the spawned server");
+        let subscriber = client
+            .subscribe("integration.cmd.harness.selftest.ping.v1")
+            .await
+            .expect("subscribe");
+        client.drain().await.expect("drain ends every subscription");
+        let mut awaiter = CommandAwaiter { subscriber };
+
+        awaiter
+            .await_correlation(Uuid::now_v7(), Duration::from_secs(5))
+            .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn a_live_command_subscription_reads_none_when_the_deadline_passes() {
+        let server = SpawnedNats::start().await;
+        let client = crate::nats::connect(&server.url())
+            .await
+            .expect("connect to the spawned server");
+        let subscriber = client
+            .subscribe("integration.cmd.harness.selftest.ping.v1")
+            .await
+            .expect("subscribe");
+        let mut awaiter = CommandAwaiter { subscriber };
+
+        let none = awaiter
+            .await_correlation(Uuid::now_v7(), Duration::from_millis(200))
+            .await;
+
+        assert!(none.is_none());
+        server.shutdown().await;
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "br-test-harness"
-version = "0.1.0"
+version = "0.1.1"
 description = "Real-infra end-to-end test harness for BotResources platform services — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
