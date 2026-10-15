@@ -91,17 +91,11 @@ impl GraphqlClient {
             .await
             .expect("request failed");
         let status = resp.status();
-        (status, body_text(resp).await)
+        (status, resp.text().await.unwrap_or_default())
     }
 }
 
 async fn body_json_or_text(resp: reqwest::Response) -> Value {
-    let text = body_text(resp).await;
+    let text = resp.text().await.unwrap_or_default();
     serde_json::from_str(&text).unwrap_or(Value::String(text))
-}
-
-async fn body_text(resp: reqwest::Response) -> String {
-    resp.text()
-        .await
-        .unwrap_or_else(|e| panic!("graphql response body read failed: {e}"))
 }

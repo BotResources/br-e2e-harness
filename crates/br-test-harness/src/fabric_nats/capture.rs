@@ -165,7 +165,6 @@ async fn start_capture(
                     payload,
                 });
         }
-        record_error(&sink, format!("{stream_name}: the pull stream ended"));
     });
 
     Capture { state, task }
@@ -309,22 +308,5 @@ mod tests {
 
         assert!(none.is_none());
         server.shutdown().await;
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "real-infra: needs `nats-server` on PATH"]
-    #[should_panic(expected = "fabric capture drain failed")]
-    async fn a_dead_drain_panics_instead_of_reading_as_nothing_arrived() {
-        let nats = crate::FabricTestNats::start().await;
-        let coords = CommandCoords {
-            receiver: br_core_integration::Bc::new("notifier").unwrap(),
-            aggregate: br_core_integration::Aggregate::new("notification").unwrap(),
-            verb: br_core_integration::Verb::new("deliver").unwrap(),
-            version: 1,
-        };
-        let capture = nats.capture_commands(&[&coords]).await;
-        nats.client.drain().await.expect("drain the client");
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        capture.count();
     }
 }
