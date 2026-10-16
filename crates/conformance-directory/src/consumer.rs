@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
 use crate::error::{ConformanceError, Result};
-use crate::harness::DirectoryHarness;
+use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::pg::ConsumerDb;
 use crate::publish_fixture::publish_snapshot;
@@ -18,11 +18,9 @@ pub async fn consumer_reads_users(snapshot: &DirectorySnapshotWire) -> Result<Ch
     let id = CheckId::ConsumerReadsUsers;
     let expected = "reconcile-on-boot projects KV users into PG, resolve_user returns the carried fields, \
                     and retracting a user orphan-deletes its projection row";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = consumer_reads_users_inner(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome = consumer_reads_users_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    env.shutdown().await;
     outcome
 }
 
@@ -105,11 +103,9 @@ async fn consumer_reads_users_inner(
 pub async fn consumer_reads_groups(snapshot: &DirectorySnapshotWire) -> Result<CheckOutcome> {
     let id = CheckId::ConsumerReadsGroups;
     let expected = "with groups in _meta, is_member/group_name resolve; with a users-only _meta they auto-degrade to empty";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = consumer_reads_groups_inner(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome = consumer_reads_groups_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    env.shutdown().await;
     outcome
 }
 

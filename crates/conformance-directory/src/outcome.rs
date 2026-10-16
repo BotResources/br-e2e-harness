@@ -177,6 +177,56 @@ impl ConformanceReport {
     }
 
     pub fn is_conformant(&self) -> bool {
-        self.failed() == 0
+        self.failed() == 0 && self.passed() > 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::WireUserDeserializes, "e", "o")
+    }
+
+    fn fail() -> CheckOutcome {
+        CheckOutcome::fail(CheckId::WireUserDeserializes, "e", "o", "d")
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::WireUserDeserializes, "d")
+    }
+
+    fn report(outcomes: Vec<CheckOutcome>) -> ConformanceReport {
+        let mut report = ConformanceReport::default();
+        for outcome in outcomes {
+            report.push(outcome);
+        }
+        report
+    }
+
+    #[test]
+    fn a_report_with_no_outcome_is_not_conformant() {
+        assert!(!ConformanceReport::default().is_conformant());
+    }
+
+    #[test]
+    fn a_report_with_only_skipped_outcomes_is_not_conformant() {
+        assert!(!report(vec![skipped(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn a_report_of_passes_is_conformant() {
+        assert!(report(vec![pass(), pass()]).is_conformant());
+    }
+
+    #[test]
+    fn a_pass_beside_a_skip_is_conformant() {
+        assert!(report(vec![pass(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn one_failure_makes_the_report_not_conformant() {
+        assert!(!report(vec![pass(), fail()]).is_conformant());
     }
 }

@@ -7,16 +7,19 @@ pub mod harness;
 pub mod kv_read;
 pub mod outcome;
 pub mod pg;
+mod prerequisite;
 pub mod provision;
 pub mod publish_fixture;
 pub mod publisher;
 pub mod source;
 pub mod stager;
+#[cfg(test)]
+mod test_snapshot;
 pub mod users_only;
 pub mod wire;
 
 pub use anchor::{DirectorySnapshotWire, KvEntry, build_and_emit, emit_snapshot};
-pub use build::{build_anchor, ensure_go_available, subject_dir};
+pub use build::{build_anchor, ensure_go_available, subject_dir, try_subject_dir};
 pub use consumer::{consumer_reads_groups, consumer_reads_users};
 pub use error::{ConformanceError, Result};
 pub use extensions::{

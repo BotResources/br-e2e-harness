@@ -43,8 +43,8 @@ tag is cut.
 
 | Id | Asserts |
 |---|---|
-| **W1** | every `users/{uuid}` value deserialises through `br_core_directory::PublishedUser`. |
-| **W2** | every `groups/{uuid}` value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
+| **W1** | every key is `users/{uuid}` and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
+| **W2** | every key is `groups/{uuid}` and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
 | **W3** | `identity/_meta` deserialises through `DirectoryMeta` declaring users + groups. |
 | **W4** | the neutral extension `x_custom` lands in `extensions` (flat), never leaking into a core field — the `#[serde(flatten)]` works. |
 | **W5** | a users-only manifest deserialises and **auto-degrades** groups (`publishes_groups() == false`). |
@@ -83,12 +83,17 @@ consume nothing.
 
 ## Public helper surface (the reusable battery)
 
-The check functions return a structured `CheckOutcome` rather than panicking, so a
-consuming service's e2e can call them directly:
+The check functions return a structured `CheckOutcome` rather than panicking, and a
+missing prerequisite (`nats-server` not on `PATH`, the `fabric-nats` CLI not built beside
+the test executable, no `E2E_PG_ADMIN_URL` / `DATABASE_URL`, an unreachable Postgres, a
+missing anchor directory or `PUBLISHED_LANGUAGE` bucket) comes back as a typed
+`ConformanceError`, so a consuming service's e2e can call them directly. A report is
+`is_conformant()` only with at least one passed check and no failed one:
 
 - `build_and_emit()` — builds the Go anchor and runs it once, returning the
   parsed `DirectorySnapshotWire`. `build_anchor()` / `emit_snapshot(binary)` split
-  the two steps.
+  the two steps; `try_subject_dir()` resolves the anchor sources as a `Result`
+  (`subject_dir()` panics when they are missing).
 - `run_wire_battery(&snapshot) -> ConformanceReport` — the W1–W5 offline gate
   (`reserved_key_rejected()` is the standalone W6 check);
   `deserialize_user` / `deserialize_group` / `deserialize_meta` are the per-entry
@@ -120,7 +125,9 @@ consuming service's e2e can call them directly:
 - `reserved_key_rejected()` — the W6 offline guard; returns a `CheckOutcome` (no
   infra), asserting `PublishedUser::new` fails closed on a reserved-key extension.
 - `AnchorSource` — a `DirectorySource` built **from the anchor snapshot** (its
-  users/groups are the Go-frozen values re-deserialised through the lib), so the
+  users/groups are the Go-frozen values re-deserialised through the lib; an entry
+  under a key that is not `users/{uuid}` / `groups/{uuid}`, or a repeated id, is an
+  error, never dropped), so the
   wire the publisher emits is exactly the frozen anchor shape; `.without_groups()`
   drops groups to drive P2's manifest-gating.
 
@@ -157,7 +164,7 @@ Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.0", version = "0.1.0" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.1", version = "0.1.1" }
 ```
 
 ## Why — the non-obvious bits
@@ -177,6 +184,7 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 | C6 deletes the group **after** deleting one of its users | A user retraction deliberately leaves the `known_user_group` rows in place, so the group still holds a link the delete has to unlink. That is what reaches the stager-only branch of `GroupSink::retract` (lock the group row, read the members, stage one impact each) — a group delete on an empty group would never enter it. |
 | C6's `plan()` refuses a snapshot where the refused user and the deleted user are the same id | The phases are ordered, and the last one renames the refused user. If the anchor ever made that user the group's lowest-id member, the delete phase would have removed the row the rename needs, and the check would report a lib defect that is really a fixture defect. |
 | C5 (UsersOnly) proves the narrowing by a schema that **lacks** the group tables | A `UsersOnly` consumer that merely *suppressed* output would pass even against a full schema. Dropping the group tables turns any stray group DML into a hard error, so a green C5 proves the scope genuinely never opens the group consumer — the narrowing is real, not cosmetic. `watch()` is run under a short `timeout` (a live subscription never returns on its own); the assertion is that it does not error and materialises no group tables within the window. |
+| The start of the throwaway NATS and database runs in a spawned task | `br-test-harness` panics when its infrastructure cannot start (`nats-server` crashing, `CREATE DATABASE` refused). The task boundary turns that panic into a `ConformanceError` instead of aborting the caller's test; the named prerequisites are probed first so the common cases never reach a panic. |
 | The whole real battery is `#[ignore]`-gated | It drives real infra (`go` + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
 
 ## License

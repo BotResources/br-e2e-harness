@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
 use crate::error::{ConformanceError, Result};
-use crate::harness::DirectoryHarness;
+use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::pg::ConsumerDb;
 use crate::publish_fixture::{publish_added_user, publish_snapshot};
@@ -19,11 +19,9 @@ pub async fn users_only_narrows_projection(
     let expected = "a UsersOnly consumer against a schema lacking group tables reconciles + watches \
                     cleanly and projects users, emitting no group DML (any group write would error \
                     on the missing tables)";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = users_only_inner(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome = users_only_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    env.shutdown().await;
     outcome
 }
 

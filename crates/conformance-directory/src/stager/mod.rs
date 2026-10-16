@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
 use crate::error::{ConformanceError, Result};
-use crate::harness::DirectoryHarness;
+use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::pg::ConsumerDb;
 use crate::publish_fixture::publish_snapshot;
@@ -31,11 +31,9 @@ pub async fn stager_stages_in_the_projection_transaction(
                     can drive — user upsert, group upsert adding a member, group upsert dropping \
                     a member, group rename, user delete, group delete — each stage exactly the \
                     entities they make unnameable afterwards";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = run(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome = run(id, expected, &env.harness, &env.db, snapshot).await;
+    env.shutdown().await;
     outcome
 }
 

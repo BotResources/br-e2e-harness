@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -30,6 +31,40 @@ impl DirectorySnapshotWire {
     pub fn group_id(entry: &KvEntry) -> Option<Uuid> {
         group_id_from_kv_key(&entry.key)
     }
+
+    pub(crate) fn keyed_users(&self) -> Result<BTreeMap<Uuid, &KvEntry>> {
+        keyed(&self.users, Self::user_id, "PublishedUser", "users")
+    }
+
+    pub(crate) fn keyed_groups(&self) -> Result<BTreeMap<Uuid, &KvEntry>> {
+        keyed(&self.groups, Self::group_id, "PublishedGroup", "groups")
+    }
+}
+
+fn keyed<'a>(
+    entries: &'a [KvEntry],
+    id_of: fn(&KvEntry) -> Option<Uuid>,
+    ty: &'static str,
+    namespace: &str,
+) -> Result<BTreeMap<Uuid, &'a KvEntry>> {
+    let mut keyed = BTreeMap::new();
+    for entry in entries {
+        let Some(id) = id_of(entry) else {
+            return Err(ConformanceError::NonConformantWire {
+                key: entry.key.clone(),
+                ty,
+                cause: format!("the key is not a {namespace}/{{uuid}} key"),
+            });
+        };
+        if let Some(first) = keyed.insert(id, entry) {
+            return Err(ConformanceError::NonConformantWire {
+                key: entry.key.clone(),
+                ty,
+                cause: format!("the key resolves to {id}, already carried by {}", first.key),
+            });
+        }
+    }
+    Ok(keyed)
 }
 
 pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {

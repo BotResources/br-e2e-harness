@@ -11,6 +11,7 @@ pub fn manifest_path(name: &str) -> PathBuf {
 }
 
 pub async fn provision(nats_url: &str, manifest: &str) -> Result<()> {
+    crate::prerequisite::fabric_nats()?;
     spawn_fabric_provision(nats_url, &manifest_path(manifest))
         .await
         .map_err(ConformanceError::Jetstream)
