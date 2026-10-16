@@ -25,6 +25,43 @@ mod real_infra {
     const STREAM: &str = "CHARTER";
     const SUBJECT: &str = "charter.evt.thing.created.v1";
 
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn await_panics_at_its_deadline_when_the_broker_dies() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+        recreate_stream(nats.jetstream(), STREAM, &["charter.>"]).await;
+        let js = nats.jetstream().clone();
+
+        let killer = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            server.shutdown().await;
+        });
+        let started = std::time::Instant::now();
+        let waiting = tokio::spawn(async move {
+            await_integration_event(&js, STREAM, SUBJECT, Duration::from_millis(1500)).await
+        })
+        .await;
+        killer.await.expect("the broker stops");
+
+        let error = waiting.expect_err("a dead broker must not read as no event arrived");
+        assert!(error.is_panic(), "{error}");
+        let message = error
+            .into_panic()
+            .downcast_ref::<String>()
+            .cloned()
+            .expect("a formatted message");
+        assert!(
+            message.starts_with("fabric capture drain failed: the NATS connection is "),
+            "{message}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
     #[tokio::test]
     #[ignore = "real-infra: needs `nats-server` on PATH"]
     async fn await_catches_an_event_published_after_a_clean_stream_reset() {

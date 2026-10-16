@@ -225,7 +225,7 @@ impl FabricTestNats {
             .await_event(coords)
             .await
             .expect("await_event: binding INTEGRATION_EVT failed");
-        FabricAwaiter::new(inner)
+        FabricAwaiter::watching(inner, self.client.clone())
     }
 
     pub async fn await_command(&self, coords: &CommandCoords) -> CommandAwaiter {

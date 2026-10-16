@@ -104,6 +104,13 @@ pub async fn connect(url: &str) -> Result<async_nats::Client, async_nats::Connec
     options.connect(url).await
 }
 
+pub(crate) fn assert_connected(client: &async_nats::Client) {
+    let state = client.connection_state();
+    if state != async_nats::connection::State::Connected {
+        panic!("fabric capture drain failed: the NATS connection is {state:?}");
+    }
+}
+
 async fn create_bucket(js: &jetstream::Context, bucket: &str) -> kv::Store {
     js.create_key_value(kv::Config {
         bucket: bucket.to_string(),

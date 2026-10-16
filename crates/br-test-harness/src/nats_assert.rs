@@ -32,7 +32,10 @@ pub async fn await_integration_event(
     });
 
     let message = match tokio::time::timeout(deadline, messages.next()).await {
-        Err(_) => return None,
+        Err(_) => {
+            crate::nats::assert_connected(&js.client());
+            return None;
+        }
         Ok(None) => panic!("await_integration_event: the pull stream on {subject} ended"),
         Ok(Some(Err(e))) => {
             panic!("await_integration_event: the pull stream on {subject} errored: {e}")
