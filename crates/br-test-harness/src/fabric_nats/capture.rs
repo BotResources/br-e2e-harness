@@ -165,6 +165,7 @@ async fn start_capture(
                     payload,
                 });
         }
+        record_error(&sink, format!("{stream_name}: the pull stream ended"));
     });
 
     Capture { state, task }
@@ -308,5 +309,85 @@ mod tests {
 
         assert!(none.is_none());
         server.shutdown().await;
+    }
+
+    fn command_coords() -> CommandCoords {
+        CommandCoords {
+            receiver: br_core_integration::Bc::new("notifier").unwrap(),
+            aggregate: br_core_integration::Aggregate::new("notification").unwrap(),
+            verb: br_core_integration::Verb::new("deliver").unwrap(),
+            version: 1,
+        }
+    }
+
+    fn event_coords() -> EventCoords {
+        EventCoords {
+            producer: br_core_integration::Bc::new("notifier").unwrap(),
+            aggregate: br_core_integration::Aggregate::new("notification").unwrap(),
+            fact: br_core_integration::PastFact::new("delivered").unwrap(),
+            version: 1,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_command_drain_panics_on_count() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_commands(&[&command_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_command_drain_panics_on_first() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_commands(&[&command_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_event_drain_panics_on_count() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_events(&[&event_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_event_drain_panics_on_first() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_events(&[&event_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn a_live_drain_reads_nothing_when_nothing_was_published() {
+        let nats = crate::FabricTestNats::start().await;
+        let events = nats.capture_events(&[&event_coords()]).await;
+        let commands = nats.capture_commands(&[&command_coords()]).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(events.count(), 0);
+        assert!(events.first().is_none());
+        assert_eq!(commands.count(), 0);
+        assert!(commands.first().is_none());
+
+        events.stop().await;
+        commands.stop().await;
+        nats.shutdown().await;
     }
 }

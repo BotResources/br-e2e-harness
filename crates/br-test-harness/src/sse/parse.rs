@@ -52,18 +52,23 @@ impl FrameBuffer {
 
 pub(crate) fn parse_block(block: &str) -> Option<Value> {
     let mut event_type = None;
-    let mut data = None;
+    let mut data_lines = Vec::new();
     for line in block.lines() {
         if let Some(val) = line.strip_prefix("event:") {
             event_type = Some(val.trim().to_string());
         } else if let Some(val) = line.strip_prefix("data:") {
-            data = Some(val.trim().to_string());
+            data_lines.push(val.trim().to_string());
         }
     }
     if event_type.as_deref() != Some("next") {
         return None;
     }
-    let payload: Value = serde_json::from_str(&data?).ok()?;
+    if data_lines.is_empty() {
+        panic!("subscription next frame carries no data: {block:?}");
+    }
+    let data = data_lines.join("\n");
+    let payload: Value = serde_json::from_str(&data)
+        .unwrap_or_else(|e| panic!("subscription next frame data is not JSON ({e}): {data:?}"));
     if payload["errors"] != Value::Null {
         panic!("subscription stream returned errors: {}", payload["errors"]);
     }
@@ -106,6 +111,25 @@ mod tests {
     #[should_panic(expected = "subscription stream returned errors")]
     fn parse_block_fails_loud_on_an_errors_payload() {
         parse_block("event: next\ndata: {\"errors\":[{\"message\":\"boom\"}]}");
+    }
+
+    #[test]
+    #[should_panic(expected = "next frame data is not JSON")]
+    fn parse_block_fails_loud_on_a_next_frame_whose_data_is_not_json() {
+        parse_block("event: next\ndata: {\"data\":");
+    }
+
+    #[test]
+    #[should_panic(expected = "next frame carries no data")]
+    fn parse_block_fails_loud_on_a_next_frame_without_data() {
+        parse_block("event: next");
+    }
+
+    #[test]
+    fn parse_block_joins_the_data_lines_of_one_frame() {
+        let data =
+            parse_block("event: next\ndata: {\"data\":\ndata: {\"a\":1}}").expect("a next frame");
+        assert_eq!(data["a"], 1);
     }
 
     fn drained(chunks: &[&[u8]]) -> Vec<String> {

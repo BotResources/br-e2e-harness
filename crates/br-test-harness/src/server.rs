@@ -13,17 +13,18 @@ impl TestServer {
         let base_url = format!("http://{addr}");
 
         tokio::spawn(async move {
-            axum::serve(listener, router).await.ok();
+            axum::serve(listener, router)
+                .await
+                .expect("test server stopped serving");
         });
 
         let client = reqwest::Client::new();
         for _ in 0..50 {
             if client.get(&base_url).send().await.is_ok() {
-                break;
+                return Self { base_url };
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
-
-        Self { base_url }
+        panic!("test server at {base_url} did not answer within 500ms");
     }
 }

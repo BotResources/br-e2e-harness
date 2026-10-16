@@ -116,4 +116,50 @@ mod real_infra {
         nats.cleanup().await;
         server.shutdown().await;
     }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "await_integration_event: get stream")]
+    async fn await_panics_when_the_stream_does_not_exist() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+
+        await_integration_event(
+            nats.jetstream(),
+            "NO_SUCH_STREAM",
+            SUBJECT,
+            Duration::from_millis(300),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "is not JSON")]
+    async fn await_panics_when_the_payload_is_not_json() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+        recreate_stream(nats.jetstream(), STREAM, &["charter.>"]).await;
+        nats.publish_raw(SUBJECT, b"not json".to_vec()).await;
+
+        await_integration_event(nats.jetstream(), STREAM, SUBJECT, Duration::from_secs(5)).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "await_integration_event")]
+    async fn await_panics_when_the_connection_ends_while_waiting() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+        let client = nats.client().clone();
+        recreate_stream(nats.jetstream(), STREAM, &["charter.>"]).await;
+
+        let wait =
+            await_integration_event(nats.jetstream(), STREAM, SUBJECT, Duration::from_secs(20));
+        let end = async {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            client.drain().await.expect("drain the client");
+        };
+        tokio::join!(wait, end);
+    }
 }

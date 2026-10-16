@@ -216,3 +216,39 @@ async fn drain_panics_on_an_errors_frame_never_swallows_it() {
 
     sub.drain(10, PUSH).await;
 }
+
+#[tokio::test]
+#[should_panic(expected = "next frame data is not JSON")]
+async fn a_next_frame_whose_data_is_not_json_panics_instead_of_reading_as_silence() {
+    let mut sub = open_closing_after("event: next\ndata: not json\n\n".to_string()).await;
+
+    sub.expect_silence("nothing was pushed", QUIET).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "subscription stream errored")]
+async fn a_body_cut_off_by_the_server_panics_instead_of_reading_as_closed() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("local addr"));
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut request = [0u8; 4096];
+        let _ = socket.read(&mut request).await;
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: 5000\r\n\r\nevent: next\n";
+        let _ = socket.write_all(head.as_bytes()).await;
+        let _ = socket.shutdown().await;
+    });
+    let mut sub = br_test_harness::SseSubscription::open(
+        &base,
+        &br_test_harness::PassportBuilder::new().build(),
+        "subscription { tick }",
+    )
+    .await;
+
+    sub.next_outcome(PUSH).await;
+}

@@ -5,6 +5,9 @@ use br_util_nats_fabric::{
 };
 
 use super::FabricTestNats;
+use super::absence::{
+    bucket_is_present, durable_config_if_present, last_raw_message_is_absent, stream_if_present,
+};
 use crate::nats::connect;
 use crate::spawned_nats::SpawnedNats;
 
@@ -73,15 +76,15 @@ impl BareFabricNats {
     }
 
     pub async fn published_language_absent(&self) -> bool {
-        self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_err()
+        !bucket_is_present(&self.js, KV_PUBLISHED_LANGUAGE).await
     }
 
     pub async fn command_stream_absent(&self) -> bool {
-        self.js.get_stream(INTEGRATION_CMD).await.is_err()
+        stream_if_present(&self.js, INTEGRATION_CMD).await.is_none()
     }
 
     pub async fn event_stream_absent(&self) -> bool {
-        self.js.get_stream(INTEGRATION_EVT).await.is_err()
+        stream_if_present(&self.js, INTEGRATION_EVT).await.is_none()
     }
 
     pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
@@ -175,13 +178,10 @@ pub async fn publish_dead_subject(
 }
 
 pub async fn raw_message_absent(js: &jetstream::Context, stream: &str, subject: &str) -> bool {
-    let Ok(stream) = js.get_stream(stream).await else {
+    let Some(stream) = stream_if_present(js, stream).await else {
         return true;
     };
-    stream
-        .get_last_raw_message_by_subject(subject)
-        .await
-        .is_err()
+    last_raw_message_is_absent(&stream, subject).await
 }
 
 pub async fn durable_filter_subjects(
@@ -210,10 +210,9 @@ pub async fn durable_filter_subjects_if_present(
     stream_name: &str,
     durable: &str,
 ) -> Option<Vec<String>> {
-    let stream = js.get_stream(stream_name).await.ok()?;
-    let mut consumer: jetstream::consumer::PullConsumer =
-        stream.get_consumer(durable).await.ok()?;
-    Some(filters_of(&consumer.info().await.ok()?.config))
+    let stream = stream_if_present(js, stream_name).await?;
+    let config = durable_config_if_present(&stream, durable).await?;
+    Some(filters_of(&config))
 }
 
 fn filters_of(config: &jetstream::consumer::Config) -> Vec<String> {

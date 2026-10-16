@@ -1,3 +1,4 @@
+mod absence;
 mod bearer;
 mod capture;
 mod cli_manifest;
@@ -138,8 +139,12 @@ impl FabricTestNats {
     }
 
     pub async fn fixed_streams_present(&self) -> bool {
-        self.js.get_stream(INTEGRATION_CMD).await.is_ok()
-            && self.js.get_stream(INTEGRATION_EVT).await.is_ok()
+        absence::stream_if_present(&self.js, INTEGRATION_CMD)
+            .await
+            .is_some()
+            && absence::stream_if_present(&self.js, INTEGRATION_EVT)
+                .await
+                .is_some()
     }
 
     pub async fn pl_get_raw(&self, key: &KvKey) -> Option<Vec<u8>> {
@@ -152,7 +157,7 @@ impl FabricTestNats {
     }
 
     pub async fn published_language_present(&self) -> bool {
-        self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_ok()
+        absence::bucket_is_present(&self.js, KV_PUBLISHED_LANGUAGE).await
     }
 
     pub async fn delete_published_language(&self) {
@@ -163,7 +168,7 @@ impl FabricTestNats {
     }
 
     pub async fn ephemeral_auth_present(&self) -> bool {
-        self.js.get_key_value(KV_EPHEMERAL_AUTH).await.is_ok()
+        absence::bucket_is_present(&self.js, KV_EPHEMERAL_AUTH).await
     }
 
     pub async fn kv_bucket_names(&self) -> BTreeSet<String> {

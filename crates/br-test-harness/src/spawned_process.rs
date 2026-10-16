@@ -153,16 +153,21 @@ where
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let chunk = String::from_utf8_lossy(&buf[..n]);
-                    if let Ok(mut guard) = logs.lock() {
-                        guard.push_str(&chunk);
-                    }
+                Ok(0) => break,
+                Err(e) => {
+                    append_log(&logs, &format!("\n[harness] log capture stopped: {e}\n"));
+                    break;
                 }
+                Ok(n) => append_log(&logs, &String::from_utf8_lossy(&buf[..n])),
             }
         }
     })
+}
+
+fn append_log(logs: &Mutex<String>, text: &str) {
+    logs.lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push_str(text);
 }
 
 pub fn workspace_bin(name: &str) -> PathBuf {
@@ -230,5 +235,60 @@ pub async fn run_once(
         Ok(Ok(output)) => Ok(output),
         Ok(Err(e)) => Err(format!("'{program}' failed to run: {e}")),
         Err(_) => Err(format!("'{program}' did not complete within {timeout:?}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncRead, ReadBuf};
+
+    use super::*;
+
+    struct BrokenPipe;
+
+    impl AsyncRead for BrokenPipe {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::Error::other("pipe broke")))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_log_read_is_recorded_in_the_logs_not_dropped() {
+        let logs = Arc::new(Mutex::new(String::new()));
+
+        spawn_drain(BrokenPipe, logs.clone())
+            .await
+            .expect("drain task");
+
+        assert!(
+            logs.lock()
+                .unwrap()
+                .contains("log capture stopped: pipe broke")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_log_mutex_still_receives_output() {
+        let logs = Arc::new(Mutex::new(String::new()));
+        let poisoner = logs.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poison the mutex");
+        })
+        .join();
+
+        spawn_drain(&b"hello"[..], logs.clone())
+            .await
+            .expect("drain task");
+
+        assert_eq!(*logs.lock().unwrap_or_else(|p| p.into_inner()), "hello");
     }
 }

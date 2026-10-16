@@ -10,7 +10,10 @@ pub async fn await_integration_event(
     subject: &str,
     deadline: Duration,
 ) -> Option<Value> {
-    let stream = js.get_stream(stream).await.ok()?;
+    let stream = js
+        .get_stream(stream)
+        .await
+        .unwrap_or_else(|e| panic!("await_integration_event: get stream {stream}: {e}"));
     let consumer = stream
         .create_consumer(consumer::pull::Config {
             durable_name: None,
@@ -21,14 +24,24 @@ pub async fn await_integration_event(
             ..Default::default()
         })
         .await
-        .ok()?;
-    let mut messages = consumer.messages().await.ok()?;
+        .unwrap_or_else(|e| panic!("await_integration_event: create consumer on {subject}: {e}"));
+    let mut messages = consumer.messages().await.unwrap_or_else(|e| {
+        panic!("await_integration_event: open the pull stream on {subject}: {e}")
+    });
 
-    let next = tokio::time::timeout(deadline, messages.next())
-        .await
-        .ok()??;
-    let msg = next.ok()?;
-    serde_json::from_slice::<Value>(&msg.payload).ok()
+    let message = match tokio::time::timeout(deadline, messages.next()).await {
+        Err(_) => return None,
+        Ok(None) => panic!("await_integration_event: the pull stream on {subject} ended"),
+        Ok(Some(Err(e))) => {
+            panic!("await_integration_event: the pull stream on {subject} errored: {e}")
+        }
+        Ok(Some(Ok(message))) => message,
+    };
+    Some(
+        serde_json::from_slice::<Value>(&message.payload).unwrap_or_else(|e| {
+            panic!("await_integration_event: the payload on {subject} is not JSON: {e}")
+        }),
+    )
 }
 
 pub async fn recreate_stream(
@@ -45,10 +58,7 @@ pub async fn recreate_stream(
         let _ = js.delete_stream(name).await;
         match js.create_stream(config.clone()).await {
             Ok(stream) => return stream,
-            Err(e) if attempt < 5 => {
-                tokio::time::sleep(backoff(attempt)).await;
-                let _ = e;
-            }
+            Err(_) if attempt < 5 => tokio::time::sleep(backoff(attempt)).await,
             Err(e) => panic!("create stream {name}: {e}"),
         }
     }
@@ -65,10 +75,7 @@ pub async fn recreate_kv(js: &jetstream::Context, bucket: &str) -> kv::Store {
         let _ = js.delete_key_value(bucket).await;
         match js.create_key_value(config.clone()).await {
             Ok(store) => return store,
-            Err(e) if attempt < 5 => {
-                tokio::time::sleep(backoff(attempt)).await;
-                let _ = e;
-            }
+            Err(_) if attempt < 5 => tokio::time::sleep(backoff(attempt)).await,
             Err(e) => panic!("create kv bucket {bucket}: {e}"),
         }
     }
