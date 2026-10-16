@@ -78,6 +78,52 @@ async fn provision_names_the_provisioning_failure_not_a_connect_failure() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn provision_names_the_durable_whose_creation_the_broker_refused() {
+    let server = RestrictedServer::start("$JS.API.CONSUMER.CREATE.>").await;
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+
+    let out = cli("provision", &server.url_as("restricted"), &manifest).await;
+
+    assert_eq!(out.status.code(), Some(3), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("verify_probe_cmd") && !err.contains("panicked at"),
+        "the failure must name the durable and carry no raw panic: {}",
+        rendered(&out)
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn verify_names_the_dead_broker_instead_of_panicking() {
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+    let closed_port = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a free port");
+        listener.local_addr().expect("local addr").port()
+    };
+
+    let out = cli(
+        "verify",
+        &format!("nats://127.0.0.1:{closed_port}"),
+        &manifest,
+    )
+    .await;
+
+    assert_eq!(out.status.code(), Some(3), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains(&format!("127.0.0.1:{closed_port}")) && !err.contains("panicked at"),
+        "the failure must name the broker and carry no raw panic: {}",
+        rendered(&out)
+    );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn verify_names_a_broker_error_on_the_durable_probe_instead_of_reading_it_as_absent() {
     let server = RestrictedServer::start("$JS.API.CONSUMER.INFO.>").await;
     let dir = tempfile::tempdir().expect("manifest dir");

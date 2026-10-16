@@ -96,29 +96,32 @@ async fn run() -> Result<(), Exit> {
 
 async fn provision(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
     let rendered = Manifest::parse(manifest)?.render(run_id)?;
-    let mut harness = connect(nats).await?;
-    if rendered.published_language {
-        harness = harness.with_published_language().await;
-        println!("kv PUBLISHED_LANGUAGE");
-    }
-    if rendered.bearer_tokens {
-        harness = harness.with_bearer_tokens().await;
-        println!("kv bearer_tokens");
-    }
-    for command in &rendered.commands {
-        harness
-            .provision_command_durable(&command.coords, &command.durable)
-            .await;
-        println!("cmd {} -> {}", command.durable, command.subject);
-    }
-    for event in &rendered.events {
-        harness
-            .provision_event_durable(&event.coords, &event.durable)
-            .await;
-        println!("evt {} -> {}", event.durable, event.subject);
-    }
-    harness.shutdown().await;
-    Ok(())
+    let harness = connect(nats).await?;
+    catch_panic(3, &format!("provisioning on NATS at {nats}"), async move {
+        let mut harness = harness;
+        if rendered.published_language {
+            harness = harness.with_published_language().await;
+            println!("kv PUBLISHED_LANGUAGE");
+        }
+        if rendered.bearer_tokens {
+            harness = harness.with_bearer_tokens().await;
+            println!("kv bearer_tokens");
+        }
+        for command in &rendered.commands {
+            harness
+                .provision_command_durable(&command.coords, &command.durable)
+                .await;
+            println!("cmd {} -> {}", command.durable, command.subject);
+        }
+        for event in &rendered.events {
+            harness
+                .provision_event_durable(&event.coords, &event.durable)
+                .await;
+            println!("evt {} -> {}", event.durable, event.subject);
+        }
+        harness.shutdown().await;
+    })
+    .await
 }
 
 async fn verify(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
@@ -127,7 +130,12 @@ async fn verify(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), 
     let fabric = harness.fabric_owned();
     let mut failed = None;
 
-    let buckets = harness.kv_bucket_names().await;
+    let buckets = catch_panic(
+        3,
+        &format!("listing the KV buckets of NATS at {nats}"),
+        harness.kv_bucket_names(),
+    )
+    .await?;
     for bucket in expected_buckets(&rendered) {
         if buckets.contains(bucket) {
             println!("ok kv {bucket} (bucket present)");

@@ -676,8 +676,9 @@ get-or-creates the `bearer_tokens` bucket. Both are wipe-free, so a passport sui
 provisions its `bearer_tokens` bucket through the CLI exactly like every other suite —
 no in-binary special-casing.
 
-Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** connect or
-fixed-stream provisioning failed (the message carries the cause) · **4** a durable
+Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** connect,
+provisioning (fixed streams, buckets, durables) or the bucket inventory failed (the message carries the
+cause, never a raw panic) · **4** a durable
 or bucket check failed (`NoStream` on an absent gitops stream, `FilterMismatch`, an
 absent or re-aimed durable, an absent bucket, or a broker error while probing the
 durable, reported with the broker's text — never read as "absent").
