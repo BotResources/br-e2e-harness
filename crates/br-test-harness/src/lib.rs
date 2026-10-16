@@ -1,3 +1,4 @@
+mod orphan_guard;
 pub mod spawned_process;
 pub mod wait;
 

@@ -1,4 +1,9 @@
+use std::time::Duration;
+
 use axum::Router;
+
+const READINESS_DEADLINE: Duration = Duration::from_secs(5);
+const PROBE_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct TestServer {
     pub base_url: String,
@@ -19,12 +24,15 @@ impl TestServer {
         });
 
         let client = reqwest::Client::new();
-        for _ in 0..50 {
-            if client.get(&base_url).send().await.is_ok() {
-                return Self { base_url };
+        let answered = tokio::time::timeout(READINESS_DEADLINE, async {
+            while client.get(&base_url).send().await.is_err() {
+                tokio::time::sleep(PROBE_INTERVAL).await;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        })
+        .await;
+        if answered.is_err() {
+            panic!("test server at {base_url} did not answer within {READINESS_DEADLINE:?}");
         }
-        panic!("test server at {base_url} did not answer within 500ms");
+        Self { base_url }
     }
 }

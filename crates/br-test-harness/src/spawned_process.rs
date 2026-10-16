@@ -49,6 +49,9 @@ impl SpawnedProcess {
         let mut child = command
             .spawn()
             .unwrap_or_else(|e| panic!("failed to spawn '{program}': {e}"));
+        if let Some(pid) = child.id() {
+            crate::orphan_guard::spawn(pid, None);
+        }
 
         let logs = Arc::new(Mutex::new(String::new()));
         let mut drains = Vec::new();
@@ -233,6 +236,9 @@ pub async fn run_once(
     let child = command
         .spawn()
         .map_err(|e| format!("failed to spawn '{program}': {e}"))?;
+    if let Some(pid) = child.id() {
+        crate::orphan_guard::spawn(pid, None);
+    }
 
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(output)) => Ok(output),

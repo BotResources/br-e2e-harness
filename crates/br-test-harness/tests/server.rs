@@ -15,7 +15,20 @@ async fn spawn_returns_the_base_url_of_a_router_that_answers() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "did not answer within 500ms")]
+#[should_panic(expected = "did not answer within 5s")]
 async fn spawn_panics_when_the_server_never_answers() {
     let _ = TestServer::spawn(Router::new().route("/", get(|| async { boom() }))).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "did not answer within 5s")]
+async fn spawn_panics_when_the_handler_never_resolves() {
+    let _ = TestServer::spawn(Router::new().route(
+        "/",
+        get(|| async {
+            std::future::pending::<()>().await;
+            "never"
+        }),
+    ))
+    .await;
 }
