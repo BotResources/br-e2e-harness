@@ -60,8 +60,13 @@ pub(crate) fn parse_block(block: &str) -> Option<Value> {
             data_lines.push(val.trim().to_string());
         }
     }
-    if event_type.as_deref() != Some("next") {
-        return None;
+    match event_type.as_deref() {
+        Some("next") => {}
+        Some("complete") => return None,
+        _ if data_lines.is_empty() => return None,
+        other => {
+            panic!("subscription frame with data has an unexpected event {other:?}: {block:?}")
+        }
     }
     if data_lines.is_empty() {
         panic!("subscription next frame carries no data: {block:?}");
@@ -103,6 +108,25 @@ mod tests {
     fn parse_block_ignores_non_next_frames() {
         assert!(parse_block("event: complete\ndata: {}").is_none());
         assert!(parse_block(": keep-alive comment").is_none());
+    }
+
+    #[test]
+    fn parse_block_panics_on_a_data_block_whose_event_is_not_next() {
+        for block in [
+            "event: message\ndata: {\"data\":{\"tick\":7}}",
+            "data: {\"data\":{\"tick\":7}}",
+            "event: nxt\ndata: {\"data\":{\"tick\":7}}",
+        ] {
+            let outcome = std::panic::catch_unwind(|| parse_block(block));
+            assert!(outcome.is_err(), "{block}");
+        }
+    }
+
+    #[test]
+    fn parse_block_ignores_comment_only_and_dataless_non_next_blocks() {
+        assert!(parse_block(":\n: keep-alive").is_none());
+        assert!(parse_block("event: ping").is_none());
+        assert!(parse_block("id: 4\nretry: 100").is_none());
     }
 
     #[test]

@@ -202,7 +202,15 @@ impl WsSubscription {
                         reason: frame.reason.to_string(),
                     });
                 }
-                _ => continue,
+                Message::Binary(bytes) => {
+                    return Err(WsError::Transport(format!(
+                        "binary frame ({} bytes) on a text subscription",
+                        bytes.len()
+                    )));
+                }
+                Message::Frame(_) => {
+                    return Err(WsError::Transport("raw frame on a subscription".into()));
+                }
             };
             let msg: Value = serde_json::from_str(&text)
                 .map_err(|e| WsError::Transport(format!("parse frame `{text}`: {e}")))?;
@@ -216,7 +224,17 @@ impl WsSubscription {
                         .await
                         .map_err(|e| WsError::Transport(format!("send pong: {e}")))?;
                 }
-                _ => {}
+                Some("pong" | "connection_ack") => {}
+                Some(other) => {
+                    return Err(WsError::Transport(format!(
+                        "unknown frame type `{other}`: {text}"
+                    )));
+                }
+                None => {
+                    return Err(WsError::Transport(format!(
+                        "frame without a `type`: {text}"
+                    )));
+                }
             }
         }
     }

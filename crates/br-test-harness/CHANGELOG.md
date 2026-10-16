@@ -34,6 +34,8 @@ form to decide whether a version ships.
 - `fabric-nats verify` exits 4 with the broker's text (`probing durable ... : the broker did not answer "absent"`) when the durable probe gets a broker error, instead of reading it as an absent durable or crashing with exit 101; exit 3 now means connect or fixed-stream provisioning failed. The README exit-code line says so.
 - The copy-me `TestContext::kv_get` in the README panics on a KV transport error or a non-JSON value instead of reading both as an absent key.
 - `TestServer::spawn` is covered by `tests/server.rs`: a router whose handler panics leaves the server unanswering and the spawn panics; a healthy router returns its base URL.
+- `WsSubscription` returns `WsError::Transport` for a binary frame, for a text frame whose `type` is missing or unknown (`nxt`), instead of skipping it as if nothing was pushed (`Err(Timeout)`, so a "nothing was pushed" assertion passed while the service pushed a broken frame); `pong` and `connection_ack` stay ignored.
+- `SseSubscription` panics on a block that carries `data:` lines under an `event:` that is not `next` or `complete` (`event: message`, a data-only block, `event: nxt`), instead of reading it as no push; comment-only blocks, blocks without `data:` and `complete` stay ignored.
 
 ## 0.1.1
 

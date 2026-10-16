@@ -20,6 +20,10 @@ pub enum Step {
     CloseWith(u16, &'static str),
     Garbage,
     Ping,
+    Binary,
+    UnknownType,
+    MissingType,
+    Pong,
 }
 
 #[derive(Default)]
@@ -98,6 +102,12 @@ async fn drive(mut socket: WebSocket, endpoint: Arc<FakeEndpoint>) {
             })),
             Step::Garbage => Message::Text("not json".into()),
             Step::Ping => Message::Text(r#"{"type":"ping"}"#.into()),
+            Step::Binary => Message::Binary(vec![0x01, 0x02, 0x03].into()),
+            Step::UnknownType => {
+                Message::Text(r#"{"type":"nxt","payload":{"data":{"tick":7}}}"#.into())
+            }
+            Step::MissingType => Message::Text(r#"{"payload":{"data":{"tick":7}}}"#.into()),
+            Step::Pong => Message::Text(r#"{"type":"pong"}"#.into()),
         };
         if socket.send(frame).await.is_err() {
             return;

@@ -178,6 +178,46 @@ async fn a_next_frame_without_a_data_key_is_a_transport_outcome() {
 }
 
 #[tokio::test]
+async fn a_binary_frame_is_a_transport_outcome_not_silence() {
+    let outcome = first_outcome(vec![Step::Binary]).await;
+
+    let Err(WsError::Transport(message)) = outcome else {
+        panic!("a binary frame must surface as WsError::Transport, got {outcome:?}");
+    };
+    assert!(message.contains("binary frame"), "got {message}");
+}
+
+#[tokio::test]
+async fn a_frame_of_an_unknown_type_is_a_transport_outcome_not_silence() {
+    let outcome = first_outcome(vec![Step::UnknownType]).await;
+
+    let Err(WsError::Transport(message)) = outcome else {
+        panic!("an unknown frame type must surface as WsError::Transport, got {outcome:?}");
+    };
+    assert!(
+        message.contains("unknown frame type `nxt`"),
+        "got {message}"
+    );
+}
+
+#[tokio::test]
+async fn a_frame_without_a_type_is_a_transport_outcome_not_silence() {
+    let outcome = first_outcome(vec![Step::MissingType]).await;
+
+    let Err(WsError::Transport(message)) = outcome else {
+        panic!("a frame without a type must surface as WsError::Transport, got {outcome:?}");
+    };
+    assert!(message.contains("without a `type`"), "got {message}");
+}
+
+#[tokio::test]
+async fn a_pong_frame_is_ignored_and_the_read_loop_continues() {
+    let outcome = first_outcome(vec![Step::Pong, Step::Next]).await;
+
+    assert_eq!(outcome.expect("a pong is not a push")["tick"], 7);
+}
+
+#[tokio::test]
 async fn a_next_frame_with_an_explicit_null_data_is_still_a_push() {
     assert_eq!(
         first_outcome(vec![Step::NextWithNullData]).await,

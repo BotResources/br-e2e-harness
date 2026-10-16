@@ -275,3 +275,32 @@ async fn a_body_cut_off_by_the_server_panics_instead_of_reading_as_closed() {
 
     sub.next_outcome(PUSH).await;
 }
+
+#[tokio::test]
+#[should_panic(expected = "unexpected event")]
+async fn a_data_block_with_an_event_message_fails_loud() {
+    let mut sub =
+        open_closing_after("event: message\ndata: {\"data\":{\"tick\":7}}\n\n".to_string()).await;
+    sub.next_outcome(PUSH).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "unexpected event")]
+async fn a_data_only_block_fails_loud() {
+    let mut sub = open_closing_after("data: {\"data\":{\"tick\":7}}\n\n".to_string()).await;
+    sub.next_outcome(PUSH).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "unexpected event")]
+async fn a_data_block_with_a_misspelled_event_fails_loud() {
+    let mut sub =
+        open_closing_after("event: nxt\ndata: {\"data\":{\"tick\":7}}\n\n".to_string()).await;
+    sub.next_outcome(PUSH).await;
+}
+
+#[tokio::test]
+async fn keep_alive_comments_and_complete_blocks_stay_ignored() {
+    let mut sub = open_closing_after(":\n\nevent: complete\ndata: {}\n\n".to_string()).await;
+    assert_eq!(sub.next_outcome(PUSH).await, SseOutcome::Closed);
+}
