@@ -17,9 +17,13 @@ form to decide whether a version ships.
 - `EventCapture` and `CommandCapture` panic with `fabric capture drain failed` on `count()`, `first()`, `for_correlation()` and `correlation_ids()` when their pull stream has ended (client drained, connection closed), instead of reporting `count() == 0` and `first() == None`; a "no event / no command was published" assertion no longer passes on a dead drain.
 - `await_integration_event` returns `None` only when the deadline passes. A missing stream, a consumer that cannot be created, a pull stream that ends or errors, and a payload that is not JSON panic; they were all `None`, so a "no event arrived" assertion passed on a broken broker.
 - `BareFabricNats::{command_stream_absent, event_stream_absent, published_language_absent}`, `FabricTestNats::{raw_message_absent, durable_filter_subjects_if_present, fixed_streams_present, published_language_present, ephemeral_auth_present}` and the free `raw_message_absent` / `durable_filter_subjects_if_present` read "absent" only from the broker's own "not found" answer. A dead or timed-out broker panics; any error used to read as absent, so an absence assertion passed on a dead broker.
+- `WsSubscription` returns `WsError::ErrorFrame` for a `next` frame whose payload carries `errors` and `WsError::Transport` for one with no `data` key, instead of `Ok(Null)`; an explicit `data: null` is still a push.
+- `recreate_stream` and `recreate_kv` ignore only the broker's stream-not-found answer on the delete; any other delete failure is retried in the bounded loop and then panics, instead of the create silently returning the old stream or bucket with its data.
+- `EventCapture` and `CommandCapture` reads of a dead drain all panic with `fabric capture drain failed`; the first panic no longer poisons the capture mutex so later reads do not panic with `capture mutex poisoned`.
+- `SpawnedNats` start failures show a failed read of the server's stderr as `<stderr read failed: ...>` instead of an empty text.
 - `SseSubscription` panics on a `next` frame whose data is missing or not JSON, instead of skipping it as if nothing was pushed; the `data:` lines of one frame are joined with a newline as the SSE format defines.
 - `TestServer::spawn` panics when the server does not answer within 500ms, and its serve task panics with `test server stopped serving` instead of ending silently.
-- `SpawnedProcess` records a failed read of the child's pipe in `logs()` (`[harness] log capture stopped`) and keeps appending to a poisoned log mutex, instead of dropping output without a trace.
+- `SpawnedProcess` records a failed read of the child's pipe in `logs()` (`[harness] log capture stopped`) and keeps appending to, and `logs()` keeps reading, a poisoned log mutex, instead of dropping output without a trace.
 - `E2eDatabase` teardown prints a warning when a `REVOKE` fails, like its other teardown steps.
 
 ## 0.1.1

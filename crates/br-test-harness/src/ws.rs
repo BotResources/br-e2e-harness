@@ -207,7 +207,7 @@ impl WsSubscription {
             let msg: Value = serde_json::from_str(&text)
                 .map_err(|e| WsError::Transport(format!("parse frame `{text}`: {e}")))?;
             match msg["type"].as_str() {
-                Some("next") => return Ok(msg["payload"]["data"].clone()),
+                Some("next") => return next_payload_data(&msg),
                 Some("error") => return Err(WsError::ErrorFrame(msg.to_string())),
                 Some("complete") => return Err(WsError::Completed),
                 Some("ping") => {
@@ -237,6 +237,19 @@ impl WsSubscription {
         } else {
             Err(format!("ws: expected `{want}`, got `{text}`"))
         }
+    }
+}
+
+fn next_payload_data(msg: &Value) -> Result<Value, WsError> {
+    let payload = &msg["payload"];
+    if !payload["errors"].is_null() {
+        return Err(WsError::ErrorFrame(msg.to_string()));
+    }
+    match payload.get("data") {
+        Some(data) => Ok(data.clone()),
+        None => Err(WsError::Transport(format!(
+            "next frame carries no data: {msg}"
+        ))),
     }
 }
 

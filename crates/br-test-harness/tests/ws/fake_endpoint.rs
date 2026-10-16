@@ -12,6 +12,9 @@ use br_test_harness::TestServer;
 pub enum Step {
     Next,
     ErrorFrame,
+    NextWithErrors,
+    NextWithoutData,
+    NextWithNullData,
     Complete,
     Close,
     CloseWith(u16, &'static str),
@@ -77,6 +80,15 @@ async fn drive(mut socket: WebSocket, endpoint: Arc<FakeEndpoint>) {
             }
             Step::ErrorFrame => {
                 Message::Text(r#"{"id":"1","type":"error","payload":[{"message":"boom"}]}"#.into())
+            }
+            Step::NextWithErrors => Message::Text(
+                r#"{"id":"1","type":"next","payload":{"errors":[{"message":"boom"}]}}"#.into(),
+            ),
+            Step::NextWithoutData => {
+                Message::Text(r#"{"id":"1","type":"next","payload":{}}"#.into())
+            }
+            Step::NextWithNullData => {
+                Message::Text(r#"{"id":"1","type":"next","payload":{"data":null}}"#.into())
             }
             Step::Complete => Message::Text(r#"{"id":"1","type":"complete"}"#.into()),
             Step::Close => Message::Close(None),

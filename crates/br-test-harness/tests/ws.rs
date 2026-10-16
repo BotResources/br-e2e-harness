@@ -152,6 +152,56 @@ async fn an_error_frame_carries_the_server_payload() {
 }
 
 #[tokio::test]
+async fn a_next_frame_carrying_graphql_errors_is_an_error_frame_outcome() {
+    let outcome = first_outcome(vec![Step::NextWithErrors]).await;
+
+    let Err(WsError::ErrorFrame(frame)) = outcome else {
+        panic!("a `next` frame with `errors` must surface as WsError::ErrorFrame, got {outcome:?}");
+    };
+    assert!(
+        frame.contains("boom"),
+        "the error frame must carry the GraphQL errors, got {frame}"
+    );
+}
+
+#[tokio::test]
+async fn a_next_frame_without_a_data_key_is_a_transport_outcome() {
+    let outcome = first_outcome(vec![Step::NextWithoutData]).await;
+
+    let Err(WsError::Transport(message)) = outcome else {
+        panic!("a `next` frame without `data` must surface as WsError::Transport, got {outcome:?}");
+    };
+    assert!(
+        message.contains("carries no data"),
+        "the transport failure must say the data is missing, got {message}"
+    );
+}
+
+#[tokio::test]
+async fn a_next_frame_with_an_explicit_null_data_is_still_a_push() {
+    assert_eq!(
+        first_outcome(vec![Step::NextWithNullData]).await,
+        Ok(serde_json::Value::Null)
+    );
+}
+
+#[tokio::test]
+async fn next_matching_stops_on_a_next_frame_carrying_graphql_errors() {
+    let (mut subscription, _endpoint) = open(
+        vec![Step::NextWithErrors, Step::Next],
+        WsCredential::Anonymous,
+    )
+    .await;
+
+    let outcome = subscription.next_matching_outcome(|_| true, PUSH).await;
+
+    assert!(
+        matches!(outcome, Err(WsError::ErrorFrame(_))),
+        "a drain must not skip a `next` frame carrying errors, got {outcome:?}"
+    );
+}
+
+#[tokio::test]
 async fn next_data_renders_every_outcome_through_display() {
     assert_eq!(
         first_error_string(vec![]).await,

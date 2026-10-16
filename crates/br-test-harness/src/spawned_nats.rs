@@ -124,18 +124,71 @@ fn parse_client_port(ports_file: &str) -> Option<u16> {
 }
 
 async fn drain_stderr(child: &mut Child) -> String {
-    use tokio::io::AsyncReadExt;
-    let Some(mut stderr) = child.stderr.take() else {
+    let Some(stderr) = child.stderr.take() else {
         return String::from("<stderr unavailable>");
     };
+    read_diagnostic(stderr, Duration::from_millis(500)).await
+}
+
+async fn read_diagnostic<R>(mut reader: R, window: Duration) -> String
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncReadExt;
     let mut buf = Vec::new();
-    let _ = tokio::time::timeout(Duration::from_millis(500), stderr.read_to_end(&mut buf)).await;
-    String::from_utf8_lossy(&buf).into_owned()
+    let outcome = tokio::time::timeout(window, reader.read_to_end(&mut buf)).await;
+    let mut text = String::from_utf8_lossy(&buf).into_owned();
+    if let Ok(Err(e)) = outcome {
+        text.push_str(&format!("\n<stderr read failed: {e}>"));
+    }
+    text
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_client_port;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+
+    use tokio::io::{AsyncRead, ReadBuf};
+
+    use super::{parse_client_port, read_diagnostic};
+
+    struct BrokenPipe;
+
+    impl AsyncRead for BrokenPipe {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::Error::other("pipe broke")))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_stderr_read_is_named_in_the_diagnostic() {
+        let text = read_diagnostic(BrokenPipe, Duration::from_millis(500)).await;
+
+        assert!(text.contains("<stderr read failed: pipe broke>"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_complete_stderr_read_is_returned_as_is() {
+        let text = read_diagnostic(&b"boom"[..], Duration::from_millis(500)).await;
+
+        assert_eq!(text, "boom");
+    }
+
+    #[tokio::test]
+    async fn a_silent_stderr_stays_quiet_at_the_window() {
+        let (_writer, reader) = tokio::io::duplex(64);
+
+        let text = read_diagnostic(reader, Duration::from_millis(50)).await;
+
+        assert_eq!(text, "");
+    }
 
     #[test]
     fn reads_the_bound_port_the_server_reports() {

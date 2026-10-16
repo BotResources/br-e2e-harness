@@ -1,5 +1,9 @@
 #![cfg(feature = "nats")]
 
+#[cfg(feature = "spawned-nats")]
+#[path = "nats_support/restricted_server.rs"]
+mod restricted_server;
+
 use br_test_harness::nats_assert::{await_integration_event, recreate_kv, recreate_stream};
 
 #[test]
@@ -15,6 +19,8 @@ mod real_infra {
 
     use br_test_harness::nats_assert::{await_integration_event, recreate_kv, recreate_stream};
     use br_test_harness::{SpawnedNats, TestNats};
+
+    use super::restricted_server::RestrictedServer;
 
     const STREAM: &str = "CHARTER";
     const SUBJECT: &str = "charter.evt.thing.created.v1";
@@ -161,5 +167,64 @@ mod real_infra {
             client.drain().await.expect("drain the client");
         };
         tokio::join!(wait, end);
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn recreate_stream_drops_prior_messages_when_the_broker_allows_the_delete() {
+        let server = RestrictedServer::start("$JS.API.CONSUMER.DELETE.>").await;
+        let restricted = server.jetstream_as("restricted").await;
+        recreate_stream(&restricted, STREAM, &["charter.>"]).await;
+        for _ in 0..3 {
+            restricted
+                .publish(SUBJECT, "x".into())
+                .await
+                .expect("publish")
+                .await
+                .expect("ack");
+        }
+
+        let recreated = recreate_stream(&restricted, STREAM, &["charter.>"]).await;
+
+        assert_eq!(
+            recreated.cached_info().state.messages,
+            0,
+            "control run: with the delete allowed the stream is emptied"
+        );
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "delete stream CHARTER")]
+    async fn recreate_stream_panics_when_the_broker_refuses_the_delete() {
+        let server = RestrictedServer::start("$JS.API.STREAM.DELETE.>").await;
+        let admin = server.jetstream_as("admin").await;
+        recreate_stream(&admin, STREAM, &["charter.>"]).await;
+        admin
+            .publish(SUBJECT, "x".into())
+            .await
+            .expect("publish")
+            .await
+            .expect("ack");
+        let restricted = server.jetstream_as("restricted").await;
+
+        recreate_stream(&restricted, STREAM, &["charter.>"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "delete kv bucket charter")]
+    async fn recreate_kv_panics_when_the_broker_refuses_the_delete() {
+        let server = RestrictedServer::start("$JS.API.STREAM.DELETE.>").await;
+        let admin = server.jetstream_as("admin").await;
+        let store = recreate_kv(&admin, "charter").await;
+        store
+            .put("k", b"v".to_vec().into())
+            .await
+            .expect("put on the bucket");
+        let restricted = server.jetstream_as("restricted").await;
+
+        recreate_kv(&restricted, "charter").await;
     }
 }

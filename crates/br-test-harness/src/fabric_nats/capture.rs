@@ -103,12 +103,22 @@ impl Capture {
     }
 
     fn guarded(&self) -> std::sync::MutexGuard<'_, CaptureState> {
-        let state = self.state.lock().expect("capture mutex poisoned");
-        if let Some(cause) = &state.drain_error {
-            panic!("fabric capture drain failed: {cause}");
+        let state = lock(&self.state);
+        let cause = state.drain_error.clone();
+        match cause {
+            None => state,
+            Some(cause) => {
+                drop(state);
+                panic!("fabric capture drain failed: {cause}");
+            }
         }
-        state
     }
+}
+
+fn lock(state: &Mutex<CaptureState>) -> std::sync::MutexGuard<'_, CaptureState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 async fn start_capture(
@@ -156,14 +166,11 @@ async fn start_capture(
             let Ok(probe) = serde_json::from_slice::<CorrelationProbe>(&payload) else {
                 continue;
             };
-            sink.lock()
-                .expect("capture mutex poisoned")
-                .messages
-                .push(CapturedMessage {
-                    subject: message.subject.as_str().to_string(),
-                    metadata: probe.metadata,
-                    payload,
-                });
+            lock(&sink).messages.push(CapturedMessage {
+                subject: message.subject.as_str().to_string(),
+                metadata: probe.metadata,
+                payload,
+            });
         }
         record_error(&sink, format!("{stream_name}: the pull stream ended"));
     });
@@ -172,7 +179,7 @@ async fn start_capture(
 }
 
 fn record_error(sink: &Arc<Mutex<CaptureState>>, cause: String) {
-    let mut state = sink.lock().expect("capture mutex poisoned");
+    let mut state = lock(sink);
     if state.drain_error.is_none() {
         state.drain_error = Some(cause);
     }
@@ -371,6 +378,45 @@ mod tests {
         nats.client.drain().await.expect("drain the client");
         tokio::time::sleep(Duration::from_millis(500)).await;
         capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn every_read_of_a_dead_drain_names_the_drain_failure_not_a_poisoned_mutex() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_events(&[&event_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let reads: [Box<dyn Fn() + '_>; 5] = [
+            Box::new(|| {
+                let _ = capture.0.count();
+            }),
+            Box::new(|| {
+                let _ = capture.0.first();
+            }),
+            Box::new(|| {
+                let _ = capture.0.for_correlation(Uuid::now_v7());
+            }),
+            Box::new(|| {
+                let _ = capture.0.correlation_ids();
+            }),
+            Box::new(|| {
+                let _ = capture.0.count();
+            }),
+        ];
+        for read in reads {
+            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(read))
+                .expect_err("a read of a dead drain must panic");
+            let message = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .expect("the panic carries a formatted message");
+            assert!(
+                message.starts_with("fabric capture drain failed: "),
+                "every read must name the drain failure, got {message}"
+            );
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

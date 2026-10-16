@@ -128,7 +128,10 @@ impl SpawnedProcess {
     }
 
     pub fn logs(&self) -> String {
-        self.logs.lock().expect("logs mutex poisoned").clone()
+        self.logs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     #[cfg(feature = "sse")]
@@ -276,19 +279,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_poisoned_log_mutex_still_receives_output() {
-        let logs = Arc::new(Mutex::new(String::new()));
-        let poisoner = logs.clone();
+    async fn a_poisoned_log_mutex_still_receives_and_returns_output() {
+        let mut process = SpawnedProcess::spawn("sh", &["-c", "sleep 0.3; echo hello"], &[]);
+        let poisoner = process.logs.clone();
         let _ = std::thread::spawn(move || {
             let _guard = poisoner.lock().unwrap();
             panic!("poison the mutex");
         })
         .join();
 
-        spawn_drain(&b"hello"[..], logs.clone())
-            .await
-            .expect("drain task");
+        for handle in process.drains.drain(..) {
+            handle.await.expect("drain task");
+        }
 
-        assert_eq!(*logs.lock().unwrap_or_else(|p| p.into_inner()), "hello");
+        assert_eq!(process.logs().trim(), "hello");
     }
 }

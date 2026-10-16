@@ -1,22 +1,8 @@
+use async_nats::jetstream;
 use async_nats::jetstream::consumer;
-use async_nats::jetstream::context::{GetStreamError, GetStreamErrorKind, KeyValueError};
 use async_nats::jetstream::stream::{LastRawMessageErrorKind, Stream};
-use async_nats::jetstream::{self, ErrorCode};
 
-pub(super) fn stream_not_found(err: &GetStreamError) -> bool {
-    matches!(err.kind(), GetStreamErrorKind::JetStream(inner) if inner.error_code() == ErrorCode::STREAM_NOT_FOUND)
-}
-
-fn bucket_not_found(err: &KeyValueError) -> bool {
-    let mut source = std::error::Error::source(err);
-    while let Some(cause) = source {
-        if let Some(get) = cause.downcast_ref::<GetStreamError>() {
-            return stream_not_found(get);
-        }
-        source = cause.source();
-    }
-    false
-}
+use crate::broker_answer::{bucket_not_found, stream_not_found};
 
 pub(super) async fn stream_if_present(js: &jetstream::Context, name: &str) -> Option<Stream> {
     match js.get_stream(name).await {
@@ -61,6 +47,17 @@ pub(super) async fn durable_config_if_present(
 }
 
 #[cfg(test)]
+pub(super) async fn dead_jetstream() -> jetstream::Context {
+    let server = crate::SpawnedNats::start().await;
+    let client = crate::nats::connect(&server.url())
+        .await
+        .expect("connect to the spawned server");
+    let js = jetstream::new(client);
+    server.shutdown().await;
+    js
+}
+
+#[cfg(test)]
 mod tests {
     use std::time::Duration;
 
@@ -74,13 +71,25 @@ mod tests {
     }
 
     async fn dead_broker() -> Dead {
-        let server = SpawnedNats::start().await;
-        let client = crate::nats::connect(&server.url())
+        Dead {
+            js: dead_jetstream().await,
+        }
+    }
+
+    async fn stream_then_dead_broker() -> Stream {
+        let (server, js) = live_broker().await;
+        js.create_stream(stream::Config {
+            name: "THINGS".to_string(),
+            subjects: vec!["things.>".to_string()],
+            ..Default::default()
+        })
+        .await
+        .expect("create the stream");
+        let stream = stream_if_present(&js, "THINGS")
             .await
-            .expect("connect to the spawned server");
-        let js = jetstream::new(client);
+            .expect("the stream exists");
         server.shutdown().await;
-        Dead { js }
+        stream
     }
 
     async fn live_broker() -> (SpawnedNats, jetstream::Context) {
@@ -170,6 +179,32 @@ mod tests {
         let _ = tokio::time::timeout(
             Duration::from_secs(30),
             bucket_is_present(&dead.js, "things"),
+        )
+        .await
+        .expect("the probe answers within 30s");
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe the last message of things.a on THINGS")]
+    async fn a_dead_broker_does_not_read_as_no_message() {
+        let stream = stream_then_dead_broker().await;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(30),
+            last_raw_message_is_absent(&stream, "things.a"),
+        )
+        .await
+        .expect("the probe answers within 30s");
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe durable worker on THINGS")]
+    async fn a_dead_broker_does_not_read_as_an_absent_durable() {
+        let stream = stream_then_dead_broker().await;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(30),
+            durable_config_if_present(&stream, "worker"),
         )
         .await
         .expect("the probe answers within 30s");
