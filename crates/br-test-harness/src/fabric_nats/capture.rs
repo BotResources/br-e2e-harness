@@ -1,3 +1,4 @@
+use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -31,7 +32,7 @@ pub struct EventCapture(Capture);
 pub struct CommandCapture(Capture);
 
 struct Capture {
-    client: async_nats::Client,
+    client: AssertUnwindSafe<async_nats::Client>,
     state: Arc<Mutex<CaptureState>>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -196,7 +197,7 @@ async fn start_capture(
     });
 
     Capture {
-        client: js.client(),
+        client: AssertUnwindSafe(js.client()),
         state,
         task,
     }
@@ -277,13 +278,13 @@ pub async fn subscribe_command(js: &jetstream::Context, coords: &CommandCoords) 
         .unwrap_or_else(|e| panic!("await_command: subscribe {subject}: {e}"));
     CommandAwaiter {
         subscriber,
-        client: js.client(),
+        client: AssertUnwindSafe(js.client()),
     }
 }
 
 pub struct CommandAwaiter {
     subscriber: async_nats::Subscriber,
-    client: async_nats::Client,
+    client: AssertUnwindSafe<async_nats::Client>,
 }
 
 impl CommandAwaiter {
@@ -343,7 +344,7 @@ mod tests {
         client.drain().await.expect("drain ends every subscription");
         let mut awaiter = CommandAwaiter {
             subscriber,
-            client: client.clone(),
+            client: AssertUnwindSafe(client.clone()),
         };
 
         awaiter
@@ -368,7 +369,7 @@ mod tests {
         client.flush().await.expect("flush");
         let mut awaiter = CommandAwaiter {
             subscriber,
-            client: client.clone(),
+            client: AssertUnwindSafe(client.clone()),
         };
 
         awaiter
@@ -389,7 +390,7 @@ mod tests {
             .expect("subscribe");
         let mut awaiter = CommandAwaiter {
             subscriber,
-            client: client.clone(),
+            client: AssertUnwindSafe(client.clone()),
         };
 
         let none = awaiter
@@ -488,7 +489,7 @@ mod tests {
             }),
         ];
         for read in reads {
-            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(read))
+            let panic = std::panic::catch_unwind(AssertUnwindSafe(read))
                 .expect_err("a read of a dead drain must panic");
             let message = panic
                 .downcast_ref::<String>()
@@ -510,7 +511,7 @@ mod tests {
             drain_error: None,
         }));
         Capture {
-            client,
+            client: AssertUnwindSafe(client),
             state,
             task,
         }
@@ -578,7 +579,7 @@ mod tests {
             .await;
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| capture.count()))
+        let panic = std::panic::catch_unwind(AssertUnwindSafe(|| capture.count()))
             .expect_err("junk on the captured subject must fail the read");
         let message = panic
             .downcast_ref::<String>()
