@@ -151,8 +151,9 @@ cargo test -p conformance-directory --test conformance -- --ignored --test-threa
 `CREATE ROLE` / `CREATE DATABASE` — the harness provisions a throwaway owner role
 and database per Cx test and drops them on cleanup.
 
-CI runs the full `--ignored` battery (`--test-threads=1`) in the `infra-e2e` job,
-which provides the Postgres service container, `nats-server` on `PATH`, a `go`
+CI runs `cargo test -p conformance-directory --all-targets -- --ignored --test-threads=1`
+in the `infra-e2e` job (the battery, the absent-bucket test and the ignored unit
+test of `extensions.rs`), which provides the Postgres service container, `nats-server` on `PATH`, a `go`
 toolchain, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
 PR, not just documented.
 

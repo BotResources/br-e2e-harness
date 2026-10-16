@@ -102,7 +102,7 @@ jobs:
       - name: passport conformance battery
         run: cargo test -p conformance-passport --test conformance --locked -- --ignored --test-threads=1
       - name: directory conformance battery
-        run: cargo test -p conformance-directory --test conformance --locked -- --ignored --test-threads=1
+        run: cargo test -p conformance-directory --all-targets --locked -- --ignored --test-threads=1
 
   msrv:
     name: MSRV 1.88 build
