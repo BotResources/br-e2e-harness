@@ -1,4 +1,4 @@
-#![cfg(feature = "nats-fabric")]
+#![cfg(feature = "full")]
 
 use std::panic::{RefUnwindSafe, UnwindSafe};
 

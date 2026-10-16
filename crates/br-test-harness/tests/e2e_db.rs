@@ -1,3 +1,5 @@
+#![cfg(feature = "e2e-db")]
+
 use std::sync::Arc;
 
 use br_test_harness::E2eDatabase;

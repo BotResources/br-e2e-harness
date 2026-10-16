@@ -1,3 +1,5 @@
+#![cfg(all(feature = "spawned-nats", feature = "nats"))]
+
 use std::time::Duration;
 
 use br_test_harness::SpawnedNats;
