@@ -287,8 +287,16 @@ async fn catch_connect_panic(
     std::panic::set_hook(Box::new(|_| {}));
     let result = futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(attempt)).await;
     std::panic::set_hook(previous);
-    result.map_err(|_| Exit {
+    result.map_err(|payload| Exit {
         code: 3,
-        message: format!("failed to connect to NATS at {nats}"),
+        message: format!("NATS at {nats}: {}", panic_message(payload.as_ref())),
     })
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_else(|| "the panic carried no text".to_string())
 }

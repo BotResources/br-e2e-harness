@@ -226,6 +226,29 @@ async fn a_next_frame_whose_data_is_not_json_panics_instead_of_reading_as_silenc
 }
 
 #[tokio::test]
+#[should_panic(expected = "subscription next frame carries no data")]
+async fn a_next_frame_without_a_data_key_panics_instead_of_reading_as_silence() {
+    let mut sub = open_closing_after("event: next\ndata: {}\n\n".to_string()).await;
+
+    sub.expect_silence("nothing was pushed", QUIET).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "subscription next frame carries no data")]
+async fn a_next_frame_with_a_non_object_payload_panics_instead_of_reading_as_silence() {
+    let mut sub = open_closing_after("event: next\ndata: 42\n\n".to_string()).await;
+
+    sub.expect_silence("nothing was pushed", QUIET).await;
+}
+
+#[tokio::test]
+async fn a_next_frame_with_an_explicit_null_data_is_still_no_push() {
+    let mut sub = open_closing_after("event: next\ndata: {\"data\":null}\n\n".to_string()).await;
+
+    assert_eq!(sub.next_outcome(PUSH).await, SseOutcome::Closed);
+}
+
+#[tokio::test]
 #[should_panic(expected = "subscription stream errored")]
 async fn a_body_cut_off_by_the_server_panics_instead_of_reading_as_closed() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

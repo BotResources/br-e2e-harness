@@ -4,8 +4,13 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::time::Duration;
 
+#[path = "nats_support/restricted_server.rs"]
+mod restricted_server;
+
 use br_test_harness::fabric_nats::BareFabricNats;
 use br_test_harness::{FabricTestNats, run_once, workspace_bin};
+
+use restricted_server::RestrictedServer;
 
 const DECLARE_MANIFEST: &str = r#"
 [[command_durable]]
@@ -45,6 +50,31 @@ aggregate = "service_scope"
 verb = "revoke"
 version = 1
 "#;
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn provision_names_the_provisioning_failure_not_a_connect_failure() {
+    let server = RestrictedServer::start("$JS.API.STREAM.CREATE.>").await;
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+
+    let out = cli("provision", &server.url_as("restricted"), &manifest).await;
+
+    assert_eq!(out.status.code(), Some(3), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        !err.contains("failed to connect"),
+        "the connection worked, the provisioning failed: {}",
+        rendered(&out)
+    );
+    assert!(
+        err.contains("INTEGRATION_CMD") || err.contains("INTEGRATION_EVT"),
+        "the failure must name the stream whose provisioning failed: {}",
+        rendered(&out)
+    );
+
+    server.shutdown().await;
+}
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]

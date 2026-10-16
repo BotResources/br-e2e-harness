@@ -72,8 +72,11 @@ pub(crate) fn parse_block(block: &str) -> Option<Value> {
     if payload["errors"] != Value::Null {
         panic!("subscription stream returned errors: {}", payload["errors"]);
     }
-    let data = payload["data"].clone();
-    (data != Value::Null).then_some(data)
+    match payload.get("data") {
+        Some(Value::Null) => None,
+        Some(data) => Some(data.clone()),
+        None => panic!("subscription next frame carries no data: {data:?}"),
+    }
 }
 
 pub(crate) fn event_field(event: &Value, field: &str) -> Value {
@@ -105,6 +108,23 @@ mod tests {
     #[test]
     fn parse_block_skips_a_null_data_payload() {
         assert!(parse_block("event: next\ndata: {\"data\":null}").is_none());
+    }
+
+    #[test]
+    fn parse_block_panics_on_every_next_payload_without_a_data_key() {
+        for payload in ["{}", "{\"foo\":1}", "null", "42", "\"x\"", "[]"] {
+            let block = format!("event: next\ndata: {payload}");
+            let outcome = std::panic::catch_unwind(|| parse_block(&block));
+            let panic = outcome.expect_err(payload);
+            let message = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .expect("a formatted panic message");
+            assert!(
+                message.contains("subscription next frame carries no data"),
+                "{payload}: {message}"
+            );
+        }
     }
 
     #[test]

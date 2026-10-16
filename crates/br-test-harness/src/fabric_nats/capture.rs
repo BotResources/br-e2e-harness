@@ -163,8 +163,18 @@ async fn start_capture(
                 }
             };
             let payload = message.payload.to_vec();
-            let Ok(probe) = serde_json::from_slice::<CorrelationProbe>(&payload) else {
-                continue;
+            let probe = match serde_json::from_slice::<CorrelationProbe>(&payload) {
+                Ok(probe) => probe,
+                Err(e) => {
+                    record_error(
+                        &sink,
+                        format!(
+                            "{}: payload is not an envelope with metadata.correlation_id: {e}",
+                            message.subject
+                        ),
+                    );
+                    return;
+                }
             };
             lock(&sink).messages.push(CapturedMessage {
                 subject: message.subject.as_str().to_string(),
@@ -256,9 +266,13 @@ impl CommandAwaiter {
                 next = self.subscriber.next() => {
                     let message = next.expect("command awaiter: subscription ended unexpectedly");
                     let payload = message.payload.to_vec();
-                    let Ok(probe) = serde_json::from_slice::<CorrelationProbe>(&payload) else {
-                        continue;
-                    };
+                    let probe = serde_json::from_slice::<CorrelationProbe>(&payload)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "command awaiter: {}: payload is not an envelope with metadata.correlation_id: {e}",
+                                message.subject
+                            )
+                        });
                     if probe.metadata.correlation_id == correlation_id {
                         return Some(CapturedMessage {
                             subject: message.subject.as_str().to_string(),
@@ -290,6 +304,28 @@ mod tests {
             .await
             .expect("subscribe");
         client.drain().await.expect("drain ends every subscription");
+        let mut awaiter = CommandAwaiter { subscriber };
+
+        awaiter
+            .await_correlation(Uuid::now_v7(), Duration::from_secs(5))
+            .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "payload is not an envelope with metadata.correlation_id")]
+    async fn a_command_awaiter_panics_on_a_payload_that_is_not_an_envelope() {
+        let server = SpawnedNats::start().await;
+        let client = crate::nats::connect(&server.url())
+            .await
+            .expect("connect to the spawned server");
+        let subject = "integration.cmd.harness.selftest.ping.v1";
+        let subscriber = client.subscribe(subject).await.expect("subscribe");
+        client
+            .publish(subject, "not an envelope".into())
+            .await
+            .expect("publish junk");
+        client.flush().await.expect("flush");
         let mut awaiter = CommandAwaiter { subscriber };
 
         awaiter
@@ -417,6 +453,55 @@ mod tests {
                 "every read must name the drain failure, got {message}"
             );
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn an_event_capture_panics_on_a_payload_that_is_not_an_envelope() {
+        let nats = crate::FabricTestNats::start().await;
+        let coords = event_coords();
+        let capture = nats.capture_events(&[&coords]).await;
+        nats.publish_event_envelope(&coords, b"not an envelope")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_command_capture_panics_on_a_payload_that_is_not_an_envelope() {
+        let nats = crate::FabricTestNats::start().await;
+        let coords = command_coords();
+        let capture = nats.capture_commands(&[&coords]).await;
+        nats.publish_command_raw(&coords, b"{\"no\":\"metadata\"}")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn the_junk_failure_names_the_subject_and_the_missing_envelope() {
+        let nats = crate::FabricTestNats::start().await;
+        let coords = event_coords();
+        let capture = nats.capture_events(&[&coords]).await;
+        nats.publish_event_envelope(&coords, b"not an envelope")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| capture.count()))
+            .expect_err("junk on the captured subject must fail the read");
+        let message = panic
+            .downcast_ref::<String>()
+            .cloned()
+            .expect("a formatted message");
+        assert!(
+            message.contains("integration.evt.notifier.notification.delivered.v1")
+                && message.contains("payload is not an envelope with metadata.correlation_id"),
+            "{message}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
