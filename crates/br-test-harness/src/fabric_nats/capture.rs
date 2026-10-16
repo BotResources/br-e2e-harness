@@ -99,12 +99,20 @@ impl Capture {
 
     async fn stop(self) {
         self.task.abort();
-        let _ = self.task.await;
+        if let Err(e) = self.task.await
+            && !e.is_cancelled()
+        {
+            panic!("fabric capture drain failed: the drain task panicked: {e}");
+        }
     }
 
     fn guarded(&self) -> std::sync::MutexGuard<'_, CaptureState> {
         let state = lock(&self.state);
-        let cause = state.drain_error.clone();
+        let cause = state.drain_error.clone().or_else(|| {
+            self.task
+                .is_finished()
+                .then(|| "the drain task stopped without recording a cause".to_string())
+        });
         match cause {
             None => state,
             Some(cause) => {
@@ -453,6 +461,35 @@ mod tests {
                 "every read must name the drain failure, got {message}"
             );
         }
+    }
+
+    fn capture_with_task_that_stops_silently() -> Capture {
+        let state = Arc::new(Mutex::new(CaptureState {
+            messages: Vec::new(),
+            drain_error: None,
+        }));
+        let task = tokio::spawn(async {});
+        Capture { state, task }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[should_panic(expected = "the drain task stopped without recording a cause")]
+    async fn a_drain_task_that_stopped_without_a_cause_panics_on_count() {
+        let capture = capture_with_task_that_stops_silently();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[should_panic(expected = "the drain task panicked")]
+    async fn stopping_a_capture_whose_drain_task_panicked_panics() {
+        let state = Arc::new(Mutex::new(CaptureState {
+            messages: Vec::new(),
+            drain_error: None,
+        }));
+        let task = tokio::spawn(async { panic!("drain blew up") });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        Capture { state, task }.stop().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]

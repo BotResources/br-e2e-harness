@@ -44,6 +44,7 @@ impl SpawnedNats {
             .expect("failed to spawn nats-server");
 
         let pid = child.id().expect("spawned nats-server has no pid");
+        spawn_orphan_guard(pid, store_dir.path());
         let ports_file = store_dir.path().join(format!("nats-server_{pid}.ports"));
 
         let port = await_port(&mut child, &ports_file).await;
@@ -68,6 +69,26 @@ impl SpawnedNats {
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
     }
+}
+
+const ORPHAN_GUARD: &str = r#"parent="$1"; server="$2"; store="$3"
+while kill -0 "$parent" 2>/dev/null && kill -0 "$server" 2>/dev/null; do sleep 1; done
+if kill -0 "$server" 2>/dev/null; then kill -9 "$server"; rm -rf -- "$store"; fi"#;
+
+fn spawn_orphan_guard(server_pid: u32, store_dir: &std::path::Path) {
+    let guard = Command::new("sh")
+        .arg("-c")
+        .arg(ORPHAN_GUARD)
+        .arg("sh")
+        .arg(std::process::id().to_string())
+        .arg(server_pid.to_string())
+        .arg(store_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn the nats-server orphan guard");
+    drop(guard);
 }
 
 async fn await_port(child: &mut Child, ports_file: &std::path::Path) -> u16 {
