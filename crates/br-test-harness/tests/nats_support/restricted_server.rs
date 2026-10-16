@@ -2,11 +2,11 @@ use std::time::{Duration, Instant};
 
 use async_nats::ConnectOptions;
 use async_nats::jetstream;
+use br_test_harness::SpawnedProcess;
 use tempfile::TempDir;
-use tokio::process::{Child, Command};
 
 pub struct RestrictedServer {
-    child: Child,
+    process: SpawnedProcess,
     port: u16,
     _dir: TempDir,
 }
@@ -34,22 +34,20 @@ authorization {{
         );
         let config_path = dir.path().join("server.conf");
         std::fs::write(&config_path, config).expect("write config");
-        let mut child = Command::new("nats-server")
-            .arg("-c")
-            .arg(&config_path)
-            .arg("--ports_file_dir")
-            .arg(dir.path())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .expect("spawn nats-server");
-        let pid = child.id().expect("spawned nats-server has no pid");
-        let ports_file = dir.path().join(format!("nats-server_{pid}.ports"));
-        let port = await_port(&mut child, &ports_file).await;
-        await_accept(&mut child, port).await;
+        let process = SpawnedProcess::spawn(
+            "nats-server",
+            &[
+                "-c",
+                config_path.to_str().expect("utf-8 config path"),
+                "--ports_file_dir",
+                dir.path().to_str().expect("utf-8 temp dir"),
+            ],
+            &[],
+        );
+        let port = await_port(&process, dir.path()).await;
+        await_accept(&process, port).await;
         Self {
-            child,
+            process,
             port,
             _dir: dir,
         }
@@ -70,44 +68,51 @@ authorization {{
         jetstream::new(client)
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.child.kill().await;
-        let _ = self.child.wait().await;
+    pub async fn shutdown(self) {
+        self.process.shutdown().await;
     }
 }
 
-async fn await_port(child: &mut Child, ports_file: &std::path::Path) -> u16 {
+async fn await_port(process: &SpawnedProcess, dir: &std::path::Path) -> u16 {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Ok(Some(status)) = child.try_wait() {
-            panic!("the restricted nats-server exited early (status {status})");
-        }
-        if let Some(port) = std::fs::read_to_string(ports_file)
-            .ok()
+        if let Some(port) = ports_file_in(dir)
+            .and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|contents| parse_client_port(&contents))
         {
             return port;
         }
         assert!(
             Instant::now() < deadline,
-            "the restricted nats-server did not report its port within 10s"
+            "the restricted nats-server did not report its port within 10s; logs:\n{}",
+            process.logs()
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
 
-async fn await_accept(child: &mut Child, port: u16) {
+fn ports_file_in(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("nats-server_") && name.ends_with(".ports"))
+        })
+}
+
+async fn await_accept(process: &SpawnedProcess, port: u16) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .is_err()
     {
-        if let Ok(Some(status)) = child.try_wait() {
-            panic!("the restricted nats-server exited early (status {status})");
-        }
         assert!(
             Instant::now() < deadline,
-            "the restricted nats-server did not accept within 10s"
+            "the restricted nats-server did not accept within 10s; logs:\n{}",
+            process.logs()
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }

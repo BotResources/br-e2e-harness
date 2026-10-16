@@ -100,47 +100,40 @@ async fn wait_until_refused(addr: &str) {
 
 const ORPHAN_CHILD: &str = "BR_HARNESS_SPAWNED_NATS_ORPHAN_CHILD";
 
-#[tokio::test]
-#[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn a_killed_test_process_does_not_leave_its_nats_server_running() {
-    if std::env::var_os(ORPHAN_CHILD).is_some() {
-        let server = SpawnedNats::start().await;
-        println!("PORT={}", server.port());
-        tokio::time::sleep(Duration::from_secs(600)).await;
-        return;
+async fn run_as_orphan_child_if_requested() -> bool {
+    if std::env::var_os(ORPHAN_CHILD).is_none() {
+        return false;
     }
+    let server = SpawnedNats::start().await;
+    println!("PORT={}", server.port());
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    true
+}
 
-    let scratch = tempfile::tempdir().expect("scratch temp dir");
-    let mut child = std::process::Command::new(std::env::current_exe().expect("current exe"))
+fn orphan_child_command(test: &str, scratch: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().expect("current exe"));
+    command
         .args([
             "--ignored",
             "--exact",
             "--nocapture",
             "--test-threads=1",
-            "a_killed_test_process_does_not_leave_its_nats_server_running",
+            test,
         ])
         .env(ORPHAN_CHILD, "1")
-        .env("TMPDIR", scratch.path())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("spawn the child test process");
-    let port = read_port(child.stdout.take().expect("child stdout")).await;
-    let addr = format!("127.0.0.1:{port}");
-    assert!(
-        tokio::net::TcpStream::connect(&addr).await.is_ok(),
-        "the child's server must be up before the child is killed"
-    );
+        .env("TMPDIR", scratch)
+        .stdout(std::process::Stdio::piped());
+    command
+}
 
-    child.kill().expect("SIGKILL the child test process");
-    child.wait().expect("reap the child test process");
-
-    let stopped = tokio::time::timeout(Duration::from_secs(15), wait_until_refused(&addr)).await;
+async fn assert_server_stopped_and_store_removed(addr: &str, scratch: &std::path::Path) {
+    let stopped = tokio::time::timeout(Duration::from_secs(15), wait_until_refused(addr)).await;
     assert!(
         stopped.is_ok(),
         "a nats-server whose test process was killed must not keep {addr} open"
     );
     let emptied = tokio::time::timeout(Duration::from_secs(15), async {
-        while std::fs::read_dir(scratch.path())
+        while std::fs::read_dir(scratch)
             .expect("read the scratch dir")
             .next()
             .is_some()
@@ -153,6 +146,69 @@ async fn a_killed_test_process_does_not_leave_its_nats_server_running() {
         emptied.is_ok(),
         "the killed process's store directory must be removed from the temp folder"
     );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_killed_test_process_does_not_leave_its_nats_server_running() {
+    if run_as_orphan_child_if_requested().await {
+        return;
+    }
+
+    let scratch = tempfile::tempdir().expect("scratch temp dir");
+    let mut child = orphan_child_command(
+        "a_killed_test_process_does_not_leave_its_nats_server_running",
+        scratch.path(),
+    )
+    .spawn()
+    .expect("spawn the child test process");
+    let port = read_port(child.stdout.take().expect("child stdout")).await;
+    let addr = format!("127.0.0.1:{port}");
+    assert!(
+        tokio::net::TcpStream::connect(&addr).await.is_ok(),
+        "the child's server must be up before the child is killed"
+    );
+
+    child.kill().expect("SIGKILL the child test process");
+    child.wait().expect("reap the child test process");
+
+    assert_server_stopped_and_store_removed(&addr, scratch.path()).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_process_group_kill_does_not_leave_its_nats_server_or_store() {
+    use std::os::unix::process::CommandExt as _;
+
+    if run_as_orphan_child_if_requested().await {
+        return;
+    }
+
+    let scratch = tempfile::tempdir().expect("scratch temp dir");
+    let mut child = orphan_child_command(
+        "a_process_group_kill_does_not_leave_its_nats_server_or_store",
+        scratch.path(),
+    )
+    .process_group(0)
+    .spawn()
+    .expect("spawn the child test process in its own process group");
+    let port = read_port(child.stdout.take().expect("child stdout")).await;
+    let addr = format!("127.0.0.1:{port}");
+    assert!(
+        tokio::net::TcpStream::connect(&addr).await.is_ok(),
+        "the child's server must be up before its group is killed"
+    );
+
+    let group = format!("-{}", child.id());
+    let killed = std::process::Command::new("kill")
+        .args(["-9", "--", &group])
+        .status()
+        .expect("run kill");
+    assert!(killed.success(), "SIGKILL the child's whole process group");
+    child.wait().expect("reap the child test process");
+
+    assert_server_stopped_and_store_removed(&addr, scratch.path()).await;
 }
 
 async fn read_port(stdout: std::process::ChildStdout) -> u16 {
