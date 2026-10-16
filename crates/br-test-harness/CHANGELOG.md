@@ -31,6 +31,9 @@ form to decide whether a version ships.
 - `TestServer::spawn` panics when the server does not answer within 500ms (it used to return anyway), and its serve task panics with `test server stopped serving` instead of ending silently.
 - `SpawnedProcess` records a failed read of the child's pipe in `logs()` (`[harness] log capture stopped`) and keeps appending to, and `logs()` keeps reading, a poisoned log mutex, instead of dropping output without a trace.
 - `E2eDatabase` teardown prints a warning when a `REVOKE` fails, like its other teardown steps.
+- `fabric-nats verify` exits 4 with the broker's text (`probing durable ... : the broker did not answer "absent"`) when the durable probe gets a broker error, instead of reading it as an absent durable or crashing with exit 101; exit 3 now means connect or fixed-stream provisioning failed. The README exit-code line says so.
+- The copy-me `TestContext::kv_get` in the README panics on a KV transport error or a non-JSON value instead of reading both as an absent key.
+- `TestServer::spawn` is covered by `tests/server.rs`: a router whose handler panics leaves the server unanswering and the spawn panics; a healthy router returns its base URL.
 
 ## 0.1.1
 

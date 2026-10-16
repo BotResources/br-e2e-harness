@@ -199,8 +199,9 @@ impl TestContext {
 
     pub async fn kv_get(&self, key: &str) -> Option<Value> {
         match self.kv.get(key.to_string()).await {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes).ok(),
-            _ => None,
+            Ok(None) => None,
+            Ok(Some(bytes)) => Some(serde_json::from_slice(&bytes).expect("kv value is JSON")),
+            Err(e) => panic!("kv get failed: {e}"),
         }
     }
 
@@ -670,9 +671,11 @@ get-or-creates the `bearer_tokens` bucket. Both are wipe-free, so a passport sui
 provisions its `bearer_tokens` bucket through the CLI exactly like every other suite —
 no in-binary special-casing.
 
-Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** NATS
-connect fail · **4** durable create-or-bind failed (a `FabricError` — `NoStream`
-on an absent gitops stream, or `FilterMismatch` on an empty coordinate set).
+Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** connect or
+fixed-stream provisioning failed (the message carries the cause) · **4** a durable
+or bucket check failed (`NoStream` on an absent gitops stream, `FilterMismatch`, an
+absent or re-aimed durable, an absent bucket, or a broker error while probing the
+durable, reported with the broker's text — never read as "absent").
 
 ### The de-flake primitives
 
