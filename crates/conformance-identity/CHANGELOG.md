@@ -9,6 +9,28 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.1.1
+
+### Fixed
+
+- `ConformanceReport::is_conformant` is true only for a report with at least one passed check and no failed one; an empty report or a report of skipped checks no longer gets a conformant verdict. `run_spawn` and `run_attach` return `ConformanceError::InvalidInput` when the scenario slice is empty, so a caller that selects nothing no longer gets a green result.
+- A rejected confirmation is judged on the service it names as well as on its reason, like an accepted one: a subject that rejects a declaration but names another service now fails the scenario. The report text shows the service of the captured confirmation.
+- A missing prerequisite is a typed `ConformanceError`, not a panic: `nats-server` not on `PATH`, the `fabric-nats` CLI not built beside the test executable (also from `provision`), an acceptor binary that is not a file, a throwaway NATS that does not start, an unreachable NATS in `run_attach`, a confirmation consumer that cannot bind, an acceptor that cannot be spawned, and an absent `identity-acceptor` directory in `build_subject` (`ConformanceError::Build`). A harness panic while a scenario observes the subject is contained and reported as a failed check.
+- `expected_verdict` returns `ConformanceError::InvalidInput` on an empty sequence instead of panicking.
+- In a failing multi-step scenario the `expected` text is the oracle verdict of the failing step, not of the last step; on a pass the `observed` text is rendered from the captured confirmation, not rebuilt from the oracle.
+- `run_spawn` shuts the throwaway NATS and the capture down on every early failure.
+- `subject_dir()` no longer panics when the directory is absent.
+
+### Added
+
+- `try_subject_dir()`, the non-panicking form of `subject_dir()`.
+- `DecodedConfirmation`, `CapturedConfirmation::decode_confirmation`, `ConfirmationCapture::confirmation_decoded_for`, `expected_step_confirmations`, `oracle::confirmation_code`: the verdict together with the service the confirmation names.
+
+### Changed
+
+- Pins `br-test-harness/v0.1.1`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
+- New dependency `futures-util` (default features off, `std`) to contain harness panics.
+
 ## 0.1.0
 
 ### Changed

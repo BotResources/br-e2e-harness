@@ -1,31 +1,60 @@
 use br_core_scope::DeclareServiceScopes;
-use br_identity_domain::{DeclarationOutcome, ScopeRegistry, judge_declaration};
+use br_identity_domain::{DeclarationOutcome, RejectedIdentity, ScopeRegistry, judge_declaration};
 
-use crate::capture::Verdict;
+use crate::capture::{DecodedConfirmation, Verdict};
 use crate::error::{ConformanceError, Result};
 
 pub fn expected_verdict(sequence: &[DeclareServiceScopes]) -> Result<Verdict> {
-    Ok(expected_step_verdicts(sequence)?
+    expected_step_verdicts(sequence)?
         .pop()
-        .expect("a scenario must declare at least once"))
+        .ok_or_else(empty_sequence)
 }
 
 pub fn expected_step_verdicts(sequence: &[DeclareServiceScopes]) -> Result<Vec<Verdict>> {
+    Ok(expected_step_confirmations(sequence)?
+        .into_iter()
+        .map(|confirmation| confirmation.verdict)
+        .collect())
+}
+
+pub fn expected_step_confirmations(
+    sequence: &[DeclareServiceScopes],
+) -> Result<Vec<DecodedConfirmation>> {
+    if sequence.is_empty() {
+        return Err(empty_sequence());
+    }
     let mut registry = ScopeRegistry::new();
     sequence
         .iter()
-        .map(|command| outcome_to_verdict(judge_declaration(&mut registry, command.clone())))
+        .map(|command| outcome_to_confirmation(judge_declaration(&mut registry, command.clone())))
         .collect()
 }
 
-pub fn outcome_to_verdict(outcome: DeclarationOutcome) -> Result<Verdict> {
+fn empty_sequence() -> ConformanceError {
+    ConformanceError::InvalidInput("a scenario must declare at least once".to_string())
+}
+
+pub fn outcome_to_confirmation(outcome: DeclarationOutcome) -> Result<DecodedConfirmation> {
     match outcome {
-        DeclarationOutcome::Accepted { service, .. } => Ok(Verdict::Accepted {
+        DeclarationOutcome::Accepted { service, .. } => Ok(DecodedConfirmation {
             service: service.as_str().to_string(),
+            verdict: Verdict::Accepted {
+                service: service.as_str().to_string(),
+            },
         }),
-        DeclarationOutcome::Rejected { reason, .. } => Ok(Verdict::Rejected { reason }),
+        DeclarationOutcome::Rejected { identity, reason } => Ok(DecodedConfirmation {
+            service: match identity {
+                RejectedIdentity::Service(service) => service.as_str().to_string(),
+                RejectedIdentity::Unrepresentable { raw } => raw,
+            },
+            verdict: Verdict::Rejected { reason },
+        }),
         _ => Err(ConformanceError::OracleOutcomeUnknown),
     }
+}
+
+pub fn outcome_to_verdict(outcome: DeclarationOutcome) -> Result<Verdict> {
+    Ok(outcome_to_confirmation(outcome)?.verdict)
 }
 
 pub fn verdict_code(verdict: &Verdict) -> String {
@@ -35,11 +64,64 @@ pub fn verdict_code(verdict: &Verdict) -> String {
     }
 }
 
+pub fn confirmation_code(confirmation: &DecodedConfirmation) -> String {
+    match confirmation.verdict {
+        Verdict::Accepted { .. } => verdict_code(&confirmation.verdict),
+        Verdict::Rejected { .. } => format!(
+            "{} for service={}",
+            verdict_code(&confirmation.verdict),
+            confirmation.service
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::wire::{declare, from_raw, raw_manifest, raw_spec};
     use br_core_scope::{KeyValidationError, RawScopeDeclaration, ScopeDeclarationError};
+
+    #[test]
+    fn an_empty_sequence_is_a_typed_error_not_a_panic() {
+        assert!(matches!(
+            expected_verdict(&[]),
+            Err(ConformanceError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            expected_step_confirmations(&[]),
+            Err(ConformanceError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn a_rejection_names_the_declaring_service() {
+        let claim = from_raw(RawScopeDeclaration {
+            manifest: raw_manifest("billing"),
+            scopes: vec![raw_spec("notifier:read", false)],
+        });
+        let confirmations = expected_step_confirmations(&[claim]).unwrap();
+        assert_eq!(confirmations[0].service, "billing");
+        assert!(matches!(confirmations[0].verdict, Verdict::Rejected { .. }));
+    }
+
+    #[test]
+    fn the_confirmation_code_distinguishes_the_service_of_a_rejection() {
+        let verdict = Verdict::Rejected {
+            reason: ScopeDeclarationError::DuplicateScopeInDeclaration {
+                key: "notifier:read".to_string(),
+            },
+        };
+        let own = DecodedConfirmation {
+            service: "notifier".to_string(),
+            verdict: verdict.clone(),
+        };
+        let other = DecodedConfirmation {
+            service: "billing".to_string(),
+            verdict,
+        };
+        assert_ne!(confirmation_code(&own), confirmation_code(&other));
+        assert_ne!(own, other);
+    }
 
     #[test]
     fn clean_declaration_is_accepted() {

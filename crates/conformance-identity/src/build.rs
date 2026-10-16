@@ -5,11 +5,25 @@ use br_test_harness::run_once;
 
 use crate::error::{ConformanceError, Result};
 
+const SUBJECT_RELATIVE_DIR: &str = "../../conformance-subjects/identity-acceptor";
+
 pub fn subject_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../conformance-subjects/identity-acceptor")
-        .canonicalize()
-        .expect("identity-acceptor subject directory must exist")
+    let declared = Path::new(env!("CARGO_MANIFEST_DIR")).join(SUBJECT_RELATIVE_DIR);
+    declared.canonicalize().unwrap_or(declared)
+}
+
+pub fn try_subject_dir() -> Result<PathBuf> {
+    existing_subject_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
+}
+
+fn existing_subject_dir(manifest_dir: &Path) -> Result<PathBuf> {
+    let declared = manifest_dir.join(SUBJECT_RELATIVE_DIR);
+    declared.canonicalize().map_err(|e| {
+        ConformanceError::Build(format!(
+            "the identity-acceptor subject directory {} is absent: {e}",
+            declared.display()
+        ))
+    })
 }
 
 pub async fn ensure_go_available() -> Result<()> {
@@ -46,7 +60,7 @@ pub async fn run_dead_grammar_guard(dir: &Path) -> Result<()> {
 
 pub async fn build_subject() -> Result<PathBuf> {
     ensure_go_available().await?;
-    let dir = subject_dir();
+    let dir = try_subject_dir()?;
     run_dead_grammar_guard(&dir).await?;
     let dir_str = dir.to_string_lossy().into_owned();
     let binary = std::env::temp_dir().join(format!(
@@ -78,4 +92,28 @@ pub async fn build_subject() -> Result<PathBuf> {
         )));
     }
     Ok(binary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_absent_subject_directory_is_a_typed_build_error() {
+        let absent = std::env::temp_dir()
+            .join(format!("no-subject-{}", uuid::Uuid::now_v7().simple()))
+            .join("crates")
+            .join("conformance-identity");
+        match existing_subject_dir(&absent) {
+            Err(ConformanceError::Build(detail)) => assert!(detail.contains("identity-acceptor")),
+            other => panic!("expected a typed build error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_shipped_subject_directory_resolves() {
+        let dir = existing_subject_dir(Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+        assert!(dir.join("go.mod").is_file());
+        assert_eq!(dir, subject_dir());
+    }
 }

@@ -6,6 +6,7 @@ use br_util_nats_fabric::event_subject;
 use uuid::Uuid;
 
 use crate::error::{ConformanceError, Result};
+use crate::prerequisite::contained;
 
 #[derive(Clone)]
 pub struct CapturedConfirmation {
@@ -20,23 +21,46 @@ pub enum Verdict {
     Rejected { reason: ScopeDeclarationError },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedConfirmation {
+    pub service: String,
+    pub verdict: Verdict,
+}
+
 impl CapturedConfirmation {
     pub fn decode(&self, accepted_subject: &str, rejected_subject: &str) -> Result<Verdict> {
+        Ok(self
+            .decode_confirmation(accepted_subject, rejected_subject)?
+            .verdict)
+    }
+
+    pub fn decode_confirmation(
+        &self,
+        accepted_subject: &str,
+        rejected_subject: &str,
+    ) -> Result<DecodedConfirmation> {
         if self.subject == accepted_subject {
             let event: IntegrationEvent<ServiceScopesAccepted> = serde_json::from_slice(&self.raw)
                 .map_err(|e| {
                     ConformanceError::NonConformantConfirmation(format!("accepted: {e}"))
                 })?;
-            Ok(Verdict::Accepted {
-                service: event.payload.service.as_str().to_string(),
+            let service = event.payload.service.as_str().to_string();
+            Ok(DecodedConfirmation {
+                verdict: Verdict::Accepted {
+                    service: service.clone(),
+                },
+                service,
             })
         } else if self.subject == rejected_subject {
             let event: IntegrationEvent<ServiceScopesRejected> = serde_json::from_slice(&self.raw)
                 .map_err(|e| {
                     ConformanceError::NonConformantConfirmation(format!("rejected: {e}"))
                 })?;
-            Ok(Verdict::Rejected {
-                reason: event.payload.reason,
+            Ok(DecodedConfirmation {
+                service: event.payload.service.as_str().to_string(),
+                verdict: Verdict::Rejected {
+                    reason: event.payload.reason,
+                },
             })
         } else {
             Err(ConformanceError::NonConformantConfirmation(format!(
@@ -67,9 +91,13 @@ impl ConfirmationCapture {
     pub async fn start(harness: &FabricTestNats) -> Result<Self> {
         let accepted_coords = accepted_event_coords()?;
         let rejected_coords = rejected_event_coords()?;
-        let inner = harness
-            .capture_events(&[&accepted_coords, &rejected_coords])
-            .await;
+        let inner = contained(harness.capture_events(&[&accepted_coords, &rejected_coords]))
+            .await
+            .map_err(|e| {
+                ConformanceError::Jetstream(format!(
+                    "binding the confirmation consumer to the fixed event stream: {e}"
+                ))
+            })?;
         Ok(Self {
             inner,
             accepted_subject: event_subject(&accepted_coords),
@@ -88,6 +116,14 @@ impl ConfirmationCapture {
     pub fn verdict_for(&self, correlation_id: Uuid) -> Option<Result<Verdict>> {
         self.confirmation_for(correlation_id)
             .map(|c| c.decode(&self.accepted_subject, &self.rejected_subject))
+    }
+
+    pub fn confirmation_decoded_for(
+        &self,
+        correlation_id: Uuid,
+    ) -> Option<Result<DecodedConfirmation>> {
+        self.confirmation_for(correlation_id)
+            .map(|c| c.decode_confirmation(&self.accepted_subject, &self.rejected_subject))
     }
 
     pub fn count(&self) -> usize {

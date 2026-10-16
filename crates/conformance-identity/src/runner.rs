@@ -8,8 +8,9 @@ use crate::checks::{CheckContext, run_scenario};
 use crate::declarer::Declarer;
 use crate::error::{ConformanceError, Result};
 use crate::outcome::ConformanceReport;
+use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
-use crate::scenario::Scenario;
+use crate::scenario::{Scenario, require_selection};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -23,22 +24,35 @@ pub async fn run_attach(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
-    let fabric_nats = FabricTestNats::connect(&target.nats_url).await;
+    require_selection(scenarios)?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
+    let fabric_nats = contained(FabricTestNats::connect(&target.nats_url))
+        .await
+        .map_err(|e| {
+            ConformanceError::Jetstream(format!(
+                "connecting the harness to NATS at {}: {e}",
+                target.nats_url
+            ))
+        })?;
 
     if !wait_until(timeout, || async { readyz.is_ready().await }).await {
+        fabric_nats.shutdown().await;
         return Err(ConformanceError::Readyz(format!(
             "the attached acceptor at {} never reported /readyz=200",
             target.readyz_url
         )));
     }
 
-    let capture = ConfirmationCapture::start(&fabric_nats).await.map_err(|e| {
-        ConformanceError::Jetstream(format!(
-            "binding the confirmation consumer to the fixed event stream failed — in attach mode \
-             the acceptor owns the fabric streams and they must already exist: {e}"
-        ))
-    })?;
+    let capture = match ConfirmationCapture::start(&fabric_nats).await {
+        Ok(capture) => capture,
+        Err(e) => {
+            fabric_nats.shutdown().await;
+            return Err(ConformanceError::Jetstream(format!(
+                "binding the confirmation consumer to the fixed event stream failed — in attach \
+                 mode the acceptor owns the fabric streams and they must already exist: {e}"
+            )));
+        }
+    };
     let declarer = Declarer::new(fabric_nats.fabric_owned());
 
     let namespace = Uuid::now_v7().simple().to_string();

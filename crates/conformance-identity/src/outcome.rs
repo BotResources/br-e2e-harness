@@ -161,6 +161,48 @@ impl ConformanceReport {
     }
 
     pub fn is_conformant(&self) -> bool {
-        self.failed() == 0
+        self.failed() == 0 && self.passed() > 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::CleanDeclarationAccepted, "e", "o")
+    }
+
+    fn fail() -> CheckOutcome {
+        CheckOutcome::fail(CheckId::PrefixMismatchRejected, "e", "o", "d")
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::InvalidScopeKeyRejected, "d")
+    }
+
+    fn report(outcomes: Vec<CheckOutcome>) -> ConformanceReport {
+        ConformanceReport { outcomes }
+    }
+
+    #[test]
+    fn a_report_with_no_outcome_is_not_conformant() {
+        assert!(!ConformanceReport::default().is_conformant());
+    }
+
+    #[test]
+    fn a_report_with_only_skipped_outcomes_is_not_conformant() {
+        assert!(!report(vec![skipped(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn a_report_with_a_failure_is_not_conformant() {
+        assert!(!report(vec![pass(), fail()]).is_conformant());
+    }
+
+    #[test]
+    fn a_report_with_a_pass_and_no_failure_is_conformant() {
+        assert!(report(vec![pass()]).is_conformant());
+        assert!(report(vec![pass(), skipped()]).is_conformant());
     }
 }

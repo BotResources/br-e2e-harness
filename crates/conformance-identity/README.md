@@ -108,7 +108,19 @@ programmatic runners call it.
   `namespace`, and a per-step `timeout`.
 - `CheckId` / `CheckStatus { Pass, Fail, Skipped }` / `CheckOutcome { id, status,
   expected, observed, detail }` / `ConformanceReport { outcomes }` with
-  `passed()` / `failed()` / `skipped()` / `is_conformant()`.
+  `passed()` / `failed()` / `skipped()` / `is_conformant()`. `is_conformant()` is true
+  only for a report with at least one passed check and no failed one: an empty report,
+  or a report of skipped checks, proved nothing.
+- A check compares the confirmation to the lib oracle on the verdict **and** on the
+  service the confirmation names (`DecodedConfirmation`); a rejection that names another
+  service than the declaring one fails. The `expected` text of a failing outcome is the
+  oracle verdict of the failing step, and `observed` is rendered from the captured
+  confirmation.
+- A missing prerequisite is a typed `ConformanceError`, never a panic: no scenario
+  selected (`InvalidInput`), a missing acceptor binary (`InvalidInput`), `nats-server`
+  not on `PATH`, the `fabric-nats` CLI not built beside the test executable, a harness
+  start or an unreachable NATS (`Jetstream`), an absent subject directory (`Build`). A
+  harness panic while observing a scenario is contained and reported as a failed check.
 
 ## Two programmatic runners — spawn and attach
 
@@ -154,7 +166,7 @@ Keep each `br-rust-common` crate tag identical to `br-test-harness`'s (per-crate
 
 ```toml
 [dev-dependencies]
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.1", version = "0.1.1" }
 ```
 
 ## Why — the non-obvious bits
