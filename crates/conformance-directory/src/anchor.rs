@@ -11,7 +11,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::binary::{locate_anchor, path_with_directory_first};
+use crate::binary::{
+    ANCHOR_BINARY, find_in_path, locate_anchor, path_with_directory_first, unavailable,
+};
 use crate::error::{ConformanceError, Result};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -93,16 +95,29 @@ fn keyed<'a>(
 }
 
 pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
-    let path = match binary.parent().filter(|dir| dir.is_absolute()) {
-        Some(directory) => Some(path_with_directory_first(
-            directory,
-            std::env::var_os("PATH").as_deref(),
-        )?),
+    let inherited = std::env::var_os("PATH");
+    let program = match binary.parent() {
+        Some(parent) if parent.as_os_str().is_empty() => {
+            let name = binary.to_string_lossy();
+            inherited
+                .as_deref()
+                .and_then(|path| find_in_path(&name, path))
+                .ok_or_else(|| {
+                    unavailable(
+                        ANCHOR_BINARY,
+                        "the name is not an executable in an absolute PATH entry",
+                    )
+                })?
+        }
+        _ => binary.to_path_buf(),
+    };
+    let path = match program.parent().filter(|dir| dir.is_absolute()) {
+        Some(directory) => Some(path_with_directory_first(directory, inherited.as_deref())?),
         None => None,
     };
     let envs: Vec<(&str, &str)> = path.iter().map(|path| ("PATH", path.as_str())).collect();
     let output = run_once(
-        &binary.to_string_lossy(),
+        &program.to_string_lossy(),
         &[],
         &envs,
         Duration::from_secs(60),

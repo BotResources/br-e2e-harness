@@ -1,11 +1,13 @@
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use br_test_harness::run_once;
 use reqwest::Url;
 use reqwest::redirect::Policy as RedirectPolicy;
 use sha2::{Digest, Sha256};
+
+use crate::binary::find_in_path;
 
 const RELEASE_BASE: &str = "https://github.com/BotResources/br-e2e-harness/releases/download";
 const RELEASE_HOSTS: &[&str] = &[
@@ -227,8 +229,9 @@ async fn extract_into_cache(
     tokio::fs::write(&archive_path, archive)
         .await
         .map_err(|e| format!("cannot write {}: {e}", archive_path.display()))?;
+    let tar = tar_program(std::env::var_os("PATH").as_deref())?;
     let output = run_once(
-        "tar",
+        &tar.to_string_lossy(),
         &[
             "-xzf",
             &archive_path.to_string_lossy(),
@@ -258,6 +261,12 @@ async fn extract_into_cache(
     tokio::fs::rename(&extracted, cache.join(binary))
         .await
         .map_err(|e| format!("cannot move {binary} into {}: {e}", cache.display()))
+}
+
+pub(crate) fn tar_program(path: Option<&std::ffi::OsStr>) -> std::result::Result<PathBuf, String> {
+    path.and_then(|path| find_in_path("tar", path)).ok_or_else(|| {
+        "tar is not an executable in an absolute PATH entry: install tar or put the binary in the cache directory".to_string()
+    })
 }
 
 #[cfg(unix)]

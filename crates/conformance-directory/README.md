@@ -98,7 +98,7 @@ naming the stage and the key, never an `Err`.
 
 - `locate_and_emit()` — locates the `identity-directory` binary (below) and runs it
   once, returning the parsed `DirectorySnapshotWire`. `locate_anchor()` /
-  `emit_snapshot(binary)` split the two steps; `ANCHOR_BINARY` is the binary name. `emit_snapshot` hands the child a `PATH` led by the directory of the binary when that directory is absolute (so a sibling tool of the anchor resolves); for a bare name or a relative path it leaves `PATH` as inherited and never searches the current directory.
+  `emit_snapshot(binary)` split the two steps; `ANCHOR_BINARY` is the binary name. `emit_snapshot` hands the child a `PATH` led by the directory of the binary when that directory is absolute (so a sibling tool of the anchor resolves); a bare name is resolved only on the absolute entries of `PATH` (a relative entry such as `.` is never searched; an absent name is `AnchorBinaryUnavailable`), and a relative path with a directory part is run as given from the current directory. The archive of a download is extracted with the `tar` found on the absolute entries of `PATH`.
 - `run_wire_battery(&snapshot) -> ConformanceReport` — the W1–W5 offline gate
   (`reserved_key_rejected()` is the standalone W6 check);
   `deserialize_user` / `deserialize_group` / `deserialize_meta` are the per-entry

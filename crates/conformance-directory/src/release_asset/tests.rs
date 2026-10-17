@@ -378,3 +378,18 @@ async fn an_archive_without_the_binary_is_refused() {
     assert!(message.contains("tar could not extract"), "{message}");
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn tar_is_resolved_on_absolute_path_entries_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("tar-path");
+    let tar = dir.join("tar");
+    std::fs::write(&tar, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&tar, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let with_dir = std::env::join_paths([&dir]).unwrap();
+    assert_eq!(tar_program(Some(&with_dir)), Ok(tar));
+    assert!(tar_program(None).is_err());
+    assert!(tar_program(Some(std::ffi::OsStr::new("."))).is_err());
+    assert!(tar_program(Some(std::ffi::OsStr::new("bin:../tar"))).is_err());
+    std::fs::remove_dir_all(dir).ok();
+}
