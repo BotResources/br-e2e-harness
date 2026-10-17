@@ -147,7 +147,7 @@ Platforms with a release asset: `linux` and `darwin`, on `amd64` and `arm64`. Th
 fails closed: the archive must match the SHA-256 published beside it, every redirect must stay
 on an https `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`
 host, and an archive over 64 MiB is refused. Only the `identity-directory` entry is extracted,
-and only if it is a regular file. Nothing is written to the system temporary directory.
+and only if it is a regular file. The lookup, the download and this crate's own tests write nothing to the system temporary directory (the throwaway NATS store of `br-test-harness` is that crate's own).
 
 When none of the three succeeds, the call returns
 `ConformanceError::AnchorBinaryUnavailable` naming the binary and what to do: put it on

@@ -28,7 +28,7 @@ form to decide whether a version ships.
 ### Removed
 
 - The crate no longer compiles anything. Removed public items: `build_anchor()`, `build_and_emit()` (replaced by `locate_and_emit()`), `ensure_go_available()`, `subject_dir()`, the `build` module, and the variants `ConformanceError::GoUnavailable` and `ConformanceError::Build`.
-- No file is written to the system temporary directory any more.
+- The anchor lookup, the download and the crate's own tests no longer write to the system temporary directory (the throwaway NATS store of `br-test-harness` stays that crate's own).
 
 ### Changed
 
