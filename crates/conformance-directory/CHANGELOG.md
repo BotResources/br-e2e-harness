@@ -20,6 +20,7 @@ form to decide whether a version ships.
 - C3 reports a verdict, not `ConformanceError::Postgres`, when the projector wrote no `known_users` row for the first user.
 
 - `emit_snapshot(binary)` prepends the directory of the binary to the child `PATH` only when that directory is absolute. A bare name or a relative path leaves `PATH` as inherited, so the anchor is no longer resolved from the current directory through an empty `PATH` entry.
+- The cache root ignores a relative `XDG_CACHE_HOME` (falls back to `HOME`) and a relative `HOME` (no cache directory, so the typed `AnchorBinaryUnavailable` error), so the cache lookup, the download target and the exec of the anchor never depend on the current directory.
 
 ### Added
 

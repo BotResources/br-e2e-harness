@@ -137,7 +137,7 @@ for an executable named `identity-directory`, in this order:
 
 1. on `PATH` (absolute entries only);
 2. in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-directory-{version}`
-   (`~/Library/Caches/...` on macOS and `~/.cache/...` on Linux when `XDG_CACHE_HOME` is unset);
+   (`~/Library/Caches/...` on macOS and `~/.cache/...` on Linux when `XDG_CACHE_HOME` is unset; a relative `XDG_CACHE_HOME` or `HOME` is ignored, and without an absolute one there is no cache directory and the lookup ends in the typed error);
 3. downloaded from this crate's own GitHub release,
    `BotResources/br-e2e-harness` tag `conformance-directory/v{version}`, asset
    `identity-directory-<os>-<arch>.tar.gz` with its sibling `.sha256`, into that cache

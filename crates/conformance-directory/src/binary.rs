@@ -54,10 +54,15 @@ pub(crate) fn unavailable(binary: &'static str, detail: &str) -> ConformanceErro
 }
 
 pub(crate) fn cache_dir_from(lookup: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
-    let root = match lookup("XDG_CACHE_HOME").filter(|v| !v.is_empty()) {
-        Some(xdg) => PathBuf::from(xdg),
+    let absolute = |name: &str| {
+        lookup(name)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    let root = match absolute("XDG_CACHE_HOME") {
+        Some(xdg) => xdg,
         None => {
-            let home = PathBuf::from(lookup("HOME").filter(|v| !v.is_empty())?);
+            let home = absolute("HOME")?;
             if cfg!(target_os = "macos") {
                 home.join("Library").join("Caches")
             } else {
@@ -192,6 +197,37 @@ mod tests {
         let home = cache_dir_from(|name| (name == "HOME").then(|| "/home/u".into())).unwrap();
         assert!(home.starts_with("/home/u") && home.ends_with(&tail));
         assert_eq!(cache_dir_from(|_| None), None);
+    }
+
+    #[test]
+    fn a_relative_xdg_cache_home_is_ignored_in_favour_of_home() {
+        let version = env!("CARGO_PKG_VERSION");
+        let tail = PathBuf::from("br-e2e-harness").join(format!("conformance-directory-{version}"));
+        let found = cache_dir_from(|name| match name {
+            "XDG_CACHE_HOME" => Some("relative/cache".into()),
+            "HOME" => Some("/home/u".into()),
+            _ => None,
+        })
+        .unwrap();
+        assert!(found.is_absolute());
+        assert!(found.starts_with("/home/u") && found.ends_with(&tail));
+        assert!(!found.starts_with("relative"));
+    }
+
+    #[test]
+    fn a_relative_home_gives_no_cache_directory() {
+        assert_eq!(
+            cache_dir_from(|name| (name == "HOME").then(|| "relative/home".into())),
+            None
+        );
+        assert_eq!(
+            cache_dir_from(|name| match name {
+                "XDG_CACHE_HOME" => Some("relative/cache".into()),
+                "HOME" => Some("relative/home".into()),
+                _ => None,
+            }),
+            None
+        );
     }
 
     #[test]
