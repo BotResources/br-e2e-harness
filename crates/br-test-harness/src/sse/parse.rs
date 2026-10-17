@@ -52,23 +52,36 @@ impl FrameBuffer {
 
 pub(crate) fn parse_block(block: &str) -> Option<Value> {
     let mut event_type = None;
-    let mut data = None;
+    let mut data_lines = Vec::new();
     for line in block.lines() {
         if let Some(val) = line.strip_prefix("event:") {
             event_type = Some(val.trim().to_string());
         } else if let Some(val) = line.strip_prefix("data:") {
-            data = Some(val.trim().to_string());
+            data_lines.push(val.trim().to_string());
         }
     }
-    if event_type.as_deref() != Some("next") {
-        return None;
+    match event_type.as_deref() {
+        Some("next") => {}
+        Some("complete") => return None,
+        _ if data_lines.is_empty() => return None,
+        other => {
+            panic!("subscription frame with data has an unexpected event {other:?}: {block:?}")
+        }
     }
-    let payload: Value = serde_json::from_str(&data?).ok()?;
+    if data_lines.is_empty() {
+        panic!("subscription next frame carries no data: {block:?}");
+    }
+    let data = data_lines.join("\n");
+    let payload: Value = serde_json::from_str(&data)
+        .unwrap_or_else(|e| panic!("subscription next frame data is not JSON ({e}): {data:?}"));
     if payload["errors"] != Value::Null {
         panic!("subscription stream returned errors: {}", payload["errors"]);
     }
-    let data = payload["data"].clone();
-    (data != Value::Null).then_some(data)
+    match payload.get("data") {
+        Some(Value::Null) => None,
+        Some(data) => Some(data.clone()),
+        None => panic!("subscription next frame carries no data: {data:?}"),
+    }
 }
 
 pub(crate) fn event_field(event: &Value, field: &str) -> Value {
@@ -98,14 +111,69 @@ mod tests {
     }
 
     #[test]
+    fn parse_block_panics_on_a_data_block_whose_event_is_not_next() {
+        for block in [
+            "event: message\ndata: {\"data\":{\"tick\":7}}",
+            "data: {\"data\":{\"tick\":7}}",
+            "event: nxt\ndata: {\"data\":{\"tick\":7}}",
+        ] {
+            let outcome = std::panic::catch_unwind(|| parse_block(block));
+            assert!(outcome.is_err(), "{block}");
+        }
+    }
+
+    #[test]
+    fn parse_block_ignores_comment_only_and_dataless_non_next_blocks() {
+        assert!(parse_block(":\n: keep-alive").is_none());
+        assert!(parse_block("event: ping").is_none());
+        assert!(parse_block("id: 4\nretry: 100").is_none());
+    }
+
+    #[test]
     fn parse_block_skips_a_null_data_payload() {
         assert!(parse_block("event: next\ndata: {\"data\":null}").is_none());
+    }
+
+    #[test]
+    fn parse_block_panics_on_every_next_payload_without_a_data_key() {
+        for payload in ["{}", "{\"foo\":1}", "null", "42", "\"x\"", "[]"] {
+            let block = format!("event: next\ndata: {payload}");
+            let outcome = std::panic::catch_unwind(|| parse_block(&block));
+            let panic = outcome.expect_err(payload);
+            let message = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .expect("a formatted panic message");
+            assert!(
+                message.contains("subscription next frame carries no data"),
+                "{payload}: {message}"
+            );
+        }
     }
 
     #[test]
     #[should_panic(expected = "subscription stream returned errors")]
     fn parse_block_fails_loud_on_an_errors_payload() {
         parse_block("event: next\ndata: {\"errors\":[{\"message\":\"boom\"}]}");
+    }
+
+    #[test]
+    #[should_panic(expected = "next frame data is not JSON")]
+    fn parse_block_fails_loud_on_a_next_frame_whose_data_is_not_json() {
+        parse_block("event: next\ndata: {\"data\":");
+    }
+
+    #[test]
+    #[should_panic(expected = "next frame carries no data")]
+    fn parse_block_fails_loud_on_a_next_frame_without_data() {
+        parse_block("event: next");
+    }
+
+    #[test]
+    fn parse_block_joins_the_data_lines_of_one_frame() {
+        let data =
+            parse_block("event: next\ndata: {\"data\":\ndata: {\"a\":1}}").expect("a next frame");
+        assert_eq!(data["a"], 1);
     }
 
     fn drained(chunks: &[&[u8]]) -> Vec<String> {

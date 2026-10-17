@@ -42,7 +42,7 @@ for one; that the workspace compiles with the handles unexposed is the proof.
 | Run the real service binary as a child (drained, readiness-polled, boot-classified) | `SpawnedProcess`, `BootOutcome`, `run_once` | *(always on; HTTP polling needs `http-client`)* |
 | An in-process Axum server on a random port | `TestServer` | `server` |
 | A forged `Passport` (`Human` / `Service`) | `PassportBuilder` | `passport` |
-| A GraphQL / REST client that sends the `X-Passport` header | `GraphqlClient` | `graphql` |
+| A GraphQL / REST client that sends the `X-Passport` header (a response body that cannot be read, or that `query` cannot parse as JSON, panics) | `GraphqlClient` | `graphql` |
 | Verdict helpers over a GraphQL response — ack / rejection / stable-code | `verdict::*` | `graphql` |
 | A live GraphQL `graphql-transport-ws` subscription (drain-until-match, typed outcome, Passport / cookie / anonymous) | `WsSubscription`, `WsCredential`, `WsError` | `ws` |
 | A live GraphQL Server-Sent-Events subscription (typed quiet-reason) | `SseSubscription`, `SseOutcome`, `DrainStop` | `sse` |
@@ -199,8 +199,9 @@ impl TestContext {
 
     pub async fn kv_get(&self, key: &str) -> Option<Value> {
         match self.kv.get(key.to_string()).await {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes).ok(),
-            _ => None,
+            Ok(None) => None,
+            Ok(Some(bytes)) => Some(serde_json::from_slice(&bytes).expect("kv value is JSON")),
+            Err(e) => panic!("kv get failed: {e}"),
         }
     }
 
@@ -319,8 +320,9 @@ throwaway UUID-suffixed buckets, not a service-contract stream:
   the call is still caught) filtered to `subject`, awaits the first message
   within `deadline`, and returns the envelope as a `serde_json::Value`. Deserialize
   it against the **producer's** `contract-*` payload type to assert the wire shape.
-  Returns `None` on a clean timeout — never hangs. The stream name is a parameter,
-  so it is service-agnostic.
+  Returns `None` on a clean timeout — never hangs. A missing stream, a consumer
+  that cannot be created, a pull stream that ends or errors, and a payload that is
+  not JSON all panic. The stream name is a parameter, so it is service-agnostic.
 - **`recreate_stream(js, name, &subjects)`** / **`recreate_kv(js, bucket)`** —
   delete-then-create a named stream (with its subject filters, e.g. `charter.>`)
   or KV bucket, giving each serial scenario an empty bus on a shared server.
@@ -359,7 +361,8 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   `max_age = 3600s`, `limit_markers = 1s` — async-nats' `subject_delete_marker_ttl`),
   so per-key `EphemeralAuthStore::create_with_ttl` writes actually expire. A
   service e2e provisions it here instead of importing `async-nats`.
-  `.ephemeral_auth_present()` observes it.
+  `.ephemeral_auth_present()` observes it (`false` only when the broker answered
+  that the bucket does not exist, any other error panics).
 - **`.with_command_durable(&coords, name)` / `.with_event_durable(&coords, name)`**
   — a durable whose single filter is the rendered coord subject, namespaced
   `{name}_{run_id}`; assert the filter with
@@ -379,7 +382,8 @@ subject grammar drifts, the durable bind stops matching and the test fails.
   `.assert_only_kv_buckets(&["EPHEMERAL_AUTH"])` panics with an `expected … got …`
   diff when the live set differs — the primitive a service uses to **prove** no
   stray KV bucket was created.
-- **`.fixed_streams_present()`** asserts the two fixed streams provisioned;
+- **`.fixed_streams_present()`** asserts the two fixed streams provisioned (absence
+  means the broker answered "stream not found"; any other error panics);
   **`.published_language_present()`** / **`.pl_get_raw(&key)`** observe the PL bucket
   and a single raw value (the attach-without-wipe assertion) without a bare KV store;
   **`.publish_event_envelope(&coords, bytes)`** publishes an envelope onto the
@@ -393,10 +397,23 @@ handle:
   `for_correlation(id)`, `correlation_ids()`, `stop()`). Both stand on **one**
   harness-internal ephemeral consumer (deliver-all, ack-none) — the only place
   the `async-nats` consumer setup lives. `capture_events` binds `INTEGRATION_EVT`,
-  `capture_commands` binds `INTEGRATION_CMD`.
+  `capture_commands` binds `INTEGRATION_CMD`. `count()` is the number
+  of messages the background drain has captured **so far** (the drain is
+  asynchronous, so a read right after a publish can still be 0). A message on
+  the captured subject that is not an envelope with `metadata.correlation_id`
+  stops the drain, and so does a pull stream that ends (client drained,
+  connection closed): every later read panics with `fabric capture drain
+  failed`. A read also panics with `fabric capture drain failed: the NATS
+  connection is Disconnected` while the client is not connected (the broker
+  died), so `count() == 0` means nothing was published on a live broker. The capture replays the
+  whole stream (deliver-all): on an attached shared broker, junk left on that
+  coordinate by an earlier scenario makes the capture panic — clear it first with
+  `purge_command_subject` / `purge_event_subject`.
 - **`.await_event(&coords) -> FabricAwaiter`** — wraps the lib's
-  `CorrelatedAwaiter`; `await_correlation(id, deadline) -> Option<CapturedMessage>`.
-  **`.await_command(&coords) -> CommandAwaiter`** is the command-stream counterpart
+  `CorrelatedAwaiter`; `await_correlation(id, deadline) -> Option<CapturedMessage>`
+  (`None` only when the deadline passed on a connected client; an ended
+  subscription, or a deadline that passes on a dead or disconnected broker,
+  panics). **`.await_command(&coords) -> CommandAwaiter`** is the command-stream counterpart
   (a harness-internal subscriber — see the lib-gap note below). `CapturedMessage
   { subject, metadata, payload }` is harness-owned, so no lib bytes type leaks
   into a test.
@@ -430,13 +447,15 @@ absent infra and never widens a durable:
   back with **`.durable_filter_subjects(stream, durable) -> Vec<String>`** to prove
   the widening was undone; **`.durable_filter_subjects_if_present(stream, durable)
   -> Option<Vec<String>>`** is the non-panicking sibling for "does this durable
-  exist at all".
+  exist at all": `None` only when the broker answered that the stream or the
+  durable does not exist, any other error panics.
 - **`.assert_missing_stream(&coords, durable) -> FabricError`** probes an
   absent fixed stream and returns the `Consume(NoStream)` it fails with;
   **`.publish_dead_subject(subject, bytes) -> PublishErrorKind`** is the one method
   that legitimately takes a **raw subject** — it exists to prove a publish to the
   dead grammar lands on no fixed stream (`NoStream`); **`.raw_message_absent(stream,
-  subject) -> bool`** proves no fixed stream captured it. These are the typed
+  subject) -> bool`** proves no fixed stream captured it (`true` only when the
+  stream is absent or holds no message on the subject; a broker error panics). These are the typed
   surface that *replaced* the consumers which used to reach for a raw JetStream
   handle — which no longer exists on either Fabric type.
 - **`BareFabricNats::without_fixed_streams()` / `with_only_command_stream()` /
@@ -452,7 +471,8 @@ absent infra and never widens a durable:
   auto-provision if the lib ever regressed, so it has its own guard.
   `.command_stream_absent()` / `.event_stream_absent()` prove the streams are
   genuinely absent afterwards, and `.published_language_absent()` proves the PL
-  bucket is not silently created. `BareFabricNats` exposes **no** raw JetStream
+  bucket is not silently created. Each reads "absent" only from the broker's own
+  "not found" answer; a dead or timed-out broker panics instead of proving absence. `BareFabricNats` exposes **no** raw JetStream
   handle either.
 
 **Adversarial provisioning, observation and purge** — the four operations a
@@ -484,7 +504,9 @@ service e2e used to hand-roll on a retained raw `jetstream::Context` (#87):
   observer is alive and saw nothing"; `Closed` means the tap lost its consumer
   (deleted durable, ended pull stream) and observes nothing any more. Any other
   pull-stream error panics naming the durable — it is neither quiet nor a clean
-  close. `.deliveries_within(timeout, cap) -> (Vec<TappedDelivery>, TapStop::{
+  close. A `Timeout` on a dead or disconnected broker panics (`fabric capture
+  drain failed: the NATS connection is Disconnected`), it is not quiet.
+  `.deliveries_within(timeout, cap) -> (Vec<TappedDelivery>, TapStop::{
   Limit, Timeout, Closed })` collects until one of the three, so an exhaustion
   assertion must check the stop reason is `Timeout`;
   `.expect_delivery(what, timeout)` and `.expect_quiet(what, quiet)` are the
@@ -654,9 +676,12 @@ get-or-creates the `bearer_tokens` bucket. Both are wipe-free, so a passport sui
 provisions its `bearer_tokens` bucket through the CLI exactly like every other suite —
 no in-binary special-casing.
 
-Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** NATS
-connect fail · **4** durable create-or-bind failed (a `FabricError` — `NoStream`
-on an absent gitops stream, or `FilterMismatch` on an empty coordinate set).
+Exit codes: **0** ok · **2** bad manifest/coords (`CoordError`) · **3** connect,
+provisioning (fixed streams, buckets, durables) or the bucket inventory failed (the message carries the
+cause, never a raw panic) · **4** a durable
+or bucket check failed (`NoStream` on an absent gitops stream, `FilterMismatch`, an
+absent or re-aimed durable, an absent bucket, or a broker error while probing the
+durable, reported with the broker's text — never read as "absent").
 
 ### The de-flake primitives
 
@@ -738,8 +763,8 @@ Why a subscription that goes quiet went quiet is a typed verdict:
   | `Closed` | ``ws: socket closed before a `next` push`` | the stream ended, or a close frame with no payload |
   | `ServerClosed { code: u16, reason: String }` | `ws: server closed: code={code} reason={reason}` | a close frame — `graphql-transport-ws` puts the rejection in the code (`4400`, `4401`, `4403`, `4409`, `4429`) |
   | `Completed` | `ws: subscription completed before any push` | a `complete` frame before any `next` |
-  | `ErrorFrame(String)` | `ws: subscription error frame: {0}` | a subscription `error` frame, carrying it whole |
-  | `Transport(String)` | `ws: {0}` | a broken exchange: read, frame parse, pong send, or either `close()` step (`send complete`, `close socket`) |
+  | `ErrorFrame(String)` | `ws: subscription error frame: {0}` | a subscription `error` frame, or a `next` frame whose payload carries `errors`, carrying it whole |
+  | `Transport(String)` | `ws: {0}` | a broken exchange: read, frame parse, a `next` frame with no `data` key, pong send, or either `close()` step (`send complete`, `close socket`) |
 
   `next_data` / `next_matching` keep their `Result<Value, String>` signature and
   render these through `Display` — `next_matching` still appends its
@@ -795,7 +820,7 @@ both `http-client`-gated:
 
 The process stays owned by the caller in every outcome (mirroring
 `wait_for_http_ok`): pair the verdict with `proc.logs()`, and `shutdown()` (or
-drop — `kill_on_drop`) reaps it.
+drop — `kill_on_drop`) reaps it; if the test process itself is killed (SIGKILL of the process or of its process group, a timeout kill) a small `sh` guard kills the program (Unix only).
 ### The verdict vocabulary (channel 1)
 
 A BR mutation returns a **verdict, never state**: an `ack` on success, or a
@@ -808,7 +833,7 @@ response, not a client), so they work over any GraphQL response however obtained
 
 | Function | Verdict |
 |---|---|
-| `is_ack(&response) -> bool` | a non-empty `data` object, no top-level GraphQL `errors`, and no rejection code embedded under `data` — `{}`, `{"data": null}`, a JSON string (the non-JSON body of `post_raw`) or an HTTP error page never ack |
+| `is_ack(&response) -> bool` | a non-empty `data` object, no top-level GraphQL `errors` (a non-null `errors` member that is not an array, or a non-empty array, counts as errors), and no rejection code embedded under `data` — `{}`, `{"data": null}`, a JSON string (the non-JSON body of `post_raw`) or an HTTP error page never ack |
 | `expect_ack(&response, what)` | panics (with the response) unless the call acked |
 | `mutation_error_code(&response) -> Option<String>` | the rejection code if rejected, else `None` — looks at the top-level error's `extensions.code`, then its `message`, then a `code` / `errorCode` / `reasonCode` under `data` |
 | `expect_rejected(&response) -> String` | panics unless rejected; returns the code |
@@ -851,20 +876,20 @@ here, synthetically:
 | `verify` re-checks the durable filter harness-side instead of trusting the lib probe | Since br-rust-common v1.3.0 `verify_*_durable` proves stream presence + subject coverage and **nothing else** — it creates no consumer and does not read one. On the fixed streams (`integration.cmd.>` / `integration.evt.>`) coverage is satisfied by construction, so the probe alone would report `ok` for a topology with no durables at all. The durable-filter read (`consumer_info` via `durable_filter_subjects_if_present`) is what makes the verdict mean something. |
 | `max_deliver` is settable raw in the harness though the lib freezes it | `br-util-nats-fabric`'s `ConsumerTuning` exposes only `ack_wait` + `max_ack_pending`; `max_deliver` is frozen at unlimited because a service's poison handling is an explicit `term()`, never a silent drop-on-budget. But `max_deliver` **is** deployment-declared on the durable bound to `INTEGRATION_CMD` (it is consumer config, not a stream property), so a service e2e must be able to reproduce budget exhaustion. Adversarial provisioning is the harness's job — it is the one sanctioned home of raw `async-nats` — so `DurableConfig` sets it directly. It stays out of the lib. |
 | `tap_durable` never acks, and exists at all | A finite `max_deliver` only shows up as *redelivery stopping*, which needs a consumer that leaves frames unacked. It cannot be the lib's consumer: every `ensure_*` / `run_*` path create-or-updates the durable back to the lib's config and would reset the budget before the first pull. The tap binds the durable **as provisioned** and never mutates it. |
-| `DurableTap` reports `Timeout` and `Closed` as distinct outcomes, and `ConsumerDeleted` reads as `Closed` while any other pull error panics | The redelivery assertion is an *absence* proof: "no further delivery arrived". Collapsing "the deadline elapsed with the tap healthy" and "the tap stopped observing" into one quiet answer lets a budget test receive its expected deliveries, lose its consumer, and still certify the budget stopped — vacuously. Only `Timeout` is quiet. A consumer deleted **with a pull request in flight** — the tap's own case, its `messages()` stream always keeps one outstanding — is terminated by the server with `Consumer Deleted`, which `async-nats` surfaces as `ConsumerDeleted` (or `PushBasedConsumer`) and then ends the stream: those two kinds *are* the loss of the observer, so they map to `Closed`. A request **issued after** the deletion instead comes back no-responders, and every other kind (a broken pull, a missing heartbeat) is a transport fault — none of them may pass for quiet *or* for a clean close, so they panic naming the durable. The match over `MessagesErrorKind` is exhaustive on purpose: a new upstream variant must break the build, not route itself into a verdict. Known limit: the pull stream's idle heartbeat is 15s, so a quiet window longer than **30s** panics `MissingHeartbeat` instead of reading `Timeout` — keep a tap's quiet windows short and hold long silences with a fresh tap. |
+| `DurableTap` reports `Timeout` and `Closed` as distinct outcomes, and `ConsumerDeleted` reads as `Closed` while any other pull error panics | The redelivery assertion is an *absence* proof: "no further delivery arrived". Collapsing "the deadline elapsed with the tap healthy" and "the tap stopped observing" into one quiet answer lets a budget test receive its expected deliveries, lose its consumer, and still certify the budget stopped — vacuously. Only `Timeout` is quiet, and only while the NATS connection is connected: a deadline that passes on a dead or disconnected broker panics. A consumer deleted **with a pull request in flight** — the tap's own case, its `messages()` stream always keeps one outstanding — is terminated by the server with `Consumer Deleted`, which `async-nats` surfaces as `ConsumerDeleted` (or `PushBasedConsumer`) and then ends the stream: those two kinds *are* the loss of the observer, so they map to `Closed`. A request **issued after** the deletion instead comes back no-responders, and every other kind (a broken pull, a missing heartbeat) is a transport fault — none of them may pass for quiet *or* for a clean close, so they panic naming the durable. The match over `MessagesErrorKind` is exhaustive on purpose: a new upstream variant must break the build, not route itself into a verdict. Known limit: the pull stream's idle heartbeat is 15s, so a quiet window longer than **30s** panics `MissingHeartbeat` instead of reading `Timeout` — keep a tap's quiet windows short and hold long silences with a fresh tap. |
 | `FabricTestNats::start()` *vs* `connect(url)`, and `shutdown()` only kills an `Owned` backing | `start()` owns a `SpawnedNats` (per-process isolation); `connect(url)` attaches to a shared CI/local NATS (the cross-process case the `fabric-nats` CLI drives). All provisioning is **get-or-create** so attaching to a NATS that already carries the fixed streams/bucket neither errors nor wipes — the structural #73 never-wipe fix. `shutdown()` tears down an `Owned` server but is a **no-op when `Attached`**: the harness never kills a NATS it did not start. |
 | Fabric get-or-create absorbs the create-already-exists race (#74) | `get` then `create` is a TOCTOU on a shared NATS: two processes both see "absent", both create, the loser would panic. Create now matches the **typed** JetStream code `ErrorCode::STREAM_NAME_EXIST` (10058) — for streams on the `CreateStreamErrorKind::JetStream` kind, for KV by walking the error source chain to the wrapped `CreateStreamError` — and treats it as success (re-`get`ting the KV handle). Typed code, not a string match, so it can't drift with a server message. Wipe-free is preserved: an existing object is reused, never recreated. |
 | `pl_put_raw` is the only raw-bytes KV write, and `publish_dead_subject` the only raw subject | The typed surface (`pl_publisher`/`pl_reader`, coord-driven durables) is drift-proof by construction. Two adversarial holes are kept deliberately and named loud: `pl_put_raw` injects a poison value to prove fail-closed decode, `publish_dead_subject` publishes to a hand-written subject to prove the dead grammar lands on no fixed stream. Both exist *to test the failure*, never as a convenient bypass. |
-| `await_event` rides a JetStream awaiter, `await_command` rides a core-NATS subscriber | `await_event` delegates to the lib's JetStream `CorrelatedAwaiter` (replay-capable: it catches an event published before the await). `await_command` instead opens a plain core-NATS subscribe — **no replay**, so the command must be published *after* the subscriber is live; a subscription that has ended panics (like the event awaiter), so `None` always means the deadline passed — because the lib's awaiter binds `INTEGRATION_EVT` only; until the lib generalises `await` to the command stream (the gap below) the asymmetry is deliberate, not an oversight. |
+| `await_event` rides a JetStream awaiter, `await_command` rides a core-NATS subscriber | `await_event` delegates to the lib's JetStream `CorrelatedAwaiter` (replay-capable: it catches an event published before the await). `await_command` instead opens a plain core-NATS subscribe — **no replay**, so the command must be published *after* the subscriber is live; a subscription that has ended panics (like the event awaiter), so `None` always means the deadline passed on a connected client — because the lib's awaiter binds `INTEGRATION_EVT` only; until the lib generalises `await` to the command stream (the gap below) the asymmetry is deliberate, not an oversight. |
 | The passport suite provisions `bearer_tokens` via the CLI **and** re-opens it with `with_bearer_tokens()` | Not a double-provision bug. The CLI's `[bearer_tokens]` get-or-creates the bucket per the universal "every suite provisions through the CLI" ruling (no in-binary special-casing); `with_bearer_tokens()` then re-opens the same wipe-free bucket to obtain the in-process `Store` handle `bearer_seeder()` needs to seed/revoke tokens. Both are get-or-create and idempotent, so the second open never wipes or duplicates. |
-| `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test` — and binds it to `127.0.0.1` only, since the JetStream server is unauthenticated). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
-| `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. |
-| `await_integration_event` returns `Option`, not `Result` | A clean timeout (no matching message before the deadline) and a missing/unreadable stream both collapse to `None`: the caller's assertion is *"the event arrived"* / *"no event arrived"*, and `expect(...)` / `is_none()` reads better than threading an error. It can therefore back an `expect_silence`-style negative without a broker error masquerading as success — it only ever yields `Some` on a real, decodable envelope. |
-| Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, or an `error` frame is a hard failure (SSE panics, WS returns `Err`) — never a frame to skip. `SseSubscription::next_outcome` returns a quiet outcome **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
+| `SpawnedNats` *vs* `TestNats` | A binary that **hardcodes** its bucket names can't be isolated by per-bucket names → give it its own server (`SpawnedNats`, which lets `nats-server` self-assign its port — race-free under parallel `cargo test` — and binds it to `127.0.0.1` only, since the JetStream server is unauthenticated; a small `sh` guard process kills the server and removes its store directory when the test process disappears without running its destructors — SIGKILL of the process or of its whole process group, a timeout kill; the guard runs in its own process group so a group kill does not take it down — so no `nats-server` is left behind, Unix only; `SpawnedProcess::spawn` and `run_once` start the same guard for the program they spawn, so a killed suite leaves no service binary holding ports, pools and durable consumers). Tests using the harness's own **suffixed** buckets share one server (`TestNats`). |
+| `recreate_*` delete-then-create, not get-or-create | The harness is the **GitOps stand-in**: it provisions a named service-contract stream/bucket the service expects to already exist (the service itself never does — the lib never auto-provisions, it fails loud). Delete-then-create, never silent get-or-create, so each serial scenario starts from a truly empty bus — a get-or-create would leak the prior scenario's messages and the reset would pass while doing nothing. Delete-then-create over a **shared NATS server** is a cross-process TOCTOU, so the pair retries over a bounded loop to absorb a concurrent recreate; clean isolation across processes still wants a per-process `SpawnedNats` (its own server), which the copy-me template uses. Only the broker's own stream-not-found answer on the delete is ignored: any other delete failure (a refused permission, a timeout) is retried and then panics, because a failed delete followed by a create of an identical config would silently return the old data. |
+| `await_integration_event` returns `Option`, not `Result` | `None` means one thing: the deadline passed with no message on the subject while the connection was still connected, so `expect(...)` / `is_none()` read well and an `expect_silence`-style negative is sound. Every other outcome is a panic naming the step: a missing stream, a consumer that cannot be created, a pull stream that ends or errors, a payload that is not JSON, a deadline that passes on a dead or disconnected broker. Folding those into `None` would let a broken broker pass a "no event arrived" assertion. It only ever yields `Some` on a real, decodable envelope. |
+| Subscriptions fail loud on a broken stream | A GraphQL `errors` payload, a transport error, a `next` frame whose data is missing or not JSON, or an `error` frame is a hard failure — never a frame to skip. SSE panics on a `next` frame whose payload carries `errors`, is not a JSON object or has no `data` key (`{}`, `42`, `null`); WS returns `Err`: a `next` frame carrying `errors` is `ErrorFrame` (even when it also carries `data`), one with no `data` key is `Transport`. The one frame that is not a failure is an explicit `data: null`: SSE reads it as no push (it skips it), WS returns it as a push (`Ok(Null)`). A WS binary frame, or a text frame whose `type` is missing or unknown, is `Transport` (only `pong` and `connection_ack` are ignored); SSE panics on a block with `data:` lines under an `event:` that is not `next` or `complete` (comments, dataless blocks and `complete` are ignored). `SseSubscription::next_outcome` returns a quiet outcome **only** for a genuine timeout or a clean stream end, so `expect_silence` can't be fooled into passing on a stream that actually broke. |
 | `expect_silence` panics on `Closed`, and `next_event` still flattens it | A closed stream is not silence: every `expect_silence` and drain-to-quiet loop on a subscription the service had hung up on passed **vacuously**, because a timeout and a stream end were the same `None`. `expect_silence` therefore rejects `Closed` — the deliberate *semantic* change of 1.2.0 (a vacuously-passing test now fails); the second behaviour change is the unterminated-residual guard below. `next_event` keeps flattening both to `None` so no consumer's signature breaks; a suite that wants the distinction reads `next_outcome` / `drain_outcome` when it migrates. |
 | Log attachment is `with_logs(&SpawnedProcess)`, cloning the process's log handle | A quiet outcome is almost always the service dying, refusing the subscription, or never pushing — and the answer is in *its* stderr, but `SseSubscription` is opened from a URL and knows nothing about the process behind it. `with_logs` clones the `Arc<Mutex<String>>` the `SpawnedProcess` drain tasks already write into, so the panic reads the tail **live**, at panic time, not a snapshot taken at attach time (and it recovers a poisoned mutex rather than panicking while formatting a panic). One opt-in mechanism, no global state: unattached, the panic still names the outcome. |
 | A block left unterminated at stream end is a panic, never a quiet `Closed`; CRLF, CR and LF line ends all frame | The reader normalises every line end (`\r\n`, `\r`, `\n`) to `\n` before it frames on the blank line, as the SSE format allows, and it carries a lone trailing `\r` and a split multi-byte character across chunk boundaries. Anything still in the buffer when the server hangs up is a push that was **truncated**. Through 1.1.3 both vanished into the same `next_event() -> None` a scenario read as silence, so "the service pushed nothing" passed on a service that pushed a broken frame; until 0.1.0 a CRLF stream was never framed, so `next_outcome` read `Timeout` while events arrived and `expect_silence` passed on a publishing service. `next_outcome` panics naming the residual bytes for a truncated block. |
-| `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after ~500 ms it returns anyway (the first real request surfaces a genuine failure). For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
+| `TestServer::spawn` readiness is best-effort | It polls `GET /` and treats **any** HTTP response — including a 404 — as "up": that proves the in-process server is serving, it is not a dependency-readiness gate, and after 5 seconds without any HTTP answer — a connection that fails or a `/` handler that never resolves — it panics (`test server at {url} did not answer within 5s`); a serve task that stops panics with `test server stopped serving`. For real readiness against a spawned *binary*, use `SpawnedProcess::wait_for_http_ok` against the service's own health path. |
 | `SpawnedProcess` has both `wait_for_http_ok` and `await_boot` | A nominal scenario wants "ready or fail the test" (`wait_for_http_ok` → `Result`); a fail-loud scenario wants to **assert** the boot *did not* succeed and inspect *why* (`await_boot` → `BootOutcome::{Ready, Exited(status), TimedOut}`). Both are kept — the classifier adds the three-outcome verdict, it does not replace the happy-path checker. |
 | `await_boot` drains the pipes to EOF before returning `Exited` | The drain runs as background tasks, so `try_wait()` can observe the exit before those tasks have read the binary's final stderr/stdout. Awaiting them on `Exited` guarantees `proc.logs()` holds the full tail — the line naming the missing declared resource an S0-style scenario asserts on. The continuous-drain model means no kill-before-drain dance (the prod-side reference used a sync `std::process` and had to). |
 | `deny.toml` ignores `RUSTSEC-2023-0071` (Marvin timing attack in `rsa`) | The advisory is a side-channel in `rsa` private-key *decryption*. This workspace only ships test fixtures that **sign** short-lived tokens on isolated test networks — no decryption path, no timing-oracle adversary in the threat model. Same ignore as `svc-auth`'s CI. |
@@ -913,10 +938,10 @@ tags are the legacy line of this crate and are not moved forward.
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.1", version = "0.1.1" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.1", version = "0.1.1", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`

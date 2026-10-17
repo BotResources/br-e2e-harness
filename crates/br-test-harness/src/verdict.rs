@@ -64,11 +64,11 @@ fn carries_data(response: &Value) -> bool {
 }
 
 fn has_top_level_errors(response: &Value) -> bool {
-    response
-        .get("errors")
-        .and_then(Value::as_array)
-        .map(|e| !e.is_empty())
-        .unwrap_or(false)
+    match response.get("errors") {
+        None | Some(Value::Null) => false,
+        Some(Value::Array(errors)) => !errors.is_empty(),
+        Some(_) => true,
+    }
 }
 
 fn find_error_code(value: &Value) -> Option<String> {
@@ -108,6 +108,16 @@ mod tests {
         assert!(is_ack(&response));
         assert!(mutation_error_code(&response).is_none());
         expect_ack(&response, "createThing");
+    }
+
+    #[test]
+    fn a_malformed_errors_member_is_never_an_ack() {
+        for errors in [json!("boom"), json!({ "message": "boom" }), json!(1)] {
+            let response = json!({ "data": { "createThing": { "id": "abc" } }, "errors": errors });
+            assert!(!is_ack(&response), "must not ack: {response}");
+        }
+        let null_errors = json!({ "data": { "createThing": { "id": "abc" } }, "errors": null });
+        assert!(is_ack(&null_errors));
     }
 
     #[test]

@@ -5,6 +5,9 @@ use br_util_nats_fabric::{
 };
 
 use super::FabricTestNats;
+use super::absence::{
+    bucket_is_present, durable_config_if_present, last_raw_message_is_absent, stream_if_present,
+};
 use crate::nats::connect;
 use crate::spawned_nats::SpawnedNats;
 
@@ -73,15 +76,15 @@ impl BareFabricNats {
     }
 
     pub async fn published_language_absent(&self) -> bool {
-        self.js.get_key_value(KV_PUBLISHED_LANGUAGE).await.is_err()
+        !bucket_is_present(&self.js, KV_PUBLISHED_LANGUAGE).await
     }
 
     pub async fn command_stream_absent(&self) -> bool {
-        self.js.get_stream(INTEGRATION_CMD).await.is_err()
+        stream_if_present(&self.js, INTEGRATION_CMD).await.is_none()
     }
 
     pub async fn event_stream_absent(&self) -> bool {
-        self.js.get_stream(INTEGRATION_EVT).await.is_err()
+        stream_if_present(&self.js, INTEGRATION_EVT).await.is_none()
     }
 
     pub async fn assert_missing_stream(&self, coords: &EventCoords, durable: &str) -> FabricError {
@@ -175,13 +178,10 @@ pub async fn publish_dead_subject(
 }
 
 pub async fn raw_message_absent(js: &jetstream::Context, stream: &str, subject: &str) -> bool {
-    let Ok(stream) = js.get_stream(stream).await else {
+    let Some(stream) = stream_if_present(js, stream).await else {
         return true;
     };
-    stream
-        .get_last_raw_message_by_subject(subject)
-        .await
-        .is_err()
+    last_raw_message_is_absent(&stream, subject).await
 }
 
 pub async fn durable_filter_subjects(
@@ -210,10 +210,9 @@ pub async fn durable_filter_subjects_if_present(
     stream_name: &str,
     durable: &str,
 ) -> Option<Vec<String>> {
-    let stream = js.get_stream(stream_name).await.ok()?;
-    let mut consumer: jetstream::consumer::PullConsumer =
-        stream.get_consumer(durable).await.ok()?;
-    Some(filters_of(&consumer.info().await.ok()?.config))
+    let stream = stream_if_present(js, stream_name).await?;
+    let config = durable_config_if_present(&stream, durable).await?;
+    Some(filters_of(&config))
 }
 
 fn filters_of(config: &jetstream::consumer::Config) -> Vec<String> {
@@ -223,5 +222,97 @@ fn filters_of(config: &jetstream::consumer::Config) -> Vec<String> {
         vec![config.filter_subject.clone()]
     } else {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::super::absence::dead_jetstream;
+    use super::*;
+
+    async fn dead_bare() -> BareFabricNats {
+        let mut bare = BareFabricNats::without_fixed_streams().await;
+        bare.js = dead_jetstream().await;
+        bare
+    }
+
+    async fn dead_fabric() -> FabricTestNats {
+        let mut nats = FabricTestNats::start().await;
+        nats.js = dead_jetstream().await;
+        nats
+    }
+
+    async fn answers<T>(probe: impl std::future::Future<Output = T>) -> T {
+        tokio::time::timeout(Duration::from_secs(30), probe)
+            .await
+            .expect("the probe answers within 30s")
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe stream INTEGRATION_CMD")]
+    async fn a_dead_broker_does_not_read_as_an_absent_command_stream() {
+        answers(dead_bare().await.command_stream_absent()).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe stream INTEGRATION_EVT")]
+    async fn a_dead_broker_does_not_read_as_an_absent_event_stream() {
+        answers(dead_bare().await.event_stream_absent()).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe kv bucket PUBLISHED_LANGUAGE")]
+    async fn a_dead_broker_does_not_read_as_an_absent_published_language() {
+        answers(dead_bare().await.published_language_absent()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe stream INTEGRATION_CMD")]
+    async fn a_dead_broker_does_not_read_as_missing_fixed_streams() {
+        answers(dead_fabric().await.fixed_streams_present()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe kv bucket PUBLISHED_LANGUAGE")]
+    async fn a_dead_broker_does_not_read_as_a_missing_published_language() {
+        answers(dead_fabric().await.published_language_present()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe kv bucket EPHEMERAL_AUTH")]
+    async fn a_dead_broker_does_not_read_as_a_missing_ephemeral_auth() {
+        answers(dead_fabric().await.ephemeral_auth_present()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe stream INTEGRATION_EVT")]
+    async fn a_dead_broker_does_not_read_as_an_absent_raw_message() {
+        answers(
+            dead_fabric()
+                .await
+                .raw_message_absent(INTEGRATION_EVT, "integration.evt.x.y.z.v1"),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "probe stream INTEGRATION_EVT")]
+    async fn a_dead_broker_does_not_read_as_an_absent_durable_filter() {
+        answers(
+            dead_fabric()
+                .await
+                .durable_filter_subjects_if_present(INTEGRATION_EVT, "worker"),
+        )
+        .await;
     }
 }

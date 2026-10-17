@@ -202,12 +202,20 @@ impl WsSubscription {
                         reason: frame.reason.to_string(),
                     });
                 }
-                _ => continue,
+                Message::Binary(bytes) => {
+                    return Err(WsError::Transport(format!(
+                        "binary frame ({} bytes) on a text subscription",
+                        bytes.len()
+                    )));
+                }
+                Message::Frame(_) => {
+                    return Err(WsError::Transport("raw frame on a subscription".into()));
+                }
             };
             let msg: Value = serde_json::from_str(&text)
                 .map_err(|e| WsError::Transport(format!("parse frame `{text}`: {e}")))?;
             match msg["type"].as_str() {
-                Some("next") => return Ok(msg["payload"]["data"].clone()),
+                Some("next") => return next_payload_data(&msg),
                 Some("error") => return Err(WsError::ErrorFrame(msg.to_string())),
                 Some("complete") => return Err(WsError::Completed),
                 Some("ping") => {
@@ -216,7 +224,17 @@ impl WsSubscription {
                         .await
                         .map_err(|e| WsError::Transport(format!("send pong: {e}")))?;
                 }
-                _ => {}
+                Some("pong" | "connection_ack") => {}
+                Some(other) => {
+                    return Err(WsError::Transport(format!(
+                        "unknown frame type `{other}`: {text}"
+                    )));
+                }
+                None => {
+                    return Err(WsError::Transport(format!(
+                        "frame without a `type`: {text}"
+                    )));
+                }
             }
         }
     }
@@ -237,6 +255,19 @@ impl WsSubscription {
         } else {
             Err(format!("ws: expected `{want}`, got `{text}`"))
         }
+    }
+}
+
+fn next_payload_data(msg: &Value) -> Result<Value, WsError> {
+    let payload = &msg["payload"];
+    if !payload["errors"].is_null() {
+        return Err(WsError::ErrorFrame(msg.to_string()));
+    }
+    match payload.get("data") {
+        Some(data) => Ok(data.clone()),
+        None => Err(WsError::Transport(format!(
+            "next frame carries no data: {msg}"
+        ))),
     }
 }
 

@@ -23,16 +23,17 @@ impl GraphqlClient {
     }
 
     pub async fn query(&self, passport: &Passport, query: &str, vars: Value) -> Value {
-        self.client
+        let resp = self
+            .client
             .post(format!("{}{}", self.base_url, self.path))
             .header("X-Passport", passport.to_header())
             .json(&serde_json::json!({ "query": query, "variables": vars }))
             .send()
             .await
-            .expect("graphql request failed")
-            .json()
-            .await
-            .expect("graphql response not JSON")
+            .expect("graphql request failed");
+        let text = body_text(resp).await;
+        serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("graphql response not JSON ({e}): {text}"))
     }
 
     pub async fn query_unauthenticated(&self, query: &str, vars: Value) -> (StatusCode, Value) {
@@ -91,11 +92,17 @@ impl GraphqlClient {
             .await
             .expect("request failed");
         let status = resp.status();
-        (status, resp.text().await.unwrap_or_default())
+        (status, body_text(resp).await)
     }
 }
 
 async fn body_json_or_text(resp: reqwest::Response) -> Value {
-    let text = resp.text().await.unwrap_or_default();
+    let text = body_text(resp).await;
     serde_json::from_str(&text).unwrap_or(Value::String(text))
+}
+
+async fn body_text(resp: reqwest::Response) -> String {
+    resp.text()
+        .await
+        .unwrap_or_else(|e| panic!("graphql response body read failed: {e}"))
 }

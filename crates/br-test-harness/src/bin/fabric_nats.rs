@@ -96,29 +96,32 @@ async fn run() -> Result<(), Exit> {
 
 async fn provision(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
     let rendered = Manifest::parse(manifest)?.render(run_id)?;
-    let mut harness = connect(nats).await?;
-    if rendered.published_language {
-        harness = harness.with_published_language().await;
-        println!("kv PUBLISHED_LANGUAGE");
-    }
-    if rendered.bearer_tokens {
-        harness = harness.with_bearer_tokens().await;
-        println!("kv bearer_tokens");
-    }
-    for command in &rendered.commands {
-        harness
-            .provision_command_durable(&command.coords, &command.durable)
-            .await;
-        println!("cmd {} -> {}", command.durable, command.subject);
-    }
-    for event in &rendered.events {
-        harness
-            .provision_event_durable(&event.coords, &event.durable)
-            .await;
-        println!("evt {} -> {}", event.durable, event.subject);
-    }
-    harness.shutdown().await;
-    Ok(())
+    let harness = connect(nats).await?;
+    catch_panic(3, &format!("provisioning on NATS at {nats}"), async move {
+        let mut harness = harness;
+        if rendered.published_language {
+            harness = harness.with_published_language().await;
+            println!("kv PUBLISHED_LANGUAGE");
+        }
+        if rendered.bearer_tokens {
+            harness = harness.with_bearer_tokens().await;
+            println!("kv bearer_tokens");
+        }
+        for command in &rendered.commands {
+            harness
+                .provision_command_durable(&command.coords, &command.durable)
+                .await;
+            println!("cmd {} -> {}", command.durable, command.subject);
+        }
+        for event in &rendered.events {
+            harness
+                .provision_event_durable(&event.coords, &event.durable)
+                .await;
+            println!("evt {} -> {}", event.durable, event.subject);
+        }
+        harness.shutdown().await;
+    })
+    .await
 }
 
 async fn verify(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
@@ -127,7 +130,12 @@ async fn verify(nats: &str, manifest: &str, run_id: Option<&str>) -> Result<(), 
     let fabric = harness.fabric_owned();
     let mut failed = None;
 
-    let buckets = harness.kv_bucket_names().await;
+    let buckets = catch_panic(
+        3,
+        &format!("listing the KV buckets of NATS at {nats}"),
+        harness.kv_bucket_names(),
+    )
+    .await?;
     for bucket in expected_buckets(&rendered) {
         if buckets.contains(bucket) {
             println!("ok kv {bucket} (bucket present)");
@@ -218,10 +226,13 @@ async fn check_stream_and_durable(
     coverage: Result<(), FabricError>,
 ) -> Result<(), Exit> {
     coverage.map_err(|e| coverage_exit(e, stream, durable, subject))?;
-    match harness
-        .durable_filter_subjects_if_present(stream, durable)
-        .await
-    {
+    let probed = catch_panic(
+        4,
+        &format!("probing durable '{durable}' on {stream}"),
+        harness.durable_filter_subjects_if_present(stream, durable),
+    )
+    .await?;
+    match probed {
         Some(filters) if filters == [subject] => Ok(()),
         Some(filters) => Err(Exit {
             code: 4,
@@ -271,24 +282,38 @@ fn print_subjects(manifest: &str, run_id: Option<&str>) -> Result<(), Exit> {
 
 async fn connect(nats: &str) -> Result<FabricTestNats, Exit> {
     let url = nats.to_string();
-    catch_connect_panic(nats, FabricTestNats::connect(&url)).await
+    catch_panic(3, &format!("NATS at {nats}"), FabricTestNats::connect(&url)).await
 }
 
 async fn attach_without_provisioning(nats: &str) -> Result<FabricTestNats, Exit> {
     let url = nats.to_string();
-    catch_connect_panic(nats, FabricTestNats::attach_without_provisioning(&url)).await
+    catch_panic(
+        3,
+        &format!("NATS at {nats}"),
+        FabricTestNats::attach_without_provisioning(&url),
+    )
+    .await
 }
 
-async fn catch_connect_panic(
-    nats: &str,
-    attempt: impl Future<Output = FabricTestNats>,
-) -> Result<FabricTestNats, Exit> {
+async fn catch_panic<T>(
+    code: u8,
+    context: &str,
+    attempt: impl Future<Output = T>,
+) -> Result<T, Exit> {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let result = futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(attempt)).await;
     std::panic::set_hook(previous);
-    result.map_err(|_| Exit {
-        code: 3,
-        message: format!("failed to connect to NATS at {nats}"),
+    result.map_err(|payload| Exit {
+        code,
+        message: format!("{context}: {}", panic_message(payload.as_ref())),
     })
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_else(|| "the panic carried no text".to_string())
 }

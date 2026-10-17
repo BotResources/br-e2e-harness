@@ -1,3 +1,4 @@
+use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -31,6 +32,7 @@ pub struct EventCapture(Capture);
 pub struct CommandCapture(Capture);
 
 struct Capture {
+    client: AssertUnwindSafe<async_nats::Client>,
     state: Arc<Mutex<CaptureState>>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -99,16 +101,35 @@ impl Capture {
 
     async fn stop(self) {
         self.task.abort();
-        let _ = self.task.await;
+        if let Err(e) = self.task.await
+            && !e.is_cancelled()
+        {
+            panic!("fabric capture drain failed: the drain task panicked: {e}");
+        }
     }
 
     fn guarded(&self) -> std::sync::MutexGuard<'_, CaptureState> {
-        let state = self.state.lock().expect("capture mutex poisoned");
-        if let Some(cause) = &state.drain_error {
-            panic!("fabric capture drain failed: {cause}");
+        crate::nats::assert_connected(&self.client);
+        let state = lock(&self.state);
+        let cause = state.drain_error.clone().or_else(|| {
+            self.task
+                .is_finished()
+                .then(|| "the drain task stopped without recording a cause".to_string())
+        });
+        match cause {
+            None => state,
+            Some(cause) => {
+                drop(state);
+                panic!("fabric capture drain failed: {cause}");
+            }
         }
-        state
     }
+}
+
+fn lock(state: &Mutex<CaptureState>) -> std::sync::MutexGuard<'_, CaptureState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 async fn start_capture(
@@ -153,25 +174,37 @@ async fn start_capture(
                 }
             };
             let payload = message.payload.to_vec();
-            let Ok(probe) = serde_json::from_slice::<CorrelationProbe>(&payload) else {
-                continue;
+            let probe = match serde_json::from_slice::<CorrelationProbe>(&payload) {
+                Ok(probe) => probe,
+                Err(e) => {
+                    record_error(
+                        &sink,
+                        format!(
+                            "{}: payload is not an envelope with metadata.correlation_id: {e}",
+                            message.subject
+                        ),
+                    );
+                    return;
+                }
             };
-            sink.lock()
-                .expect("capture mutex poisoned")
-                .messages
-                .push(CapturedMessage {
-                    subject: message.subject.as_str().to_string(),
-                    metadata: probe.metadata,
-                    payload,
-                });
+            lock(&sink).messages.push(CapturedMessage {
+                subject: message.subject.as_str().to_string(),
+                metadata: probe.metadata,
+                payload,
+            });
         }
+        record_error(&sink, format!("{stream_name}: the pull stream ended"));
     });
 
-    Capture { state, task }
+    Capture {
+        client: AssertUnwindSafe(js.client()),
+        state,
+        task,
+    }
 }
 
 fn record_error(sink: &Arc<Mutex<CaptureState>>, cause: String) {
-    let mut state = sink.lock().expect("capture mutex poisoned");
+    let mut state = lock(sink);
     if state.drain_error.is_none() {
         state.drain_error = Some(cause);
     }
@@ -192,11 +225,22 @@ pub async fn capture_commands(
 
 pub struct FabricAwaiter {
     inner: CorrelatedAwaiter,
+    client: Option<async_nats::Client>,
 }
 
 impl FabricAwaiter {
     pub fn new(inner: CorrelatedAwaiter) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            client: None,
+        }
+    }
+
+    pub(super) fn watching(inner: CorrelatedAwaiter, client: async_nats::Client) -> Self {
+        Self {
+            inner,
+            client: Some(client),
+        }
     }
 
     pub async fn await_correlation(
@@ -204,18 +248,23 @@ impl FabricAwaiter {
         correlation_id: Uuid,
         deadline: Duration,
     ) -> Option<CapturedMessage> {
-        match self
+        let found = self
             .inner
             .await_correlation(correlation_id, deadline)
             .await
-            .expect("fabric awaiter: subscription ended unexpectedly")
-        {
+            .expect("fabric awaiter: subscription ended unexpectedly");
+        match found {
             Some(m) => Some(CapturedMessage {
                 subject: m.subject,
                 metadata: m.metadata,
                 payload: m.payload,
             }),
-            None => None,
+            None => {
+                if let Some(client) = &self.client {
+                    crate::nats::assert_connected(client);
+                }
+                None
+            }
         }
     }
 }
@@ -227,11 +276,15 @@ pub async fn subscribe_command(js: &jetstream::Context, coords: &CommandCoords) 
         .subscribe(subject.clone())
         .await
         .unwrap_or_else(|e| panic!("await_command: subscribe {subject}: {e}"));
-    CommandAwaiter { subscriber }
+    CommandAwaiter {
+        subscriber,
+        client: AssertUnwindSafe(js.client()),
+    }
 }
 
 pub struct CommandAwaiter {
     subscriber: async_nats::Subscriber,
+    client: AssertUnwindSafe<async_nats::Client>,
 }
 
 impl CommandAwaiter {
@@ -244,13 +297,20 @@ impl CommandAwaiter {
         tokio::pin!(wait);
         loop {
             tokio::select! {
-                () = &mut wait => return None,
+                () = &mut wait => {
+                    crate::nats::assert_connected(&self.client);
+                    return None;
+                }
                 next = self.subscriber.next() => {
                     let message = next.expect("command awaiter: subscription ended unexpectedly");
                     let payload = message.payload.to_vec();
-                    let Ok(probe) = serde_json::from_slice::<CorrelationProbe>(&payload) else {
-                        continue;
-                    };
+                    let probe = serde_json::from_slice::<CorrelationProbe>(&payload)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "command awaiter: {}: payload is not an envelope with metadata.correlation_id: {e}",
+                                message.subject
+                            )
+                        });
                     if probe.metadata.correlation_id == correlation_id {
                         return Some(CapturedMessage {
                             subject: message.subject.as_str().to_string(),
@@ -282,7 +342,35 @@ mod tests {
             .await
             .expect("subscribe");
         client.drain().await.expect("drain ends every subscription");
-        let mut awaiter = CommandAwaiter { subscriber };
+        let mut awaiter = CommandAwaiter {
+            subscriber,
+            client: AssertUnwindSafe(client.clone()),
+        };
+
+        awaiter
+            .await_correlation(Uuid::now_v7(), Duration::from_secs(5))
+            .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "payload is not an envelope with metadata.correlation_id")]
+    async fn a_command_awaiter_panics_on_a_payload_that_is_not_an_envelope() {
+        let server = SpawnedNats::start().await;
+        let client = crate::nats::connect(&server.url())
+            .await
+            .expect("connect to the spawned server");
+        let subject = "integration.cmd.harness.selftest.ping.v1";
+        let subscriber = client.subscribe(subject).await.expect("subscribe");
+        client
+            .publish(subject, "not an envelope".into())
+            .await
+            .expect("publish junk");
+        client.flush().await.expect("flush");
+        let mut awaiter = CommandAwaiter {
+            subscriber,
+            client: AssertUnwindSafe(client.clone()),
+        };
 
         awaiter
             .await_correlation(Uuid::now_v7(), Duration::from_secs(5))
@@ -300,7 +388,10 @@ mod tests {
             .subscribe("integration.cmd.harness.selftest.ping.v1")
             .await
             .expect("subscribe");
-        let mut awaiter = CommandAwaiter { subscriber };
+        let mut awaiter = CommandAwaiter {
+            subscriber,
+            client: AssertUnwindSafe(client.clone()),
+        };
 
         let none = awaiter
             .await_correlation(Uuid::now_v7(), Duration::from_millis(200))
@@ -308,5 +399,214 @@ mod tests {
 
         assert!(none.is_none());
         server.shutdown().await;
+    }
+
+    fn command_coords() -> CommandCoords {
+        CommandCoords {
+            receiver: br_core_integration::Bc::new("notifier").unwrap(),
+            aggregate: br_core_integration::Aggregate::new("notification").unwrap(),
+            verb: br_core_integration::Verb::new("deliver").unwrap(),
+            version: 1,
+        }
+    }
+
+    fn event_coords() -> EventCoords {
+        EventCoords {
+            producer: br_core_integration::Bc::new("notifier").unwrap(),
+            aggregate: br_core_integration::Aggregate::new("notification").unwrap(),
+            fact: br_core_integration::PastFact::new("delivered").unwrap(),
+            version: 1,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_command_drain_panics_on_count() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_commands(&[&command_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_command_drain_panics_on_first() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_commands(&[&command_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_event_drain_panics_on_count() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_events(&[&event_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_dead_event_drain_panics_on_first() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_events(&[&event_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn every_read_of_a_dead_drain_names_the_drain_failure_not_a_poisoned_mutex() {
+        let nats = crate::FabricTestNats::start().await;
+        let capture = nats.capture_events(&[&event_coords()]).await;
+        nats.client.drain().await.expect("drain the client");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let reads: [Box<dyn Fn() + '_>; 5] = [
+            Box::new(|| {
+                let _ = capture.0.count();
+            }),
+            Box::new(|| {
+                let _ = capture.0.first();
+            }),
+            Box::new(|| {
+                let _ = capture.0.for_correlation(Uuid::now_v7());
+            }),
+            Box::new(|| {
+                let _ = capture.0.correlation_ids();
+            }),
+            Box::new(|| {
+                let _ = capture.0.count();
+            }),
+        ];
+        for read in reads {
+            let panic = std::panic::catch_unwind(AssertUnwindSafe(read))
+                .expect_err("a read of a dead drain must panic");
+            let message = panic
+                .downcast_ref::<String>()
+                .cloned()
+                .expect("the panic carries a formatted message");
+            assert!(
+                message.starts_with("fabric capture drain failed: "),
+                "every read must name the drain failure, got {message}"
+            );
+        }
+    }
+
+    async fn capture_with_task(
+        client: async_nats::Client,
+        task: tokio::task::JoinHandle<()>,
+    ) -> Capture {
+        let state = Arc::new(Mutex::new(CaptureState {
+            messages: Vec::new(),
+            drain_error: None,
+        }));
+        Capture {
+            client: AssertUnwindSafe(client),
+            state,
+            task,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "the drain task stopped without recording a cause")]
+    async fn a_drain_task_that_stopped_without_a_cause_panics_on_count() {
+        let server = SpawnedNats::start().await;
+        let client = crate::nats::connect(&server.url())
+            .await
+            .expect("connect to the spawned server");
+        let capture = capture_with_task(client, tokio::spawn(async {})).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "the drain task panicked")]
+    async fn stopping_a_capture_whose_drain_task_panicked_panics() {
+        let server = SpawnedNats::start().await;
+        let client = crate::nats::connect(&server.url())
+            .await
+            .expect("connect to the spawned server");
+        let task = tokio::spawn(async { panic!("drain blew up") });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        capture_with_task(client, task).await.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn an_event_capture_panics_on_a_payload_that_is_not_an_envelope() {
+        let nats = crate::FabricTestNats::start().await;
+        let coords = event_coords();
+        let capture = nats.capture_events(&[&coords]).await;
+        nats.publish_event_envelope(&coords, b"not an envelope")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.count();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "fabric capture drain failed")]
+    async fn a_command_capture_panics_on_a_payload_that_is_not_an_envelope() {
+        let nats = crate::FabricTestNats::start().await;
+        let coords = command_coords();
+        let capture = nats.capture_commands(&[&coords]).await;
+        nats.publish_command_raw(&coords, b"{\"no\":\"metadata\"}")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        capture.first();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn the_junk_failure_names_the_subject_and_the_missing_envelope() {
+        let nats = crate::FabricTestNats::start().await;
+        let coords = event_coords();
+        let capture = nats.capture_events(&[&coords]).await;
+        nats.publish_event_envelope(&coords, b"not an envelope")
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let panic = std::panic::catch_unwind(AssertUnwindSafe(|| capture.count()))
+            .expect_err("junk on the captured subject must fail the read");
+        let message = panic
+            .downcast_ref::<String>()
+            .cloned()
+            .expect("a formatted message");
+        assert!(
+            message.contains("integration.evt.notifier.notification.delivered.v1")
+                && message.contains("payload is not an envelope with metadata.correlation_id"),
+            "{message}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn a_live_drain_reads_nothing_when_nothing_was_published() {
+        let nats = crate::FabricTestNats::start().await;
+        let events = nats.capture_events(&[&event_coords()]).await;
+        let commands = nats.capture_commands(&[&command_coords()]).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(events.count(), 0);
+        assert!(events.first().is_none());
+        assert_eq!(commands.count(), 0);
+        assert!(commands.first().is_none());
+
+        events.stop().await;
+        commands.stop().await;
+        nats.shutdown().await;
     }
 }
