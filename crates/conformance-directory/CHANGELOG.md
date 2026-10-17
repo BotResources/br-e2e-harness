@@ -19,6 +19,8 @@ form to decide whether a version ships.
 - `read_users` and `read_groups` return `ConformanceError::NonConformantWire` for a stray key under the `users/` or `groups/` prefix of the bucket instead of dropping it.
 - C3 reports a verdict, not `ConformanceError::Postgres`, when the projector wrote no `known_users` row for the first user.
 
+- `emit_snapshot(binary)` prepends the directory of the binary to the child `PATH` only when that directory is absolute. A bare name or a relative path leaves `PATH` as inherited, so the anchor is no longer resolved from the current directory through an empty `PATH` entry.
+
 ### Added
 
 - `locate_anchor()`, `locate_and_emit()` and `ANCHOR_BINARY`: the tests assume the Go anchor is already built and find the `identity-directory` binary on `PATH`, then in the cache directory, then by a verified download of the `identity-directory-<os>-<arch>.tar.gz` asset (with its `.sha256`) of this crate's own GitHub release `conformance-directory/v{version}`. The download fails closed on a SHA-256 mismatch, a redirect to a host outside `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`, a non-https URL, or a size over 64 MiB.

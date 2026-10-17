@@ -69,14 +69,18 @@ fn keyed<'a>(
 }
 
 pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
-    let directory = binary.parent().ok_or_else(|| {
-        ConformanceError::Run(format!("{} has no parent directory", binary.display()))
-    })?;
-    let path = path_with_directory_first(directory, std::env::var_os("PATH").as_deref())?;
+    let path = match binary.parent().filter(|dir| dir.is_absolute()) {
+        Some(directory) => Some(path_with_directory_first(
+            directory,
+            std::env::var_os("PATH").as_deref(),
+        )?),
+        None => None,
+    };
+    let envs: Vec<(&str, &str)> = path.iter().map(|path| ("PATH", path.as_str())).collect();
     let output = run_once(
         &binary.to_string_lossy(),
         &[],
-        &[("PATH", &path)],
+        &envs,
         Duration::from_secs(60),
     )
     .await
