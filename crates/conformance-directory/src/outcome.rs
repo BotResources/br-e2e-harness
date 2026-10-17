@@ -177,7 +177,7 @@ impl ConformanceReport {
     }
 
     pub fn is_conformant(&self) -> bool {
-        self.failed() == 0 && self.passed() > 0
+        !self.outcomes.is_empty() && self.failed() == 0 && self.skipped() == 0
     }
 }
 
@@ -221,8 +221,8 @@ mod tests {
     }
 
     #[test]
-    fn a_pass_beside_a_skip_is_conformant() {
-        assert!(report(vec![pass(), skipped()]).is_conformant());
+    fn a_pass_beside_a_skip_is_not_conformant() {
+        assert!(!report(vec![pass(), skipped()]).is_conformant());
     }
 
     #[test]

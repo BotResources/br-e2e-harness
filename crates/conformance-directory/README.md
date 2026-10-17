@@ -88,7 +88,7 @@ missing prerequisite (`nats-server` not on `PATH`, the `fabric-nats` CLI not bui
 the test executable, no `E2E_PG_ADMIN_URL` / `DATABASE_URL`, an unreachable Postgres, a
 missing `identity-directory` binary or `PUBLISHED_LANGUAGE` bucket) comes back as a typed
 `ConformanceError`, so a consuming service's e2e can call them directly. A report is
-`is_conformant()` only with at least one passed check and no failed one:
+`is_conformant()` only with at least one outcome, no failed and no skipped outcome:
 
 - `locate_and_emit()` — locates the `identity-directory` binary (below) and runs it
   once, returning the parsed `DirectorySnapshotWire`. `locate_anchor()` /
