@@ -184,10 +184,9 @@ cargo test -p conformance-directory --test conformance -- --ignored --test-threa
 and database per Cx test and drops them on cleanup.
 
 CI runs `cargo test -p conformance-directory --all-targets -- --ignored --test-threads=1`
-in the `infra-e2e` job (the battery, the absent-bucket test, the ignored unit
-test of `extensions.rs`, and the two other ignored tests,
-`batteries_without_the_fabric_nats_cli_are_a_typed_error` and
-`a_stray_key_under_a_directory_prefix_is_reported_not_dropped`), which provides the Postgres service container, `nats-server` on `PATH`, the
+in the `infra-e2e` job, so every ignored test of the crate runs there (the battery, the
+absent-bucket test, the ignored unit tests of `extensions.rs` and `publisher.rs`, and the
+ignored tests of `absent_fabric_nats.rs` and `malformed_published_keys.rs`), which provides the Postgres service container, `nats-server` on `PATH`, the
 `identity-directory` binary built by a workflow step onto `PATH`, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
 PR, not just documented.
 

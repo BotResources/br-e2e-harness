@@ -30,7 +30,7 @@ pub(crate) async fn locate(
     let Some(cache) = cache else {
         return Err(unavailable(
             binary,
-            "no cache directory: neither XDG_CACHE_HOME nor HOME is set",
+            "no cache directory: XDG_CACHE_HOME and HOME are not set to an absolute path",
         ));
     };
     let cached = cache.join(binary);
