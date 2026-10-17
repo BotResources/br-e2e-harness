@@ -1,4 +1,4 @@
-use br_core_directory::{GROUPS_KEY_PREFIX, USERS_KEY_PREFIX};
+use br_core_directory::{GROUPS_KEY_PREFIX, USERS_KEY_PREFIX, user_kv_key};
 use br_util_nats_fabric::KvKey;
 use conformance_directory::{ConformanceError, DirectoryHarness, read_groups, read_users};
 
@@ -38,6 +38,38 @@ async fn a_stray_key_under_a_directory_prefix_is_reported_not_dropped() {
         &groups_key,
         read_groups(harness.nats()).await,
     );
+
+    harness.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH and the `fabric-nats` CLI built in the same target directory"]
+async fn two_spellings_of_one_id_are_reported_not_merged_into_one_entry() {
+    let harness = DirectoryHarness::start().await.expect("start the harness");
+    let id = uuid::Uuid::now_v7();
+    let canonical = user_kv_key(id);
+    let uppercase = format!(
+        "{USERS_KEY_PREFIX}{}",
+        id.hyphenated().to_string().to_uppercase()
+    );
+    let simple = format!("{USERS_KEY_PREFIX}{}", id.simple());
+    let value = br#"{"email":"a@example.com","first_name":null,"last_name":null}"#;
+    for key in [&canonical, &uppercase, &simple] {
+        harness
+            .nats()
+            .pl_put_raw(&KvKey::new(key.as_str()).unwrap(), value)
+            .await;
+    }
+
+    match read_users(harness.nats()).await {
+        Err(ConformanceError::NonConformantWire { key, .. }) => {
+            assert!(
+                key == uppercase || key == simple,
+                "the error must name a non-canonical spelling, named {key}"
+            );
+        }
+        other => panic!("three spellings of one id must not read as one user: {other:?}"),
+    }
 
     harness.shutdown().await;
 }

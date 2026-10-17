@@ -5,6 +5,7 @@ use br_util_directory::{ConsumptionScope, DirectoryConsumerConfig, DirectoryProj
 use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
+use crate::check::{Check, Run, finish};
 use crate::error::{ConformanceError, Result};
 use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
@@ -20,7 +21,7 @@ pub async fn users_only_narrows_projection(
                     cleanly and projects users, emitting no group DML (any group write would error \
                     on the missing tables)";
     let env = ConsumerEnv::start().await?;
-    let outcome = users_only_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    let outcome = finish(users_only_inner(id, expected, &env.harness, &env.db, snapshot).await);
     env.shutdown().await;
     outcome
 }
@@ -31,7 +32,8 @@ async fn users_only_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let source = AnchorSource::from_snapshot(snapshot)?;
     if source.groups().is_empty() {
         return Ok(CheckOutcome::fail(
@@ -67,10 +69,7 @@ async fn users_only_inner(
         db.pool().clone(),
         config.clone(),
     );
-    projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("users-only reconcile: {e}")))?;
+    check.system("users-only reconcile", projector.reconcile().await)?;
 
     if !user_row_exists(db, user_id).await? {
         return Ok(CheckOutcome::fail(

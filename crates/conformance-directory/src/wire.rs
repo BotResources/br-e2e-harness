@@ -43,7 +43,7 @@ pub fn run_wire_battery(snapshot: &DirectorySnapshotWire) -> ConformanceReport {
 
 fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireUserDeserializes;
-    let expected = "every users/{uuid} key is unique and its value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
+    let expected = "every key is exactly `user_kv_key(id)` (users/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
     if snapshot.users.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -93,7 +93,7 @@ fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
 
 fn check_group_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireGroupDeserializes;
-    let expected = "every groups/{uuid} key is unique and its value deserializes through br_core_directory::PublishedGroup with member_ids as an array";
+    let expected = "every key is exactly `group_kv_key(id)` (groups/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedGroup with member_ids as an array";
     if snapshot.groups.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -375,5 +375,42 @@ mod tests {
             "two entries carrying the same user id must fail W1: {:#?}",
             report.outcomes
         );
+    }
+
+    #[test]
+    fn a_non_canonical_user_key_fails_exactly_the_user_check() {
+        let id = "01938c1f-0000-7000-8000-000000000001";
+        let spellings = [
+            id.to_uppercase(),
+            id.replace('-', ""),
+            format!("{{{id}}}"),
+            format!("urn:uuid:{id}"),
+        ];
+        for spelling in spellings {
+            let mut snapshot = canonical_snapshot();
+            snapshot.users[0].key = format!("identity/users/{spelling}");
+            let report = run_wire_battery(&snapshot);
+            let failed: Vec<_> = report
+                .outcomes
+                .iter()
+                .filter(|o| o.status == crate::outcome::CheckStatus::Fail)
+                .map(|o| o.id)
+                .collect();
+            assert_eq!(failed, vec![CheckId::WireUserDeserializes], "{spelling}");
+        }
+    }
+
+    #[test]
+    fn a_non_canonical_group_key_fails_exactly_the_group_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.groups[0].key = "identity/groups/01938C1F-0000-7000-8000-0000000000A1".to_string();
+        let report = run_wire_battery(&snapshot);
+        let failed: Vec<_> = report
+            .outcomes
+            .iter()
+            .filter(|o| o.status == crate::outcome::CheckStatus::Fail)
+            .map(|o| o.id)
+            .collect();
+        assert_eq!(failed, vec![CheckId::WireGroupDeserializes]);
     }
 }

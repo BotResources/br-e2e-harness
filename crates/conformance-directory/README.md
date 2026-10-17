@@ -43,8 +43,8 @@ tag is cut.
 
 | Id | Asserts |
 |---|---|
-| **W1** | every key is `users/{uuid}` and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
-| **W2** | every key is `groups/{uuid}` and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
+| **W1** | every key is exactly `user_kv_key(id)` (`users/` + the hyphenated lowercase uuid; uppercase, 32-hex, braced and `urn:uuid:` spellings fail) and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
+| **W2** | every key is exactly `group_kv_key(id)` (`groups/` + the hyphenated lowercase uuid; other spellings fail) and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
 | **W3** | `identity/_meta` deserialises through `DirectoryMeta` declaring users + groups. |
 | **W4** | the neutral extension `x_custom` lands in `extensions` (flat), never leaking into a core field — the `#[serde(flatten)]` works. |
 | **W5** | a users-only manifest deserialises and **auto-degrades** groups (`publishes_groups() == false`). |
@@ -88,7 +88,13 @@ missing prerequisite (`nats-server` not on `PATH`, the `fabric-nats` CLI not bui
 the test executable, no `E2E_PG_ADMIN_URL` / `DATABASE_URL`, an unreachable Postgres, a
 missing `identity-directory` binary or `PUBLISHED_LANGUAGE` bucket) comes back as a typed
 `ConformanceError`, so a consuming service's e2e can call them directly. A report is
-`is_conformant()` only with at least one outcome, no failed and no skipped outcome:
+`is_conformant()` only with at least one outcome, no failed and no skipped outcome.
+A check returns `Err` only for a missing prerequisite or a fixture failure (the anchor
+binary, `nats-server`, `fabric-nats`, Postgres, seeding the KV, migrating, the
+throwaway database). The behaviour of the system under test is always a `CheckOutcome`:
+a failing `DirectoryPublisher` open or `reconcile`, a failing `DirectoryProjector`
+`reconcile`, and a published key or value that is not conformant are a failed outcome
+naming the stage and the key, never an `Err`.
 
 - `locate_and_emit()` — locates the `identity-directory` binary (below) and runs it
   once, returning the parsed `DirectorySnapshotWire`. `locate_anchor()` /
@@ -125,7 +131,7 @@ missing `identity-directory` binary or `PUBLISHED_LANGUAGE` bucket) comes back a
   infra), asserting `PublishedUser::new` fails closed on a reserved-key extension.
 - `AnchorSource` — a `DirectorySource` built **from the anchor snapshot** (its
   users/groups are the Go-frozen values re-deserialised through the lib; an entry
-  under a key that is not `users/{uuid}` / `groups/{uuid}`, or a repeated id, is an
+  under a key that is not exactly `user_kv_key(id)` / `group_kv_key(id)`, or a repeated id, is an
   error, never dropped), so the
   wire the publisher emits is exactly the frozen anchor shape; `.without_groups()`
   drops groups to drive P2's manifest-gating.

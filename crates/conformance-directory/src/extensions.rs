@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
+use crate::check::{Check, Run, finish};
 use crate::error::{ConformanceError, Result};
 use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
@@ -37,7 +38,8 @@ pub async fn extension_survives_projection(
     let expected = "a published user carrying an extension the consumer extracts is projected into \
                     known_users.extensions and read back intact (lossless sink)";
     let env = ConsumerEnv::start().await?;
-    let outcome = extension_survives_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    let outcome =
+        finish(extension_survives_inner(id, expected, &env.harness, &env.db, snapshot).await);
     env.shutdown().await;
     outcome
 }
@@ -48,7 +50,8 @@ async fn extension_survives_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let mut source = AnchorSource::from_snapshot(snapshot)?;
     let Some((user_id, base)) = source.first_user() else {
         return Ok(CheckOutcome::fail(
@@ -71,10 +74,7 @@ async fn extension_survives_inner(
         db.pool().clone(),
         config_keeping_locale(ConsumptionScope::UsersAndGroups),
     );
-    projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile: {e}")))?;
+    check.system("reconcile", projector.reconcile().await)?;
 
     match read_extensions(db, user_id).await? {
         Some(stored) if stored == json!({ "locale": "fr" }) => Ok(CheckOutcome::pass(
@@ -102,7 +102,7 @@ pub async fn filter_flip_orphan_deletes(snapshot: &DirectorySnapshotWire) -> Res
     let expected = "a user passing .filter_users is projected; on republish FAILING the filter the \
                     next reconcile orphan-deletes its row";
     let env = ConsumerEnv::start().await?;
-    let outcome = filter_flip_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    let outcome = finish(filter_flip_inner(id, expected, &env.harness, &env.db, snapshot).await);
     env.shutdown().await;
     outcome
 }
@@ -113,7 +113,8 @@ async fn filter_flip_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let mut source = AnchorSource::from_snapshot(snapshot)?;
     let Some((user_id, base)) = source.first_user() else {
         return Ok(CheckOutcome::fail(
@@ -137,10 +138,7 @@ async fn filter_flip_inner(
         db.pool().clone(),
         config.clone(),
     );
-    projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile: {e}")))?;
+    check.system("reconcile", projector.reconcile().await)?;
     if !user_row_exists(db, user_id).await? {
         return Ok(CheckOutcome::fail(
             id,
@@ -155,10 +153,7 @@ async fn filter_flip_inner(
     publish_snapshot(harness.fabric(), &source).await?;
     let projector_after =
         DirectoryProjector::with_config(harness.fabric().clone(), db.pool().clone(), config);
-    projector_after
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile after flip: {e}")))?;
+    check.system("reconcile after flip", projector_after.reconcile().await)?;
     if user_row_exists(db, user_id).await? {
         return Ok(CheckOutcome::fail(
             id,

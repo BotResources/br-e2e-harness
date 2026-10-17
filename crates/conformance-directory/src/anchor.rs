@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use br_core_directory::{META_KEY, group_id_from_kv_key, user_id_from_kv_key};
+use br_core_directory::{
+    META_KEY, group_id_from_kv_key, group_kv_key, user_id_from_kv_key, user_kv_key,
+};
 use br_test_harness::run_once;
 use serde::Deserialize;
 use serde_json::Value;
@@ -34,17 +36,30 @@ impl DirectorySnapshotWire {
     }
 
     pub(crate) fn keyed_users(&self) -> Result<BTreeMap<Uuid, &KvEntry>> {
-        keyed(&self.users, Self::user_id, "PublishedUser", "users")
+        keyed(
+            &self.users,
+            Self::user_id,
+            user_kv_key,
+            "PublishedUser",
+            "users",
+        )
     }
 
     pub(crate) fn keyed_groups(&self) -> Result<BTreeMap<Uuid, &KvEntry>> {
-        keyed(&self.groups, Self::group_id, "PublishedGroup", "groups")
+        keyed(
+            &self.groups,
+            Self::group_id,
+            group_kv_key,
+            "PublishedGroup",
+            "groups",
+        )
     }
 }
 
 fn keyed<'a>(
     entries: &'a [KvEntry],
     id_of: fn(&KvEntry) -> Option<Uuid>,
+    key_of: fn(Uuid) -> String,
     ty: &'static str,
     namespace: &str,
 ) -> Result<BTreeMap<Uuid, &'a KvEntry>> {
@@ -57,6 +72,14 @@ fn keyed<'a>(
                 cause: format!("the key is not a {namespace}/{{uuid}} key"),
             });
         };
+        let canonical = key_of(id);
+        if entry.key != canonical {
+            return Err(ConformanceError::NonConformantWire {
+                key: entry.key.clone(),
+                ty,
+                cause: format!("the key is not the canonical form {canonical}"),
+            });
+        }
         if let Some(first) = keyed.insert(id, entry) {
             return Err(ConformanceError::NonConformantWire {
                 key: entry.key.clone(),

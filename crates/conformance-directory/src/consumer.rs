@@ -7,6 +7,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
+use crate::check::{Check, Run, finish};
 use crate::error::{ConformanceError, Result};
 use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
@@ -19,7 +20,8 @@ pub async fn consumer_reads_users(snapshot: &DirectorySnapshotWire) -> Result<Ch
     let expected = "reconcile-on-boot projects KV users into PG, resolve_user returns the carried fields, \
                     and retracting a user orphan-deletes its projection row";
     let env = ConsumerEnv::start().await?;
-    let outcome = consumer_reads_users_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    let outcome =
+        finish(consumer_reads_users_inner(id, expected, &env.harness, &env.db, snapshot).await);
     env.shutdown().await;
     outcome
 }
@@ -30,7 +32,8 @@ async fn consumer_reads_users_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let source = AnchorSource::from_snapshot(snapshot)?;
     publish_snapshot(harness.fabric(), &source).await?;
     migrate(db.pool())
@@ -38,10 +41,7 @@ async fn consumer_reads_users_inner(
         .map_err(|e| ConformanceError::Directory(format!("migrate: {e}")))?;
 
     let projector = DirectoryProjector::new(harness.fabric().clone(), db.pool().clone());
-    let manifest = projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile: {e}")))?;
+    let manifest = check.system("reconcile", projector.reconcile().await)?;
 
     let live = load_snapshot(db.pool(), &manifest).await?;
     let Some((expected_id, expected_user)) = source.users().iter().next() else {
@@ -79,10 +79,7 @@ async fn consumer_reads_users_inner(
     let mut retracted = source.clone();
     retracted.drop_user(expected_id);
     publish_snapshot(harness.fabric(), &retracted).await?;
-    let manifest = projector_after
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile after retract: {e}")))?;
+    let manifest = check.system("reconcile after retract", projector_after.reconcile().await)?;
     let after = load_snapshot(db.pool(), &manifest).await?;
     if after.resolve_user(*expected_id).is_some() {
         return Ok(CheckOutcome::fail(
@@ -104,7 +101,8 @@ pub async fn consumer_reads_groups(snapshot: &DirectorySnapshotWire) -> Result<C
     let id = CheckId::ConsumerReadsGroups;
     let expected = "with groups in _meta, is_member/group_name resolve; with a users-only _meta they auto-degrade to empty";
     let env = ConsumerEnv::start().await?;
-    let outcome = consumer_reads_groups_inner(id, expected, &env.harness, &env.db, snapshot).await;
+    let outcome =
+        finish(consumer_reads_groups_inner(id, expected, &env.harness, &env.db, snapshot).await);
     env.shutdown().await;
     outcome
 }
@@ -115,7 +113,8 @@ async fn consumer_reads_groups_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let source = AnchorSource::from_snapshot(snapshot)?;
     let Some((group_id, group)) = source
         .groups()
@@ -137,10 +136,7 @@ async fn consumer_reads_groups_inner(
         .await
         .map_err(|e| ConformanceError::Directory(format!("migrate: {e}")))?;
     let projector = DirectoryProjector::new(harness.fabric().clone(), db.pool().clone());
-    let manifest = projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile: {e}")))?;
+    let manifest = check.system("reconcile", projector.reconcile().await)?;
 
     let live = load_snapshot(db.pool(), &manifest).await?;
     if live.group_name(group_id).is_none() {

@@ -15,9 +15,7 @@ pub enum ConformanceError {
     Run(String),
     #[error("the anchor snapshot did not parse as a {{key, value}} transport: {0}")]
     Snapshot(String),
-    #[error(
-        "the Go-frozen value at {key} did not deserialize through br_core_directory::{ty}: {cause}"
-    )]
+    #[error("the wire entry at {key} is not conformant to br_core_directory::{ty}: {cause}")]
     NonConformantWire {
         key: String,
         ty: &'static str,

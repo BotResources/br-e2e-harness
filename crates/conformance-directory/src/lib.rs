@@ -1,5 +1,6 @@
 pub mod anchor;
 pub mod binary;
+mod check;
 pub mod consumer;
 pub mod error;
 pub mod extensions;

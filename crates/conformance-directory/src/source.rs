@@ -155,6 +155,41 @@ mod tests {
     }
 
     #[test]
+    fn a_non_canonical_spelling_of_a_user_id_is_refused_whatever_the_spelling() {
+        let id = "01938c1f-0000-7000-8000-000000000001";
+        let spellings = [
+            id.to_uppercase(),
+            id.replace('-', ""),
+            format!("{{{id}}}"),
+            format!("urn:uuid:{id}"),
+        ];
+        for spelling in spellings {
+            let mut snapshot = canonical_snapshot();
+            snapshot.users[0].key = format!("identity/users/{spelling}");
+            match AnchorSource::from_snapshot(&snapshot) {
+                Err(ConformanceError::NonConformantWire { key, ty, .. }) => {
+                    assert_eq!(key, format!("identity/users/{spelling}"));
+                    assert_eq!(ty, "PublishedUser");
+                }
+                other => panic!("{spelling} must be refused: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_non_canonical_spelling_of_a_group_id_is_refused() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.groups[0].key = "identity/groups/01938C1F-0000-7000-8000-0000000000A1".to_string();
+        assert!(matches!(
+            AnchorSource::from_snapshot(&snapshot),
+            Err(ConformanceError::NonConformantWire {
+                ty: "PublishedGroup",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn two_entries_resolving_to_one_user_id_are_refused_not_merged() {
         let mut snapshot = canonical_snapshot();
         let twin = entry(

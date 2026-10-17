@@ -131,6 +131,20 @@ impl CheckOutcome {
         }
     }
 
+    pub fn system_failed(
+        id: CheckId,
+        expected: impl Into<String>,
+        stage: &str,
+        error: impl fmt::Display,
+    ) -> Self {
+        Self::fail(
+            id,
+            expected,
+            format!("{stage} failed"),
+            format!("the system under test failed during {stage}: {error}"),
+        )
+    }
+
     pub fn skipped(id: CheckId, detail: impl Into<String>) -> Self {
         Self {
             id,
@@ -203,6 +217,22 @@ mod tests {
             report.push(outcome);
         }
         report
+    }
+
+    #[test]
+    fn a_system_failure_is_a_failed_outcome_naming_the_stage_and_the_error() {
+        let outcome = CheckOutcome::system_failed(
+            CheckId::PublisherFloor,
+            "e",
+            "first reconcile",
+            "decode error",
+        );
+        assert_eq!(outcome.status, CheckStatus::Fail);
+        assert_eq!(outcome.id, CheckId::PublisherFloor);
+        assert_eq!(outcome.expected, "e");
+        assert!(outcome.observed.contains("first reconcile"));
+        let detail = outcome.detail.unwrap();
+        assert!(detail.contains("first reconcile") && detail.contains("decode error"));
     }
 
     #[test]
