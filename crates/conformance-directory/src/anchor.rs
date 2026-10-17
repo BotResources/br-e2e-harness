@@ -70,7 +70,7 @@ fn keyed<'a>(
             return Err(ConformanceError::NonConformantWire {
                 key: entry.key.clone(),
                 ty,
-                cause: format!("the key is not a {prefix}{{uuid}} key"),
+                cause: format!("the key is not an {prefix}{{uuid}} key"),
             });
         };
         let canonical = key_of(id);
