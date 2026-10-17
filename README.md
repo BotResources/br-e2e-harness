@@ -118,6 +118,12 @@ depends on its kind:
 - **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
   release, the version being the one in that tag.
+- **Go anchor binaries** (`conformance-directory`) ship as **GitHub Release
+  assets** `identity-directory-<os>-<arch>.tar.gz` plus a sibling `.sha256`
+  (linux and darwin, amd64 and arm64) attached to the
+  `conformance-directory/v{version}` release. The crate never compiles: it
+  looks for `identity-directory` on `PATH`, then in its cache directory, then
+  downloads and verifies the asset of its own release into that cache.
 
 A crate that names a sibling's types in its public API pins that sibling by the
 same git url and the same tag string, and the workspace root maps the url to the
@@ -140,8 +146,9 @@ only after the siblings it pins have released.
 3. On merge to `main`, `release-tags` detects each tracked crate whose version
    has no `{crate}/v{version}` tag, applies the release-line law, tags, creates
    the GitHub release and records the API listing and dependencies. It then
-   starts `cd` (the `oidc-test-idp` image) or `release-cli` (the
-   `conformance-scope` binaries) with the new tag.
+   starts `cd` (the `oidc-test-idp` image), `release-cli` (the
+   `conformance-scope` binaries) or `release-anchor` (the
+   `conformance-directory` anchor binaries) with the new tag.
 
 ## Why
 
