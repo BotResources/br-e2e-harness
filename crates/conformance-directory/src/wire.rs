@@ -43,7 +43,7 @@ pub fn run_wire_battery(snapshot: &DirectorySnapshotWire) -> ConformanceReport {
 
 fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireUserDeserializes;
-    let expected = "every key is exactly `user_kv_key(id)` (users/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
+    let expected = "every key is exactly `user_kv_key(id)` (identity/users/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
     if snapshot.users.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -93,7 +93,7 @@ fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
 
 fn check_group_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireGroupDeserializes;
-    let expected = "every key is exactly `group_kv_key(id)` (groups/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedGroup with member_ids as an array";
+    let expected = "every key is exactly `group_kv_key(id)` (identity/groups/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedGroup with member_ids as an array";
     if snapshot.groups.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -341,7 +341,7 @@ mod tests {
         let report = run_wire_battery(&snapshot);
         assert!(
             !report.is_conformant(),
-            "a user key that is not users/{{uuid}} must fail W1: {:#?}",
+            "a user key that is not identity/users/{{uuid}} must fail W1: {:#?}",
             report.outcomes
         );
     }
@@ -356,7 +356,7 @@ mod tests {
         let report = run_wire_battery(&snapshot);
         assert!(
             !report.is_conformant(),
-            "a group key that is not groups/{{uuid}} must fail W2: {:#?}",
+            "a group key that is not identity/groups/{{uuid}} must fail W2: {:#?}",
             report.outcomes
         );
     }

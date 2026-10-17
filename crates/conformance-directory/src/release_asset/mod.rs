@@ -22,6 +22,7 @@ const EXTRACT_TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Clone, Copy)]
 pub(crate) struct Policy {
     pub(crate) https_only: bool,
+    pub(crate) system_proxy: bool,
     pub(crate) hosts: &'static [&'static str],
     pub(crate) max_archive_bytes: usize,
     pub(crate) max_checksum_bytes: usize,
@@ -54,6 +55,7 @@ impl Remote {
             ),
             policy: Policy {
                 https_only: true,
+                system_proxy: true,
                 hosts: RELEASE_HOSTS,
                 max_archive_bytes: MAX_ARCHIVE_BYTES,
                 max_checksum_bytes: MAX_CHECKSUM_BYTES,
@@ -143,7 +145,7 @@ pub(crate) async fn install_from_release(
 }
 
 fn client(policy: Policy) -> std::result::Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .redirect(RedirectPolicy::custom(move |attempt| {
             if attempt.previous().len() >= MAX_REDIRECTS {
@@ -153,9 +155,13 @@ fn client(policy: Policy) -> std::result::Result<reqwest::Client, String> {
                 Ok(()) => attempt.follow(),
                 Err(reason) => attempt.error(format!("redirect refused: {reason}")),
             }
-        }))
-        .build()
-        .map_err(|e| describe(&e))
+        }));
+    let builder = if policy.system_proxy {
+        builder
+    } else {
+        builder.no_proxy()
+    };
+    builder.build().map_err(|e| describe(&e))
 }
 
 async fn fetch_capped(

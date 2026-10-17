@@ -74,7 +74,7 @@ mod tests {
         ConformanceError::NonConformantWire {
             key: "identity/users/not-a-uuid".to_string(),
             ty: "PublishedUser",
-            cause: "the key is not a users/{uuid} key".to_string(),
+            cause: "the key is not an identity/users/{uuid} key".to_string(),
         }
     }
 

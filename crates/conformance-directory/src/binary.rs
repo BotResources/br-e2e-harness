@@ -76,9 +76,15 @@ pub(crate) fn cache_dir_from(lookup: impl Fn(&str) -> Option<OsString>) -> Optio
     )))
 }
 
-pub(crate) fn find_in_path(binary: &str, path: &OsStr) -> Option<PathBuf> {
+pub(crate) fn absolute_entries(path: &OsStr) -> Vec<PathBuf> {
     std::env::split_paths(path)
         .filter(|dir| dir.is_absolute())
+        .collect()
+}
+
+pub(crate) fn find_in_path(binary: &str, path: &OsStr) -> Option<PathBuf> {
+    absolute_entries(path)
+        .into_iter()
         .map(|dir| dir.join(binary))
         .find(|candidate| is_executable_file(candidate))
 }
@@ -132,12 +138,22 @@ mod tests {
     }
 
     #[test]
-    fn a_non_executable_file_and_a_relative_entry_are_ignored() {
+    fn a_non_executable_file_is_ignored() {
         let dir = scratch("path-miss");
         write_binary(&dir, ANCHOR_BINARY, 0o644);
-        let path = std::env::join_paths([&dir, Path::new("relative")]).unwrap();
+        let path = std::env::join_paths([&dir]).unwrap();
         assert_eq!(find_in_path(ANCHOR_BINARY, &path), None);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn only_absolute_path_entries_are_searched() {
+        let path = OsStr::new("relative:.::/usr/bin:../up:/bin");
+        assert_eq!(
+            absolute_entries(path),
+            [PathBuf::from("/usr/bin"), PathBuf::from("/bin")]
+        );
+        assert!(absolute_entries(OsStr::new("")).is_empty());
     }
 
     #[tokio::test]

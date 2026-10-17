@@ -3,7 +3,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use br_core_directory::{
-    META_KEY, group_id_from_kv_key, group_kv_key, user_id_from_kv_key, user_kv_key,
+    GROUPS_KEY_PREFIX, META_KEY, USERS_KEY_PREFIX, group_id_from_kv_key, group_kv_key,
+    user_id_from_kv_key, user_kv_key,
 };
 use br_test_harness::run_once;
 use serde::Deserialize;
@@ -41,7 +42,7 @@ impl DirectorySnapshotWire {
             Self::user_id,
             user_kv_key,
             "PublishedUser",
-            "users",
+            USERS_KEY_PREFIX,
         )
     }
 
@@ -51,7 +52,7 @@ impl DirectorySnapshotWire {
             Self::group_id,
             group_kv_key,
             "PublishedGroup",
-            "groups",
+            GROUPS_KEY_PREFIX,
         )
     }
 }
@@ -61,7 +62,7 @@ fn keyed<'a>(
     id_of: fn(&KvEntry) -> Option<Uuid>,
     key_of: fn(Uuid) -> String,
     ty: &'static str,
-    namespace: &str,
+    prefix: &str,
 ) -> Result<BTreeMap<Uuid, &'a KvEntry>> {
     let mut keyed = BTreeMap::new();
     for entry in entries {
@@ -69,7 +70,7 @@ fn keyed<'a>(
             return Err(ConformanceError::NonConformantWire {
                 key: entry.key.clone(),
                 ty,
-                cause: format!("the key is not a {namespace}/{{uuid}} key"),
+                cause: format!("the key is not a {prefix}{{uuid}} key"),
             });
         };
         let canonical = key_of(id);

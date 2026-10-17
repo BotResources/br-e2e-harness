@@ -11,6 +11,7 @@ use crate::test_scratch::scratch;
 
 const LOCAL: Policy = Policy {
     https_only: false,
+    system_proxy: false,
     hosts: &["127.0.0.1"],
     max_archive_bytes: 4096,
     max_checksum_bytes: 256,
@@ -216,6 +217,64 @@ async fn a_verified_archive_installs_an_executable_into_the_cache() {
         "no staging directory is left behind"
     );
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[tokio::test]
+async fn a_redirect_to_an_allowed_host_is_followed() {
+    let dir = scratch("install-follow");
+    let archive = archive_of(&dir, script);
+    let cache = dir.join("cache");
+    let target = serve(routes_for(archive.clone(), checksum(&archive))).await;
+    let routes = HashMap::from([
+        (
+            format!("/{}", asset()),
+            Reply::Redirect(format!("http://127.0.0.1:{target}/{}", asset())),
+        ),
+        (
+            format!("/{}.sha256", asset()),
+            Reply::Body(checksum(&archive)),
+        ),
+    ]);
+    let installed = download_into(&cache, routes).await.unwrap();
+    assert!(is_executable_file(&installed));
+    std::fs::remove_dir_all(dir).ok();
+}
+
+const PROXIED: &str = "CONFORMANCE_DIRECTORY_PROXIED_DOWNLOAD";
+const PROXIED_TEST: &str = "release_asset::tests::a_download_ignores_the_system_proxy";
+
+#[test]
+fn a_download_ignores_the_system_proxy() {
+    if std::env::var_os(PROXIED).is_none() {
+        let unreachable_proxy = "http://127.0.0.1:9";
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", PROXIED_TEST])
+            .env(PROXIED, "1")
+            .env("HTTP_PROXY", unreachable_proxy)
+            .env("http_proxy", unreachable_proxy)
+            .env("ALL_PROXY", unreachable_proxy)
+            .env("all_proxy", unreachable_proxy)
+            .env_remove("NO_PROXY")
+            .env_remove("no_proxy")
+            .status()
+            .unwrap();
+        assert!(status.success(), "the proxied child must pass: {status}");
+        return;
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let dir = scratch("install-proxy");
+            let archive = archive_of(&dir, script);
+            let cache = dir.join("cache");
+            let installed = download_into(&cache, routes_for(archive.clone(), checksum(&archive)))
+                .await
+                .unwrap();
+            assert!(is_executable_file(&installed));
+            std::fs::remove_dir_all(dir).ok();
+        });
 }
 
 #[tokio::test]

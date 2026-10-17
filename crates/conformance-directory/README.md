@@ -43,8 +43,8 @@ tag is cut.
 
 | Id | Asserts |
 |---|---|
-| **W1** | every key is exactly `user_kv_key(id)` (`users/` + the hyphenated lowercase uuid; uppercase, 32-hex, braced and `urn:uuid:` spellings fail) and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
-| **W2** | every key is exactly `group_kv_key(id)` (`groups/` + the hyphenated lowercase uuid; other spellings fail) and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
+| **W1** | every key is exactly `user_kv_key(id)` (`identity/users/` + the hyphenated lowercase uuid; uppercase, 32-hex, braced and `urn:uuid:` spellings fail) and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
+| **W2** | every key is exactly `group_kv_key(id)` (`identity/groups/` + the hyphenated lowercase uuid; other spellings fail) and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
 | **W3** | `identity/_meta` deserialises through `DirectoryMeta` declaring users + groups. |
 | **W4** | the neutral extension `x_custom` lands in `extensions` (flat), never leaking into a core field — the `#[serde(flatten)]` works. |
 | **W5** | a users-only manifest deserialises and **auto-degrades** groups (`publishes_groups() == false`). |
@@ -193,10 +193,12 @@ PR, not just documented.
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
-crates.io). The public API exposes types of three crates (`br-util-directory`: `AnchorSource`, `RecordingStager`;
+crates.io). The public API exposes types of four crates plus `sqlx` (`br-core-directory`: `PublishedUser`,
+`PublishedGroup`, `DirectoryMeta` in `deserialize_*`, `read_*` and `AnchorSource::users`;
+`br-util-directory`: `AnchorSource`, `RecordingStager`;
 `br-util-nats-fabric`: `Fabric` in `DirectoryHarness::fabric` and `publish_snapshot`;
 `br-test-harness`: `FabricTestNats` in `read_users`, `read_groups`, `read_meta` and
-`DirectoryHarness::nats`). Align your own pins with these exact tags, so Cargo resolves a single
+`DirectoryHarness::nats`; `sqlx` 0.8: `PgPool` in `ConsumerDb::pool`). Align your own pins with these exact tags, so Cargo resolves a single
 copy of each crate and never reports a type or trait mismatch:
 `br-util-directory/v0.1.1`, `br-core-directory/v0.1.0`, `br-util-nats-fabric/v0.1.0`
 (all from `br-rust-common`) and `br-test-harness/v0.1.2` (from `br-e2e-harness`).
