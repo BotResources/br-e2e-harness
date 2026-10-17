@@ -7,8 +7,8 @@ types against the frozen Go anchor.
 
 > ⚠️ **TEST FIXTURE ONLY.** Add it as a **dev-dependency**, never a runtime one.
 > The Px/Cx batteries stand up a real `nats-server` and a real Postgres on an
-> isolated, throwaway test network; the wire gate builds and runs a real Go
-> binary.
+> isolated, throwaway test network; the wire gate runs a real, prebuilt Go
+> binary. The crate never compiles anything.
 
 The on-wire contract these batteries enforce is documented in
 [`../../docs/conformance/directory-wire-v1.md`](../../docs/conformance/directory-wire-v1.md),
@@ -36,9 +36,9 @@ implementations**:
 
 ### Wire-deser gate — W1–W6 (offline, the gate)
 
-Builds + runs the Go anchor, then for each emitted `{key, value}` entry
+Runs the prebuilt Go anchor, then for each emitted `{key, value}` entry
 deserialises the `value` through the lib oracle. **Offline** — no NATS, no PG;
-only `go` on `PATH`. This is the gate that validates the lib's wire before its
+only the `identity-directory` binary (see below). This is the gate that validates the lib's wire before its
 tag is cut.
 
 | Id | Asserts |
@@ -51,7 +51,7 @@ tag is cut.
 | **W6** | an extensions map shadowing a reserved core key (`email`) is **rejected at `PublishedUser` construction** with `DirectoryError::ReservedExtensionKey` (fail-closed), never a silent overwrite. |
 
 The same logic has pure unit tests (`src/wire.rs`, inline JSON mirroring the
-anchor shape) so plain `cargo test` is green with **zero** toolchain.
+anchor shape) so plain `cargo test` is green with **zero** toolchain and no anchor binary.
 
 ### Px — publisher conformance (real NATS KV)
 
@@ -86,14 +86,13 @@ consume nothing.
 The check functions return a structured `CheckOutcome` rather than panicking, and a
 missing prerequisite (`nats-server` not on `PATH`, the `fabric-nats` CLI not built beside
 the test executable, no `E2E_PG_ADMIN_URL` / `DATABASE_URL`, an unreachable Postgres, a
-missing anchor directory or `PUBLISHED_LANGUAGE` bucket) comes back as a typed
+missing `identity-directory` binary or `PUBLISHED_LANGUAGE` bucket) comes back as a typed
 `ConformanceError`, so a consuming service's e2e can call them directly. A report is
 `is_conformant()` only with at least one passed check and no failed one:
 
-- `build_and_emit()` — builds the Go anchor and runs it once, returning the
-  parsed `DirectorySnapshotWire`. `build_anchor()` / `emit_snapshot(binary)` split
-  the two steps; `try_subject_dir()` resolves the anchor sources as a `Result`
-  (`subject_dir()` panics when they are missing).
+- `locate_and_emit()` — locates the `identity-directory` binary (below) and runs it
+  once, returning the parsed `DirectorySnapshotWire`. `locate_anchor()` /
+  `emit_snapshot(binary)` split the two steps; `ANCHOR_BINARY` is the binary name.
 - `run_wire_battery(&snapshot) -> ConformanceReport` — the W1–W5 offline gate
   (`reserved_key_rejected()` is the standalone W6 check);
   `deserialize_user` / `deserialize_group` / `deserialize_meta` are the per-entry
@@ -131,17 +130,45 @@ missing anchor directory or `PUBLISHED_LANGUAGE` bucket) comes back as a typed
   wire the publisher emits is exactly the frozen anchor shape; `.without_groups()`
   drops groups to drive P2's manifest-gating.
 
+## The anchor binary
+
+The tests never compile anything. They assume the Go anchor is already built and look
+for an executable named `identity-directory`, in this order:
+
+1. on `PATH` (absolute entries only);
+2. in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-directory-{version}`
+   (`~/Library/Caches/...` on macOS and `~/.cache/...` on Linux when `XDG_CACHE_HOME` is unset);
+3. downloaded from this crate's own GitHub release,
+   `BotResources/br-e2e-harness` tag `conformance-directory/v{version}`, asset
+   `identity-directory-<os>-<arch>.tar.gz` with its sibling `.sha256`, into that cache
+   directory.
+
+Platforms with a release asset: `linux` and `darwin`, on `amd64` and `arm64`. The download
+fails closed: the archive must match the SHA-256 published beside it, every redirect must stay
+on an https `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`
+host, and an archive over 64 MiB is refused. Only the `identity-directory` entry is extracted,
+and only if it is a regular file. Nothing is written to the system temporary directory.
+
+When none of the three succeeds, the call returns
+`ConformanceError::AnchorBinaryUnavailable` naming the binary and what to do: put it on
+`PATH`, or build it yourself with `make -C conformance-subjects/identity-directory build`
+and put `conformance-subjects/identity-directory` on `PATH`.
+
 ## Running it
 
 The offline unit tests run with plain `cargo test -p conformance-directory`. The
 real batteries are `#[ignore]`-gated:
 
 ```sh
-# wire gate (needs `go`)
+# build the anchor once, outside the tests, and put it on PATH
+make -C conformance-subjects/identity-directory build
+export PATH="$PWD/conformance-subjects/identity-directory:$PATH"
+
+# wire gate (needs the identity-directory binary)
 cargo test -p conformance-directory --test conformance \
   -- --ignored wire_battery
 
-# the full Px + Cx + wire suite (needs `go`, `nats-server`, and a Postgres)
+# the full Px + Cx + wire suite (needs the binary, `nats-server`, and a Postgres)
 NATS_URL=nats://localhost:4222 \
 E2E_PG_ADMIN_URL=postgresql://postgres@localhost:5432/postgres \
 cargo test -p conformance-directory --test conformance -- --ignored --test-threads=1
@@ -153,8 +180,8 @@ and database per Cx test and drops them on cleanup.
 
 CI runs `cargo test -p conformance-directory --all-targets -- --ignored --test-threads=1`
 in the `infra-e2e` job (the battery, the absent-bucket test and the ignored unit
-test of `extensions.rs`), which provides the Postgres service container, `nats-server` on `PATH`, a `go`
-toolchain, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
+test of `extensions.rs`), which provides the Postgres service container, `nats-server` on `PATH`, the
+`identity-directory` binary built by a workflow step onto `PATH`, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
 PR, not just documented.
 
 ## Install
@@ -186,7 +213,8 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 | C6's `plan()` refuses a snapshot where the refused user and the deleted user are the same id | The phases are ordered, and the last one renames the refused user. If the anchor ever made that user the group's lowest-id member, the delete phase would have removed the row the rename needs, and the check would report a lib defect that is really a fixture defect. |
 | C5 (UsersOnly) proves the narrowing by a schema that **lacks** the group tables | A `UsersOnly` consumer that merely *suppressed* output would pass even against a full schema. Dropping the group tables turns any stray group DML into a hard error, so a green C5 proves the scope genuinely never opens the group consumer — the narrowing is real, not cosmetic. `watch()` is run under a short `timeout` (a live subscription never returns on its own); the assertion is that it does not error and materialises no group tables within the window. |
 | The start of the throwaway NATS and database runs in a spawned task | `br-test-harness` panics when its infrastructure cannot start (`nats-server` crashing, `CREATE DATABASE` refused). The task boundary turns that panic into a `ConformanceError` instead of aborting the caller's test; the named prerequisites are probed first so the common cases never reach a panic. |
-| The whole real battery is `#[ignore]`-gated | It drives real infra (`go` + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
+| The tests assume a prebuilt anchor and never run `go` | A test that compiles is slow, needs a toolchain on every machine and hides a build failure inside a test verdict. The `release-anchor` workflow builds the four per-platform assets, so a machine without Go still gets the anchor through the verified download. |
+| The whole real battery is `#[ignore]`-gated | It drives real infra (the anchor binary + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
 
 ## License
 

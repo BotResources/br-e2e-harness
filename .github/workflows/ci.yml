@@ -101,6 +101,12 @@ jobs:
           go -C conformance-subjects/identity-passport test -count=1 ./...
       - name: passport conformance battery
         run: cargo test -p conformance-passport --test conformance --locked -- --ignored --test-threads=1
+      - name: build the identity-directory anchor onto PATH
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/anchor-bin"
+          CGO_ENABLED=0 go build -C conformance-subjects/identity-directory -o "$RUNNER_TEMP/anchor-bin/identity-directory" .
+          echo "$RUNNER_TEMP/anchor-bin" >> "$GITHUB_PATH"
       - name: directory conformance battery
         run: cargo test -p conformance-directory --all-targets --locked -- --ignored --test-threads=1
 

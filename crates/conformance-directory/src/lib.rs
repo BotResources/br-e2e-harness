@@ -1,5 +1,5 @@
 pub mod anchor;
-pub mod build;
+pub mod binary;
 pub mod consumer;
 pub mod error;
 pub mod extensions;
@@ -11,15 +11,18 @@ mod prerequisite;
 pub mod provision;
 pub mod publish_fixture;
 pub mod publisher;
+mod release_asset;
 pub mod source;
 pub mod stager;
+#[cfg(test)]
+mod test_scratch;
 #[cfg(test)]
 mod test_snapshot;
 pub mod users_only;
 pub mod wire;
 
-pub use anchor::{DirectorySnapshotWire, KvEntry, build_and_emit, emit_snapshot};
-pub use build::{build_anchor, ensure_go_available, subject_dir, try_subject_dir};
+pub use anchor::{DirectorySnapshotWire, KvEntry, emit_snapshot, locate_and_emit};
+pub use binary::{ANCHOR_BINARY, locate_anchor};
 pub use consumer::{consumer_reads_groups, consumer_reads_users};
 pub use error::{ConformanceError, Result};
 pub use extensions::{

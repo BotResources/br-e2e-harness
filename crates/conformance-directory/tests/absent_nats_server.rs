@@ -21,7 +21,8 @@ fn assert_names_the_missing_server<T: Debug>(battery: &str, result: Result<T>) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn every_battery_returns_a_typed_error_when_nats_server_is_not_on_path() {
-    let empty = std::env::temp_dir().join(format!("no-binaries-{}", uuid::Uuid::now_v7().simple()));
+    let empty = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("no-binaries-{}", uuid::Uuid::now_v7().simple()));
     std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
     // SAFETY: this file holds a single test, so no other thread of this process reads or writes the environment while it runs.
     unsafe {

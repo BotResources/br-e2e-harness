@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::binary::{locate_anchor, path_with_directory_first};
 use crate::error::{ConformanceError, Result};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,9 +69,18 @@ fn keyed<'a>(
 }
 
 pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
-    let output = run_once(&binary.to_string_lossy(), &[], &[], Duration::from_secs(60))
-        .await
-        .map_err(ConformanceError::Run)?;
+    let directory = binary.parent().ok_or_else(|| {
+        ConformanceError::Run(format!("{} has no parent directory", binary.display()))
+    })?;
+    let path = path_with_directory_first(directory, std::env::var_os("PATH").as_deref())?;
+    let output = run_once(
+        &binary.to_string_lossy(),
+        &[],
+        &[("PATH", &path)],
+        Duration::from_secs(60),
+    )
+    .await
+    .map_err(ConformanceError::Run)?;
 
     if !output.status.success() {
         return Err(ConformanceError::Run(format!(
@@ -93,8 +103,8 @@ pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
     Ok(snapshot)
 }
 
-pub async fn build_and_emit() -> Result<DirectorySnapshotWire> {
-    let binary = crate::build::build_anchor().await?;
+pub async fn locate_and_emit() -> Result<DirectorySnapshotWire> {
+    let binary = locate_anchor().await?;
     emit_snapshot(&binary).await
 }
 

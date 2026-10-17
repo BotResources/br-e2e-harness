@@ -28,7 +28,7 @@ form to decide whether a version ships.
 
 ### Changed
 
-- Pins `br-test-harness/v0.1.1`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
+- Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
 - New dependency `futures-util` (default features off, `std`) to contain harness panics.
 
 ## 0.1.0
