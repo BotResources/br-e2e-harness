@@ -1,4 +1,4 @@
-pub mod build;
+pub mod binary;
 pub mod capture;
 pub mod checks;
 pub mod declarer;
@@ -9,14 +9,17 @@ pub mod outcome;
 mod prerequisite;
 pub mod provision;
 pub mod readyz;
+mod release_asset;
 pub mod runner;
 pub mod scenario;
 pub mod spawn;
 pub mod subject;
 pub mod subjects;
+#[cfg(test)]
+mod test_scratch;
 pub mod wire;
 
-pub use build::{build_subject, ensure_go_available, subject_dir, try_subject_dir};
+pub use binary::{SUBJECT_BINARY, locate_subject};
 pub use capture::{CapturedConfirmation, ConfirmationCapture, DecodedConfirmation, Verdict};
 pub use checks::{CheckContext, run_scenario};
 pub use declarer::Declarer;

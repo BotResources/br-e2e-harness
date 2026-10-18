@@ -76,52 +76,54 @@ async fn assert_scenario(scenario: Scenario) {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a1_clean_declaration_is_accepted() {
     assert_scenario(Scenario::CleanDeclarationAccepted).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a2_owned_scope_reclaim_after_prior_accept_is_rejected() {
     assert_scenario(Scenario::OwnedScopeReclaimAfterPriorAccept).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a3_intra_declaration_duplicate_is_rejected() {
     assert_scenario(Scenario::IntraDeclarationDuplicateRejected).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a4_prefix_mismatch_is_rejected() {
     assert_scenario(Scenario::PrefixMismatchRejected).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a5_invalid_scope_key_is_rejected() {
     assert_scenario(Scenario::InvalidScopeKeyRejected).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a6_idempotent_redeclare_is_accepted() {
     assert_scenario(Scenario::IdempotentRedeclareAccepted).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn a7_malformed_scope_key_is_rejected() {
     assert_scenario(Scenario::MalformedScopeKeyRejected).await;
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + `identity-acceptor` on PATH"]
 async fn full_battery_is_conformant_via_run_spawn() {
-    use conformance_identity::{SpawnTarget, build_subject, run_spawn, spawn_default};
-    let binary = build_subject().await.expect("build subject");
+    use conformance_identity::{SpawnTarget, locate_subject, run_spawn, spawn_default};
+    let binary = locate_subject()
+        .await
+        .expect("locate the identity-acceptor binary");
     let report = run_spawn(&SpawnTarget { binary }, &spawn_default(), SHORT)
         .await
         .expect("run_spawn");

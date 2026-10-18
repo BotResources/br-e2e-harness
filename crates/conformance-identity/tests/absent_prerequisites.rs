@@ -47,7 +47,8 @@ async fn selecting_no_scenario_is_a_typed_error_not_a_green_report() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_missing_acceptor_binary_is_a_typed_error() {
-    let absent = std::env::temp_dir().join(format!("absent-{}", uuid::Uuid::now_v7().simple()));
+    let absent = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("absent-{}", uuid::Uuid::now_v7().simple()));
     assert_invalid_input(
         "start_with_binary",
         IdentityHarness::start_with_binary(absent.clone())

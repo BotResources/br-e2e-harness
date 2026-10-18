@@ -91,8 +91,17 @@ jobs:
         run: cargo test -p conformance-scope --test conformance --locked -- --ignored
       - name: scope-declaration conformance battery via the CLI binary
         run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
+      - name: identity-acceptor anchor checks and build onto PATH
+        run: |
+          set -euo pipefail
+          make -C conformance-subjects/identity-acceptor guard
+          go -C conformance-subjects/identity-acceptor vet ./...
+          go -C conformance-subjects/identity-acceptor test -count=1 ./...
+          mkdir -p "$RUNNER_TEMP/acceptor-bin"
+          CGO_ENABLED=0 go build -C conformance-subjects/identity-acceptor -o "$RUNNER_TEMP/acceptor-bin/identity-acceptor" .
+          echo "$RUNNER_TEMP/acceptor-bin" >> "$GITHUB_PATH"
       - name: scope-acceptance conformance battery
-        run: cargo test -p conformance-identity --test conformance --locked -- --ignored
+        run: cargo test -p conformance-identity --all-targets --locked -- --ignored --test-threads=1
       - name: nats-fabric conformance battery
         run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
       - name: identity-passport anchor tests (freezes the committed wire vectors)

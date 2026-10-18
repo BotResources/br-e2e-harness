@@ -11,8 +11,9 @@ subject's source — and asserts that an Identity registry decides every declara
 exactly as the platform requires.
 
 > ⚠️ **TEST FIXTURE ONLY.** Add it as a **dev-dependency**, never a runtime one.
-> It builds and spawns a real binary, stands up a real `nats-server`, and plays the
-> declaring side of the handshake on an isolated, throwaway test network.
+> It spawns a prebuilt binary, stands up a real `nats-server`, and plays the
+> declaring side of the handshake on an isolated, throwaway test network. The
+> crate never compiles anything.
 
 ## What it proves — and why this is a backward-compat anchor
 
@@ -69,8 +70,8 @@ context by driving a prior accepted declaration, then drives the contested one.
 
 ## Public helper surface (the reusable battery)
 
-- `IdentityHarness` — `start()` builds the Go subject (`build_subject`) and is the
-  self-test entry point; `start_with_binary(binary)` runs the **same** battery
+- `IdentityHarness` — `start()` locates the prebuilt `identity-acceptor` binary
+  (`locate_subject`, see "The subject binary") and is the self-test entry point; `start_with_binary(binary)` runs the **same** battery
   against any acceptor binary, so a consuming Identity service drives it against its
   own. It stands up a `br_test_harness::FabricTestNats`, which provisions the two
   **fixed** Project-NATS-Fabric streams — `INTEGRATION_CMD` (`integration.cmd.>`) and
@@ -98,6 +99,41 @@ context by driving a prior accepted declaration, then drives the contested one.
   `rejected_event_subject`) render the fixed six-segment grammar from the typed
   `br-scope-declaration-contract` coords through `br_util_nats_fabric`.
 
+## The subject binary
+
+The tests never compile anything. They assume the Go acceptor is already built and look
+for an executable named `identity-acceptor` (`SUBJECT_BINARY`), in this order:
+
+1. on `PATH` (absolute entries only);
+2. in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-identity-{version}`
+   (`~/Library/Caches/...` on macOS and `~/.cache/...` on Linux when `XDG_CACHE_HOME` is
+   unset; a relative `XDG_CACHE_HOME` or `HOME` is ignored, and without an absolute one
+   there is no cache directory and the lookup ends in the typed error);
+3. downloaded from this crate's own GitHub release,
+   `BotResources/br-e2e-harness` tag `conformance-identity/v{version}`, asset
+   `identity-acceptor-<os>-<arch>.tar.gz` with its sibling `.sha256`, into that cache
+   directory.
+
+Platforms with a release asset: `linux` and `darwin`, on `amd64` and `arm64`. The download
+fails closed: the archive must match the SHA-256 published beside it, every redirect must
+stay on an https `github.com` / `objects.githubusercontent.com` /
+`release-assets.githubusercontent.com` host, and an archive over 64 MiB is refused. Only the
+`identity-acceptor` entry is extracted, and only if it is a regular file, then marked
+executable. The archive is extracted with the `tar` found on the absolute entries of `PATH`.
+The lookup, the download and this crate's own tests write nothing to the system temporary
+directory (the throwaway NATS store of `br-test-harness` is that crate's own).
+
+`locate_subject()` returns the absolute path of the binary. The acceptor is spawned by
+that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary
+when that directory is absolute, through the child's environment only: the crate never calls
+`std::env::set_var`.
+
+When none of the three succeeds, the call returns `ConformanceError::SubjectBinaryUnavailable`
+naming the binary and what to do: put it on `PATH`, or build it yourself with
+`make -C conformance-subjects/identity-acceptor build` and put
+`conformance-subjects/identity-acceptor` on `PATH`. The dead-grammar guard of the subject
+(`make guard`) and its Go tests run in CI, not in this crate.
+
 ## The single-implementation check API
 
 Each A1–A7 check shares **one** implementation (`run_judged_scenario`), returning a
@@ -117,10 +153,11 @@ programmatic runners call it.
   oracle verdict of the failing step, and `observed` is rendered from the captured
   confirmation.
 - A missing prerequisite is a typed `ConformanceError`, never a panic: no scenario
-  selected (`InvalidInput`), a missing acceptor binary (`InvalidInput`), `nats-server`
-  not on `PATH`, the `fabric-nats` CLI not built beside the test executable, a harness
-  start or an unreachable NATS (`Jetstream`), an absent subject directory (`Build`). A
-  harness panic while observing a scenario is contained and reported as a failed check.
+  selected (`InvalidInput`), a path handed to `start_with_binary` / `run_spawn` that is
+  not a file (`InvalidInput`), no `identity-acceptor` binary on `PATH`, in the cache or
+  in the release (`SubjectBinaryUnavailable`), `nats-server` not on `PATH`, the
+  `fabric-nats` CLI not built beside the test executable, a harness start or an
+  unreachable NATS (`Jetstream`). A harness panic while observing a scenario is contained and reported as a failed check.
 
 ## Two programmatic runners — spawn and attach
 
@@ -130,7 +167,7 @@ programmatic runners call it.
   `a1..a7`. Needs `nats-server` on `PATH`.
 - `run_attach(AttachTarget { nats_url, readyz_url }, scenarios, timeout)`
   — connects to an already-running Identity service's NATS and polls its `/readyz`
-  directly; never spawns `nats-server` and never builds Go. It does **not** create the
+  directly; never spawns `nats-server` and never builds anything. It does **not** create the
   streams — the live service owns the fixed `INTEGRATION_EVT`; the confirmation
   consumer binds to it and fails loud if it is absent. **Caveat:** driving declarations
   **mutates a live registry**; the runner uses **unique per-run service/scope keys**
@@ -139,11 +176,13 @@ programmatic runners call it.
 
 ## Running it
 
-Needs `nats-server` and the **Go toolchain** on `PATH` (the runner builds the
-subject). The tests are `#[ignore]`-gated so the default `cargo test` stays green
+Needs `nats-server` and the `identity-acceptor` binary on `PATH` (see "The subject
+binary"). The tests are `#[ignore]`-gated so the default `cargo test` stays green
 without infra:
 
 ```sh
+make -C conformance-subjects/identity-acceptor build
+export PATH="$PWD/conformance-subjects/identity-acceptor:$PATH"
 cargo test -p conformance-identity --test conformance -- --ignored
 ```
 
@@ -155,8 +194,10 @@ confirmation capture is a thin typed view over the harness `EventCapture`, the
 declarer publishes through a `Fabric`, and attach mode connects via
 `FabricTestNats::connect`.
 
-CI runs it in the `infra-e2e` job, which already has `go` and `nats-server` on the
-runner (shared with G3).
+CI runs `cargo test -p conformance-identity --all-targets -- --ignored --test-threads=1`
+in the `infra-e2e` job. A workflow step builds `identity-acceptor` onto `PATH` after
+the Go checks of the subject (the dead-grammar guard, the vet and the Go tests); `nats-server` is
+installed on the runner (shared with G3).
 
 ## Install
 
@@ -183,7 +224,8 @@ conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness",
 | Keys are **namespaced per run** with a UUIDv7 | spawn mode is isolated anyway, but the same scenarios drive an attach run against a live, stateful registry; unique keys keep re-runs from colliding with each other or with prior state, and bound the pollution of a real registry. |
 | **attach drives all A1–A7, not a read-only subset like G3** | Unlike G3, whose attach default skips the scenarios that would stall a live service (timeout/re-publish, rejection-blocks-readiness), no G2 scenario durably mutes or blocks the acceptor — every one is a one-shot declare→verdict. With per-run key namespacing bounding the pollution, all seven are safe to drive repeatedly against a live registry, so `attach_default()` is the full set. |
 | The Go subject is a faithful reimpl of `judge_declaration`, not a binding | It is the tautology-break: an independent encoding of the wire + policy. If it merely called the lib, green would prove nothing. Its Go unit tests pin the rejection wire shapes to the frozen `scope-wire-v1` golden JSON. |
-| The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + `go` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
+| The tests never compile and the binary comes from `PATH`, a cache or a verified release asset | Compiling in a test hid the toolchain, wrote a binary to the system temporary directory and made the importer's test run depend on a Go build. A prebuilt binary found by name is the same artifact the release publishes, and a missing one is a typed error that says what to do. |
+| The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + the prebuilt `identity-acceptor` binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
 
 [`conformance-scope`]: ../conformance-scope/README.md
 

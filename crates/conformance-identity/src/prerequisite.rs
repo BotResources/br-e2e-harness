@@ -84,16 +84,11 @@ fn panic_message(payload: Box<dyn Any + Send>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("{label}-{}", uuid::Uuid::now_v7().simple()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    use crate::test_scratch::scratch;
 
     #[test]
     fn a_missing_fabric_nats_binary_is_a_typed_error() {
-        let target = temp_dir("no-fabric-nats");
+        let target = scratch("no-fabric-nats");
         let exe = target.join("deps").join("conformance-test");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
         match fabric_nats_beside(&exe) {
@@ -105,7 +100,7 @@ mod tests {
 
     #[test]
     fn fabric_nats_is_found_beside_the_deps_directory() {
-        let target = temp_dir("with-fabric-nats");
+        let target = scratch("with-fabric-nats");
         let exe = target.join("deps").join("conformance-test");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
         std::fs::write(target.join("fabric-nats"), b"").unwrap();
@@ -118,7 +113,7 @@ mod tests {
 
     #[test]
     fn a_missing_subject_binary_is_a_typed_input_error() {
-        let absent = std::env::temp_dir().join(format!("absent-{}", uuid::Uuid::now_v7().simple()));
+        let absent = scratch("absent-subject").join("identity-acceptor");
         match subject_binary(&absent) {
             Err(ConformanceError::InvalidInput(detail)) => {
                 assert!(detail.contains(&absent.display().to_string()));

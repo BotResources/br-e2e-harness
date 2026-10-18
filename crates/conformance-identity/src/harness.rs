@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
-use crate::build::build_subject;
+use crate::binary::locate_subject;
 use crate::capture::ConfirmationCapture;
 use crate::declarer::Declarer;
 use crate::error::{ConformanceError, Result};
@@ -19,7 +19,7 @@ pub struct IdentityHarness {
 
 impl IdentityHarness {
     pub async fn start() -> Result<Self> {
-        let binary = build_subject().await?;
+        let binary = locate_subject().await?;
         Self::start_with_binary(binary).await
     }
 

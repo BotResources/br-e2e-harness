@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag of conformance-directory whose anchor binaries to build
+        description: Release tag of a conformance library (conformance-directory or conformance-identity) whose Go binaries to build
         required: true
         type: string
 
@@ -16,9 +16,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  LIBRARY: conformance-directory
-  BIN: identity-directory
-  SUBJECT_DIR: conformance-subjects/identity-directory
   RELEASE_TAG: ${{ inputs.tag }}
 
 jobs:
@@ -28,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.gate.outputs.skip }}
+      bin: ${{ steps.gate.outputs.bin }}
+      subject_dir: ${{ steps.gate.outputs.subject_dir }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -41,7 +40,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          LIBRARY="${RELEASE_TAG%%/*}"
+          case "${LIBRARY}" in
+            conformance-directory) BIN=identity-directory ;;
+            conformance-identity) BIN=identity-acceptor ;;
+            *)
+              echo "::error::${LIBRARY} publishes no Go binary through this workflow"
+              exit 1
+              ;;
+          esac
           bash .github/scripts/artifact-tag.sh "${LIBRARY}" "${RELEASE_TAG}"
+          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
+          echo "subject_dir=conformance-subjects/${BIN}" >> "$GITHUB_OUTPUT"
           marker="${BIN}-linux-amd64.tar.gz"
           if gh release view "${RELEASE_TAG}" --json assets \
                --jq '.assets[].name' 2>/dev/null | grep -qx "${marker}"; then
@@ -82,6 +92,8 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          BIN: ${{ needs.gate.outputs.bin }}
+          SUBJECT_DIR: ${{ needs.gate.outputs.subject_dir }}
         run: |
           set -euo pipefail
           asset="${BIN}-${GOOS}-${GOARCH}.tar.gz"
@@ -94,10 +106,10 @@ jobs:
       - name: upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ env.BIN }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: ${{ needs.gate.outputs.bin }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            ${{ env.BIN }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
-            ${{ env.BIN }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+            ${{ needs.gate.outputs.bin }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            ${{ needs.gate.outputs.bin }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
           if-no-files-found: error
           retention-days: 1
 

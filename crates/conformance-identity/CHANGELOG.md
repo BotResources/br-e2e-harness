@@ -15,21 +15,29 @@ form to decide whether a version ships.
 
 - `ConformanceReport::is_conformant` is true only for a report with at least one passed check and no failed one; an empty report or a report of skipped checks no longer gets a conformant verdict. `run_spawn` and `run_attach` return `ConformanceError::InvalidInput` when the scenario slice is empty, so a caller that selects nothing no longer gets a green result.
 - A rejected confirmation is judged on the service it names as well as on its reason, like an accepted one: a subject that rejects a declaration but names another service now fails the scenario. The report text shows the service of the captured confirmation.
-- A missing prerequisite is a typed `ConformanceError`, not a panic: `nats-server` not on `PATH`, the `fabric-nats` CLI not built beside the test executable (also from `provision`), an acceptor binary that is not a file, a throwaway NATS that does not start, an unreachable NATS in `run_attach`, a confirmation consumer that cannot bind, an acceptor that cannot be spawned, and an absent `identity-acceptor` directory in `build_subject` (`ConformanceError::Build`). A harness panic while a scenario observes the subject is contained and reported as a failed check.
+- A missing prerequisite is a typed `ConformanceError`, not a panic: `nats-server` not on `PATH`, the `fabric-nats` CLI not built beside the test executable (also from `provision`), an acceptor binary that is not a file, a throwaway NATS that does not start, an unreachable NATS in `run_attach`, a confirmation consumer that cannot bind, an acceptor that cannot be spawned, and an `identity-acceptor` binary found nowhere (`ConformanceError::SubjectBinaryUnavailable`). A harness panic while a scenario observes the subject is contained and reported as a failed check.
 - `expected_verdict` returns `ConformanceError::InvalidInput` on an empty sequence instead of panicking.
 - In a failing multi-step scenario the `expected` text is the oracle verdict of the failing step, not of the last step; on a pass the `observed` text is rendered from the captured confirmation, not rebuilt from the oracle.
+- A confirmation on the accepted or rejected subject that is not a JSON envelope with a readable correlation id is reported as a failed check naming the wire-shape violation (the capture of `br-test-harness/v0.1.2` records the cause instead of dropping the frame, and the harness panic is contained), no longer as "no confirmation arrived". An envelope whose payload does not deserialize was already a failed check naming the decode error. Both are pinned by `tests/malformed_confirmation.rs`.
 - `run_spawn` shuts the throwaway NATS and the capture down on every early failure.
-- `subject_dir()` no longer panics when the directory is absent.
+- The tests never compile anything. The `identity-acceptor` binary is looked up on `PATH`, then in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-identity-{version}`, then downloaded from this crate's own release (`conformance-identity/v{version}`, asset `identity-acceptor-<os>-<arch>.tar.gz` with its `.sha256`; `linux` and `darwin`, `amd64` and `arm64`), failing closed on a SHA-256 mismatch, a redirect to a host other than `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`, or an archive over 64 MiB. A binary found nowhere is `ConformanceError::SubjectBinaryUnavailable`, naming the binary and what to do. `IdentityHarness::start` uses this lookup instead of building the subject.
+- The crate and its tests write nothing to the system temporary directory: the former build output is gone, and the scratch directories of the tests live under the test target directory. The tests that changed `PATH` through `std::env::set_var` run the check in a child process instead, with no `unsafe`.
+
+### Removed
+
+- The public items of the `build` module, removed with the module: `build_subject`, `ensure_go_available`, `subject_dir`, `try_subject_dir` and `run_dead_grammar_guard`. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
+- `ConformanceError::GoUnavailable` and `ConformanceError::Build`.
 
 ### Added
 
-- `try_subject_dir()`, the non-panicking form of `subject_dir()`.
+- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
 - `DecodedConfirmation`, `CapturedConfirmation::decode_confirmation`, `ConfirmationCapture::confirmation_decoded_for`, `expected_step_confirmations`, `oracle::confirmation_code`: the verdict together with the service the confirmation names.
 
 ### Changed
 
+- `Subject::spawn` hands the acceptor a `PATH` led by the directory of its binary, through the child's environment.
 - Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
-- New dependency `futures-util` (default features off, `std`) to contain harness panics.
+- New dependencies `futures-util` (default features off, `std`) to contain harness panics and `sha2` to verify the release asset.
 
 ## 0.1.0
 
