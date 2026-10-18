@@ -67,8 +67,22 @@ pub(crate) async fn postgres() -> Result<()> {
 }
 
 fn pg_admin_url() -> Result<String> {
-    dotenvy::dotenv().ok();
-    admin_url_from(|name| std::env::var(name).ok())
+    let dotenv_file = std::cell::OnceCell::new();
+    admin_url_from(|name| {
+        std::env::var(name).ok().or_else(|| {
+            dotenv_file
+                .get_or_init(read_dotenv)
+                .iter()
+                .find_map(|(key, value)| (key == name).then(|| value.clone()))
+        })
+    })
+}
+
+fn read_dotenv() -> Vec<(String, String)> {
+    match dotenvy::dotenv_iter() {
+        Ok(entries) => entries.map_while(std::result::Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 fn admin_url_from(lookup: impl Fn(&str) -> Option<String>) -> Result<String> {

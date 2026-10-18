@@ -21,6 +21,7 @@ form to decide whether a version ships.
 - W1, W2, `AnchorSource::from_snapshot`, `read_users` and `read_groups` require the whole key to equal `user_kv_key(id)` / `group_kv_key(id)` (hyphenated lowercase uuid). An uppercase, 32-hex, braced or `urn:uuid:` spelling of an id is `ConformanceError::NonConformantWire` naming the key (W1/W2 fail); two spellings of one id no longer read back as a single user.
 - W3 requires the `identity/_meta` entry key to equal `META_KEY`; a snapshot with another meta key fails W3 naming the key instead of passing `run_wire_battery`.
 - `ConformanceError::NonConformantWire` no longer says the value is "Go-frozen": it is also raised for a read-back of the bucket.
+- The Postgres admin URL lookup no longer changes the process environment: it reads `E2E_PG_ADMIN_URL`, then `DATABASE_URL`, from the environment and falls back to the nearest `.env` file by reading it only (no `set_var`), so batteries run in parallel test threads never write the environment and a `.env` above the working directory never leaks into the process or its children.
 
 ### Added
 
