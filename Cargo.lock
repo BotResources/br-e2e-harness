@@ -590,6 +590,7 @@ dependencies = [
  "br-util-directory",
  "br-util-nats-fabric",
  "dotenvy",
+ "futures-util",
  "reqwest",
  "serde",
  "serde_json",

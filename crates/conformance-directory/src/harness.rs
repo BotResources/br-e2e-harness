@@ -21,13 +21,21 @@ impl DirectoryHarness {
             nats.shutdown().await;
             return Err(e);
         }
-        if !nats.published_language_present().await {
-            nats.shutdown().await;
-            return Err(ConformanceError::Jetstream(
-                "the PUBLISHED_LANGUAGE bucket is absent after provisioning".to_string(),
-            ));
+        match prerequisite::contained(nats.published_language_present()).await {
+            Ok(true) => Ok(Self { nats }),
+            Ok(false) => {
+                nats.shutdown().await;
+                Err(ConformanceError::Jetstream(
+                    "the PUBLISHED_LANGUAGE bucket is absent after provisioning".to_string(),
+                ))
+            }
+            Err(e) => {
+                nats.shutdown().await;
+                Err(ConformanceError::Jetstream(format!(
+                    "probe the PUBLISHED_LANGUAGE bucket after provisioning: {e}"
+                )))
+            }
         }
-        Ok(Self { nats })
     }
 
     pub fn nats(&self) -> &FabricTestNats {

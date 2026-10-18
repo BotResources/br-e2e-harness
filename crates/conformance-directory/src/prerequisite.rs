@@ -1,9 +1,11 @@
 use std::any::Any;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use br_test_harness::run_once;
+use futures_util::FutureExt;
 use sqlx::{Connection, PgConnection};
 
 use crate::error::{ConformanceError, Result};
@@ -97,18 +99,13 @@ fn admin_url_from(lookup: impl Fn(&str) -> Option<String>) -> Result<String> {
         })
 }
 
-pub(crate) async fn contained<T, F>(future: F) -> std::result::Result<T, String>
-where
-    F: Future<Output = T> + Send + 'static,
-    T: Send + 'static,
-{
-    match tokio::spawn(future).await {
-        Ok(value) => Ok(value),
-        Err(joined) => match joined.try_into_panic() {
-            Ok(payload) => Err(panic_message(payload)),
-            Err(joined) => Err(joined.to_string()),
-        },
-    }
+pub(crate) async fn contained<T>(
+    future: impl Future<Output = T>,
+) -> std::result::Result<T, String> {
+    AssertUnwindSafe(future)
+        .catch_unwind()
+        .await
+        .map_err(panic_message)
 }
 
 fn panic_message(payload: Box<dyn Any + Send>) -> String {

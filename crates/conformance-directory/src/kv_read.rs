@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 
 use br_core_directory::{
     DirectoryMeta, GROUPS_KEY_PREFIX, PublishedGroup, PublishedUser, USERS_KEY_PREFIX,
@@ -9,8 +10,29 @@ use br_util_nats_fabric::KvPrefix;
 use uuid::Uuid;
 
 use crate::error::{ConformanceError, Result};
+use crate::prerequisite::contained;
 
 pub async fn read_users(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, PublishedUser>> {
+    guarded(users(nats)).await
+}
+
+pub async fn read_groups(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, PublishedGroup>> {
+    guarded(groups(nats)).await
+}
+
+pub async fn read_meta(nats: &FabricTestNats) -> Result<Option<DirectoryMeta>> {
+    guarded(meta(nats)).await
+}
+
+async fn guarded<T>(read: impl Future<Output = Result<T>>) -> Result<T> {
+    contained(read).await.unwrap_or_else(|panic| {
+        Err(ConformanceError::Jetstream(format!(
+            "the PUBLISHED_LANGUAGE bucket cannot be read, is the NATS server reachable? {panic}"
+        )))
+    })
+}
+
+async fn users(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, PublishedUser>> {
     require_bucket(nats).await?;
     require_conformant_keys(
         nats,
@@ -25,7 +47,7 @@ pub async fn read_users(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, Publishe
         .map_err(|e| map_kv(e, "PublishedUser"))
 }
 
-pub async fn read_groups(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, PublishedGroup>> {
+async fn groups(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, PublishedGroup>> {
     require_bucket(nats).await?;
     require_conformant_keys(
         nats,
@@ -40,7 +62,7 @@ pub async fn read_groups(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, Publish
         .map_err(|e| map_kv(e, "PublishedGroup"))
 }
 
-pub async fn read_meta(nats: &FabricTestNats) -> Result<Option<DirectoryMeta>> {
+async fn meta(nats: &FabricTestNats) -> Result<Option<DirectoryMeta>> {
     require_bucket(nats).await?;
     nats.pl_get_meta()
         .await
