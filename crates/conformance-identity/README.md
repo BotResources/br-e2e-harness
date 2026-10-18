@@ -177,12 +177,13 @@ programmatic runners call it.
 ## Running it
 
 Needs `nats-server` and the `identity-acceptor` binary on `PATH` (see "The subject
-binary"). The tests are `#[ignore]`-gated so the default `cargo test` stays green
+binary") and the `fabric-nats` CLI built in the same target directory. The tests are `#[ignore]`-gated so the default `cargo test` stays green
 without infra:
 
 ```sh
 make -C conformance-subjects/identity-acceptor build
 export PATH="$PWD/conformance-subjects/identity-acceptor:$PATH"
+cargo b -p br-test-harness --bin fabric-nats --features nats-fabric
 cargo test -p conformance-identity --test conformance -- --ignored
 ```
 
@@ -219,8 +220,8 @@ conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness",
 | The verdict check is `from_slice` into the real `IntegrationEvent<…>`, with **no** extra no-extra-fields guard | Deser success against the real envelope + payload *is* the conformance check; a stricter hand-rolled guard would be a second contract that drifts from the types — exactly what this crate exists to prevent. |
 | Scenarios carry **raw** `DeclareServiceScopes`, built from `RawScopeDeclaration` | A3/A4/A5 are intentionally malformed declarations that `ScopeDeclaration::new` would refuse to construct. The wire payload is `RawScopeDeclaration`, so the runner builds the raw shape and feeds the **same** raw payload to both the subject and the oracle — the oracle's `judge_declaration` runs the same validation the subject must. |
 | The runner's declare metadata uses `Actor::Service` | A boot-time scope declaration is service-initiated; the real declarer (`br-util-scope-declaration`) emits `actor_kind:"service"`. The acceptor matches on `correlation_id` only and never validates the actor. |
-| `ConfirmationCapture` subscribes **before** the subject is spawned and declares are sent | The capture uses `DeliverPolicy::New`; a reply published before its consumer exists is missed. Capture is armed first, then the subject boots and is awaited ready, then declares flow. |
-| The runner waits for `/readyz=200` **before** declaring | The acceptor binds its declare consumer with `DeliverPolicy::New`; a declare published before the consumer exists would be missed. Readiness gates the consumer being live. |
+| `ConfirmationCapture` starts **before** the subject is spawned | The capture and the acceptor both consume with `DeliverPolicy::All`, so nothing published early is missed; the order keeps the capture armed for the whole run and lets a boot failure surface as a `Timeout` carrying the subject logs. |
+| The runner waits for `/readyz=200` **before** declaring | A subject that never reports ready is a `Timeout` with its logs, not a declare that goes unanswered. |
 | Keys are **namespaced per run** with a UUIDv7 | spawn mode is isolated anyway, but the same scenarios drive an attach run against a live, stateful registry; unique keys keep re-runs from colliding with each other or with prior state, and bound the pollution of a real registry. |
 | **attach drives all A1–A7, not a read-only subset like G3** | Unlike G3, whose attach default skips the scenarios that would stall a live service (timeout/re-publish, rejection-blocks-readiness), no G2 scenario durably mutes or blocks the acceptor — every one is a one-shot declare→verdict. With per-run key namespacing bounding the pollution, all seven are safe to drive repeatedly against a live registry, so `attach_default()` is the full set. |
 | The Go subject is a faithful reimpl of `judge_declaration`, not a binding | It is the tautology-break: an independent encoding of the wire + policy. If it merely called the lib, green would prove nothing. Its Go unit tests pin the rejection wire shapes to the frozen `scope-wire-v1` golden JSON. |
