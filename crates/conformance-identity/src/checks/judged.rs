@@ -114,10 +114,16 @@ fn decode_failure(
     command: &DeclareServiceScopes,
     error: ConformanceError,
 ) -> CheckOutcome {
+    let observed = match error {
+        ConformanceError::NonConformantConfirmation(_) => {
+            "the confirmation did not deserialize into the real IntegrationEvent type"
+        }
+        _ => "the confirmation capture failed before a confirmation could be read",
+    };
     CheckOutcome::fail(
         scenario.check_id(),
         expected_label,
-        "the confirmation did not deserialize into the real IntegrationEvent type",
+        observed,
         format!("step {step} ({}): {error}", declaration_label(command)),
     )
 }
@@ -128,6 +134,10 @@ mod tests {
 
     use super::*;
     use crate::capture::Verdict;
+
+    fn declaration() -> DeclareServiceScopes {
+        crate::wire::declare("notifier", &["notifier:read"])
+    }
 
     fn rejected(service: &str) -> DecodedConfirmation {
         DecodedConfirmation {
@@ -163,6 +173,39 @@ mod tests {
         assert_eq!(
             divergence(&rejected("notifier"), &accepted),
             Some("verdict diverged from the lib oracle")
+        );
+    }
+
+    #[test]
+    fn the_observed_text_follows_the_error_kind() {
+        let command = declaration();
+        let undecodable = decode_failure(
+            Scenario::CleanDeclarationAccepted,
+            "accepted",
+            0,
+            &command,
+            ConformanceError::NonConformantConfirmation("accepted: bad".to_string()),
+        );
+        assert_eq!(
+            undecodable.observed,
+            "the confirmation did not deserialize into the real IntegrationEvent type"
+        );
+        let unreadable = decode_failure(
+            Scenario::CleanDeclarationAccepted,
+            "accepted",
+            0,
+            &command,
+            ConformanceError::Jetstream("reading the confirmation capture: gone".to_string()),
+        );
+        assert_eq!(
+            unreadable.observed,
+            "the confirmation capture failed before a confirmation could be read"
+        );
+        assert!(
+            unreadable
+                .detail
+                .as_deref()
+                .is_some_and(|d| d.contains("reading the confirmation capture: gone"))
         );
     }
 }
