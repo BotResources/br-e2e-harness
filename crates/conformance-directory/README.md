@@ -45,7 +45,7 @@ tag is cut.
 |---|---|
 | **W1** | every key is exactly `user_kv_key(id)` (`identity/users/` + the hyphenated lowercase uuid; uppercase, 32-hex, braced and `urn:uuid:` spellings fail) and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
 | **W2** | every key is exactly `group_kv_key(id)` (`identity/groups/` + the hyphenated lowercase uuid; other spellings fail) and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
-| **W3** | `identity/_meta` deserialises through `DirectoryMeta` declaring users + groups. |
+| **W3** | The meta key is exactly `META_KEY` (`identity/_meta`) and its value deserialises through `DirectoryMeta` declaring users + groups. |
 | **W4** | the neutral extension `x_custom` lands in `extensions` (flat), never leaking into a core field — the `#[serde(flatten)]` works. |
 | **W5** | a users-only manifest deserialises and **auto-degrades** groups (`publishes_groups() == false`). |
 | **W6** | an extensions map shadowing a reserved core key (`email`) is **rejected at `PublishedUser` construction** with `DirectoryError::ReservedExtensionKey` (fail-closed), never a silent overwrite. |

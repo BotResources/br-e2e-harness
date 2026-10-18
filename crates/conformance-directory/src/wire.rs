@@ -1,4 +1,4 @@
-use br_core_directory::{DirectoryMeta, PublishedEntity, PublishedGroup, PublishedUser};
+use br_core_directory::{DirectoryMeta, META_KEY, PublishedEntity, PublishedGroup, PublishedUser};
 use serde_json::{Value, json};
 
 use crate::anchor::{DirectorySnapshotWire, KvEntry};
@@ -133,8 +133,18 @@ fn check_group_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
 
 fn check_meta_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireMetaDeserializes;
-    let expected =
-        "identity/_meta value deserializes through DirectoryMeta declaring users + groups";
+    let expected = "the key is exactly `META_KEY` (identity/_meta) and its value deserializes through DirectoryMeta declaring users + groups";
+    if snapshot.meta.key != META_KEY {
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "malformed meta key",
+            format!(
+                "meta key {:?} != frozen META_KEY {META_KEY:?}",
+                snapshot.meta.key
+            ),
+        );
+    }
     let meta = match deserialize_meta(&snapshot.meta) {
         Ok(meta) => meta,
         Err(e) => return CheckOutcome::fail(id, expected, "deser failed", e.to_string()),
@@ -453,5 +463,22 @@ mod tests {
             .map(|o| o.id)
             .collect();
         assert_eq!(failed, vec![CheckId::WireGroupDeserializes]);
+    }
+
+    #[test]
+    fn a_wrong_meta_key_fails_exactly_the_meta_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.meta.key = "identity/meta".to_string();
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireMetaDeserializes]);
+        let outcome = report
+            .outcomes
+            .iter()
+            .find(|o| o.id == CheckId::WireMetaDeserializes)
+            .unwrap();
+        assert!(
+            format!("{outcome:?}").contains("identity/meta"),
+            "{outcome:?}"
+        );
     }
 }

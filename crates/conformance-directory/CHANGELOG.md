@@ -19,6 +19,7 @@ form to decide whether a version ships.
 - `read_users` and `read_groups` return `ConformanceError::NonConformantWire` for a stray key under the `identity/users/` or `identity/groups/` prefix of the bucket instead of dropping it.
 - A check reports the behaviour of the system under test as a failed `CheckOutcome`, never as a harness `Err`. C3 reports a verdict, not `ConformanceError::Postgres`, when the projector wrote no `known_users` row for the first user; the same holds for every `DirectoryProjector::reconcile` in C1-C5 and every `DirectoryPublisher` open and `reconcile` in P1-P2, and for a `NonConformantWire` read back from the bucket in P1-P2 (a failed outcome naming the key). Only a missing prerequisite or a fixture failure (seeding, migration, probes, Jetstream, Postgres) stays an `Err`. `CheckOutcome::system_failed(id, expected, stage, error)` builds that outcome.
 - W1, W2, `AnchorSource::from_snapshot`, `read_users` and `read_groups` require the whole key to equal `user_kv_key(id)` / `group_kv_key(id)` (hyphenated lowercase uuid). An uppercase, 32-hex, braced or `urn:uuid:` spelling of an id is `ConformanceError::NonConformantWire` naming the key (W1/W2 fail); two spellings of one id no longer read back as a single user.
+- W3 requires the `identity/_meta` entry key to equal `META_KEY`; a snapshot with another meta key fails W3 naming the key instead of passing `run_wire_battery`.
 - `ConformanceError::NonConformantWire` no longer says the value is "Go-frozen": it is also raised for a read-back of the bucket.
 
 ### Added
