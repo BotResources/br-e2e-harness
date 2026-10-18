@@ -1,6 +1,7 @@
 mod common;
 
 use std::fmt::Debug;
+use std::process::Command;
 
 use conformance_directory::{
     ConformanceError, Result, consumer_reads_groups, consumer_reads_users,
@@ -8,6 +9,9 @@ use conformance_directory::{
     publisher_groups_optional, stager_stages_in_the_projection_transaction,
     users_only_narrows_projection,
 };
+
+const CHILD: &str = "CONFORMANCE_DIRECTORY_NO_NATS_SERVER_CHILD";
+const TEST: &str = "every_battery_returns_a_typed_error_when_nats_server_is_not_on_path";
 
 fn assert_names_the_missing_server<T: Debug>(battery: &str, result: Result<T>) {
     match result {
@@ -21,12 +25,19 @@ fn assert_names_the_missing_server<T: Debug>(battery: &str, result: Result<T>) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn every_battery_returns_a_typed_error_when_nats_server_is_not_on_path() {
-    let empty = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("no-binaries-{}", uuid::Uuid::now_v7().simple()));
-    std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
-    // SAFETY: this file holds a single test, so no other thread of this process reads or writes the environment while it runs.
-    unsafe {
-        std::env::set_var("PATH", &empty);
+    if std::env::var_os(CHILD).is_none() {
+        let empty = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("no-binaries-{}", uuid::Uuid::now_v7().simple()));
+        std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
+        let status = Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, "1")
+            .env("PATH", &empty)
+            .status()
+            .expect("run the child test");
+        std::fs::remove_dir_all(&empty).ok();
+        assert!(status.success(), "the child must pass: {status}");
+        return;
     }
 
     let snapshot = common::snapshot();
@@ -41,6 +52,4 @@ async fn every_battery_returns_a_typed_error_when_nats_server_is_not_on_path() {
         "c6",
         stager_stages_in_the_projection_transaction(&snapshot).await,
     );
-
-    std::fs::remove_dir_all(&empty).ok();
 }

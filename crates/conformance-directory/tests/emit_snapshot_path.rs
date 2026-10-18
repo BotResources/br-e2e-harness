@@ -1,7 +1,11 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use conformance_directory::{ANCHOR_BINARY, emit_snapshot};
+
+const CHILD: &str = "CONFORMANCE_DIRECTORY_EMIT_SNAPSHOT_PATH_CHILD";
+const TEST: &str = "a_relative_anchor_never_searches_the_current_directory_and_an_absolute_one_leads_the_child_path";
 
 fn scratch(label: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
@@ -36,6 +40,16 @@ async fn marker_of(binary: &Path) -> String {
 #[tokio::test(flavor = "current_thread")]
 async fn a_relative_anchor_never_searches_the_current_directory_and_an_absolute_one_leads_the_child_path()
  {
+    if let Some(absolute) = std::env::var_os(CHILD) {
+        assert_eq!(marker_of(Path::new(ANCHOR_BINARY)).await, "path");
+        assert_eq!(
+            marker_of(Path::new("./bin").join(ANCHOR_BINARY).as_path()).await,
+            "relative"
+        );
+        assert_eq!(marker_of(Path::new(&absolute)).await, "sibling");
+        return;
+    }
+
     let cwd = scratch("cwd");
     let on_path = scratch("on-path");
     let absolute_dir = scratch("absolute");
@@ -47,24 +61,17 @@ async fn a_relative_anchor_never_searches_the_current_directory_and_an_absolute_
     std::fs::create_dir_all(cwd.join("bin")).expect("create bin");
     install(&cwd.join("bin"), ANCHOR_BINARY, &emit_marker("relative"));
 
-    std::env::set_current_dir(&cwd).expect("enter the scratch cwd");
-    // SAFETY: this file holds a single test, so no other thread of this process reads or writes the environment while it runs.
-    unsafe {
-        std::env::set_var(
-            "PATH",
-            std::env::join_paths([on_path.as_path(), Path::new("/usr/bin"), Path::new("/bin")])
-                .expect("join PATH"),
-        );
-    }
-
-    assert_eq!(marker_of(Path::new(ANCHOR_BINARY)).await, "path");
-    assert_eq!(
-        marker_of(Path::new("./bin").join(ANCHOR_BINARY).as_path()).await,
-        "relative"
-    );
-    assert_eq!(marker_of(&absolute).await, "sibling");
-
+    let path = std::env::join_paths([on_path.as_path(), Path::new("/usr/bin"), Path::new("/bin")])
+        .expect("join PATH");
+    let status = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", TEST, "--nocapture"])
+        .current_dir(&cwd)
+        .env(CHILD, absolute.as_os_str())
+        .env("PATH", path)
+        .status()
+        .expect("run the child test");
     for dir in [cwd, on_path, absolute_dir] {
         std::fs::remove_dir_all(dir).ok();
     }
+    assert!(status.success(), "the child must pass: {status}");
 }
