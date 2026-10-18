@@ -5,7 +5,9 @@ use br_scope_declaration_contract::{VERSION, declare_command_coords, rejected_ev
 use br_test_harness::FabricTestNats;
 use conformance_identity::checks::{CheckContext, run_scenario};
 use conformance_identity::declarer::declaring_metadata;
-use conformance_identity::{CheckOutcome, ConfirmationCapture, Declarer, Scenario};
+use conformance_identity::{
+    CheckOutcome, ConfirmationCapture, ConformanceError, Declarer, Scenario,
+};
 
 const SHORT: Duration = Duration::from_secs(5);
 const NAMESPACE: &str = "malformed";
@@ -91,4 +93,73 @@ async fn an_envelope_with_an_unreadable_payload_is_reported_as_a_wire_shape_viol
             .contains("did not deserialize into the real IntegrationEvent"),
         "{outcome:?}"
     );
+}
+
+async fn direct_reads(
+    capture: &ConfirmationCapture,
+) -> (
+    Option<conformance_identity::Result<conformance_identity::Verdict>>,
+    Option<conformance_identity::Result<conformance_identity::DecodedConfirmation>>,
+) {
+    let correlation_id = uuid::Uuid::now_v7();
+    (
+        capture.verdict_for(correlation_id),
+        capture.confirmation_decoded_for(correlation_id),
+    )
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_direct_read_after_junk_on_the_rejected_subject_is_a_typed_error_not_a_panic() {
+    let nats = FabricTestNats::start().await;
+    let capture = ConfirmationCapture::start(&nats).await.expect("capture");
+    let rejected_coords = rejected_event_coords().expect("rejected coordinates");
+    nats.publish_event_envelope(&rejected_coords, b"this is not an envelope")
+        .await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (verdict, decoded) = direct_reads(&capture).await;
+
+    match verdict {
+        Some(Err(ConformanceError::Jetstream(detail))) => {
+            assert!(detail.contains("not an envelope"), "{detail}")
+        }
+        other => panic!("verdict_for must report the wire violation: {other:?}"),
+    }
+    match decoded {
+        Some(Err(ConformanceError::Jetstream(detail))) => {
+            assert!(detail.contains("not an envelope"), "{detail}")
+        }
+        other => panic!("confirmation_decoded_for must report the wire violation: {other:?}"),
+    }
+    assert!(matches!(
+        capture.try_confirmation_for(uuid::Uuid::now_v7()),
+        Err(ConformanceError::Jetstream(_))
+    ));
+    capture.stop().await;
+    nats.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_direct_read_after_the_broker_is_gone_is_a_typed_error_not_a_panic() {
+    let nats = FabricTestNats::start().await;
+    let capture = ConfirmationCapture::start(&nats).await.expect("capture");
+    nats.shutdown().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (verdict, decoded) = direct_reads(&capture).await;
+
+    assert!(
+        matches!(verdict, Some(Err(ConformanceError::Jetstream(_)))),
+        "{verdict:?}"
+    );
+    assert!(
+        matches!(decoded, Some(Err(ConformanceError::Jetstream(_)))),
+        "{decoded:?}"
+    );
+    assert!(matches!(
+        capture.try_count(),
+        Err(ConformanceError::Jetstream(_))
+    ));
 }

@@ -45,15 +45,13 @@ pub async fn run_judged_scenario(scenario: Scenario, ctx: &CheckContext<'_>) -> 
             }
         };
 
-        let arrived = wait_until(ctx.timeout, || async {
-            ctx.capture.confirmation_for(correlation_id).is_some()
+        let mut decoded = None;
+        wait_until(ctx.timeout, || {
+            decoded = ctx.capture.confirmation_decoded_for(correlation_id);
+            let arrived = decoded.is_some();
+            async move { arrived }
         })
         .await;
-        let decoded = if arrived {
-            ctx.capture.confirmation_decoded_for(correlation_id)
-        } else {
-            None
-        };
         let observed = match decoded {
             Some(Ok(observed)) => observed,
             Some(Err(e)) => return decode_failure(scenario, &want_label, step, command, e),

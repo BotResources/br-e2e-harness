@@ -145,8 +145,8 @@ programmatic runners call it.
 - `CheckId` / `CheckStatus { Pass, Fail, Skipped }` / `CheckOutcome { id, status,
   expected, observed, detail }` / `ConformanceReport { outcomes }` with
   `passed()` / `failed()` / `skipped()` / `is_conformant()`. `is_conformant()` is true
-  only for a report with at least one passed check and no failed one: an empty report,
-  or a report of skipped checks, proved nothing.
+  only for a report with at least one outcome, no failed and no skipped outcome: an
+  empty report, a skipped check or a failed check proved nothing.
 - A check compares the confirmation to the lib oracle on the verdict **and** on the
   service the confirmation names (`DecodedConfirmation`); a rejection that names another
   service than the declaring one fails. The `expected` text of a failing outcome is the
@@ -158,6 +158,7 @@ programmatic runners call it.
   in the release (`SubjectBinaryUnavailable`), `nats-server` not on `PATH`, the
   `fabric-nats` CLI not built beside the test executable, a harness start or an
   unreachable NATS (`Jetstream`). A harness panic while observing a scenario is contained and reported as a failed check.
+  `ConfirmationCapture::verdict_for` and `confirmation_decoded_for` return `Some(Err(Jetstream(..)))` when the capture recorded a malformed frame or the NATS client is gone; `try_confirmation_for` and `try_count` are the non-panicking forms of `confirmation_for` and `count`, which panic in those cases.
 
 ## Two programmatic runners — spawn and attach
 

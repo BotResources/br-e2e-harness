@@ -71,7 +71,7 @@ pub(crate) async fn contained<T>(
         .map_err(panic_message)
 }
 
-fn panic_message(payload: Box<dyn Any + Send>) -> String {
+pub(crate) fn panic_message(payload: Box<dyn Any + Send>) -> String {
     match payload.downcast::<String>() {
         Ok(message) => *message,
         Err(payload) => match payload.downcast::<&'static str>() {
