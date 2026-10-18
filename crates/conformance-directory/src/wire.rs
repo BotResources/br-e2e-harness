@@ -361,8 +361,17 @@ mod tests {
         );
     }
 
+    fn failed_checks(report: &ConformanceReport) -> Vec<CheckId> {
+        report
+            .outcomes
+            .iter()
+            .filter(|o| o.status == crate::outcome::CheckStatus::Fail)
+            .map(|o| o.id)
+            .collect()
+    }
+
     #[test]
-    fn two_users_resolving_to_one_id_fail_the_user_check() {
+    fn a_non_canonical_twin_of_a_user_key_fails_exactly_the_user_check() {
         let mut snapshot = canonical_snapshot();
         let twin = entry(
             "identity/users/01938C1F-0000-7000-8000-000000000001",
@@ -370,10 +379,42 @@ mod tests {
         );
         snapshot.users.push(twin);
         let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireUserDeserializes]);
+    }
+
+    #[test]
+    fn a_verbatim_repeated_user_key_fails_exactly_the_user_check() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.users[0].clone();
+        snapshot.users.push(repeated);
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireUserDeserializes]);
+        let outcome = report
+            .outcomes
+            .iter()
+            .find(|o| o.id == CheckId::WireUserDeserializes)
+            .unwrap();
         assert!(
-            !report.is_conformant(),
-            "two entries carrying the same user id must fail W1: {:#?}",
-            report.outcomes
+            format!("{outcome:?}").contains("already carried by"),
+            "{outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_verbatim_repeated_group_key_fails_exactly_the_group_check() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.groups[0].clone();
+        snapshot.groups.push(repeated);
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireGroupDeserializes]);
+        let outcome = report
+            .outcomes
+            .iter()
+            .find(|o| o.id == CheckId::WireGroupDeserializes)
+            .unwrap();
+        assert!(
+            format!("{outcome:?}").contains("already carried by"),
+            "{outcome:?}"
         );
     }
 

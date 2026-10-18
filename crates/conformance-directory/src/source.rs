@@ -190,16 +190,49 @@ mod tests {
     }
 
     #[test]
-    fn two_entries_resolving_to_one_user_id_are_refused_not_merged() {
+    fn a_non_canonical_twin_of_a_user_key_is_refused_by_the_canonical_form_check() {
         let mut snapshot = canonical_snapshot();
         let twin = entry(
             "identity/users/01938C1F-0000-7000-8000-000000000001",
             snapshot.users[0].value.clone(),
         );
         snapshot.users.push(twin);
-        assert!(matches!(
-            AnchorSource::from_snapshot(&snapshot),
-            Err(ConformanceError::NonConformantWire { .. })
-        ));
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, cause, .. }) => {
+                assert_eq!(key, "identity/users/01938C1F-0000-7000-8000-000000000001");
+                assert!(cause.contains("canonical form"), "{cause}");
+            }
+            other => panic!("a non-canonical twin must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_verbatim_repeated_user_key_is_refused_not_merged() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.users[0].clone();
+        snapshot.users.push(repeated);
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, ty, cause }) => {
+                assert_eq!(key, "identity/users/01938c1f-0000-7000-8000-000000000001");
+                assert_eq!(ty, "PublishedUser");
+                assert!(cause.contains("already carried by"), "{cause}");
+            }
+            other => panic!("a repeated user key must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_verbatim_repeated_group_key_is_refused_not_merged() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.groups[0].clone();
+        snapshot.groups.push(repeated);
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, ty, cause }) => {
+                assert_eq!(key, "identity/groups/01938c1f-0000-7000-8000-0000000000a1");
+                assert_eq!(ty, "PublishedGroup");
+                assert!(cause.contains("already carried by"), "{cause}");
+            }
+            other => panic!("a repeated group key must be refused: {other:?}"),
+        }
     }
 }
