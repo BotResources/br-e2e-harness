@@ -3,14 +3,15 @@
 A **black-box conformance runner** for the BotResources **bearer/PAT → Passport
 resolution** contract (conformance group **G1**) — the `GET /internal/passport`
 endpoint the GraphQL gateway calls before every authenticated request. It drives
-the frozen Go test subject in `conformance-subjects/identity-passport` as a black
-box — it never reads the subject's source — and asserts that the subject resolves
+the prebuilt `identity-passport` binary, built from the frozen Go test subject in
+`conformance-subjects/identity-passport`, as a black box — it never reads the subject's source — and asserts that the subject resolves
 a **sealed** bearer credential into a `Passport` exactly as the platform requires.
 
 > ⚠️ **TEST FIXTURE ONLY.** Add it as a **dev-dependency**, never a runtime one.
-> It builds and spawns a real binary, stands up a real `nats-server`, seeds a real
+> It spawns a prebuilt binary, stands up a real `nats-server`, seeds a real
 > sealed entry into the `PUBLISHED_LANGUAGE` KV bucket, and calls the subject's
-> HTTP surface on an isolated, throwaway test network.
+> HTTP surface on an isolated, throwaway test network. The crate never compiles
+> anything.
 
 > **It depends on no BotResources code but `br-rust-common` and the sibling
 > `br-test-harness`.** The sealed wire is frozen by the Go anchor as **committed
@@ -33,14 +34,14 @@ a **sealed** bearer credential into a `Passport` exactly as the platform require
   **unreadable envelope**, a **wrong seal key**, a **tampered ciphertext**, or a
   **tampered nonce** →
   **200, no `X-Passport`** (anonymous, fail-closed).
-- a backend (KV) error → it **fails loud** (a **5xx**, or the resolver becomes
-  unreachable), never a silent 200.
+- a backend (KV) error → it **fails loud** with a **5xx**, never a silent 200.
 
 The endpoint **resolves**, it does not **gate**: an unresolvable or non-openable
 credential is an anonymous request, never a 401 — services do authZ, never authN.
 Catastrophic infra loss (the KV bucket/stream gone) is the one thing that must
-**not** resolve to a silent 200: it surfaces loudly as a 5xx or by the resolver
-dropping its connection / exiting (fail-loud).
+**not** resolve to a silent 200: it surfaces loudly as a **5xx**, within the time
+limit of the check. A refused connection, a crash or a hang proves no answer, not a
+5xx, and fails the check.
 
 ## The sealed wire
 
@@ -131,7 +132,7 @@ runs last**, whatever its number:
 | **P7** | A bearer that **resolved** is then replaced, at its own KV key, by the `tampered-ciphertext-corrupt` vector: the **exact envelope that just resolved** — same nonce, same ciphertext — with **byte 0 of the ciphertext flipped**, and nothing else. The AEAD tag fails → **anonymous**. The proven-resolving twin is what makes the flip the only difference. |
 | **P10** | Same shape as P7 with the `tampered-nonce-corrupt` vector: the exact resolving envelope with **byte 0 of its nonce flipped**, so the carried nonce no longer matches the tag → **anonymous**. |
 | **P9** | A bearer that **resolved** is then replaced, at its own KV key, by the `unreadable-corrupt` vector: the exact resolving envelope **plus one unknown field**, byte-identical otherwise. The strict parse rejects it **before** the AEAD → **anonymous**. `vectors_test.go` proves it would open without that field, so the parse is the only thing failing. |
-| **P8** | With the `PUBLISHED_LANGUAGE` bucket **destroyed** under the live subject, resolution **fails loud** — a **5xx** *or* the resolver becoming **unreachable** (transport error) — never a silent **200** (anonymous or resolved). A pre-deletion health guard first confirms the subject resolves the seed, so a later unreachability is attributable to the infra loss alone. Destructive → `run_spawn` always runs it **last**. |
+| **P8** | With the `PUBLISHED_LANGUAGE` bucket **destroyed** under the live subject, resolution **fails loud** — the subject answers with a **5xx** within 10 seconds — never a silent **200** (anonymous or resolved), and never a refused connection, a crash or a hang (no HTTP status was observed, so nothing proves a 5xx). A pre-deletion health guard first confirms the subject resolves the seed, so the 5xx is attributable to the infra loss alone. Destructive → `run_spawn` always runs it **last**. |
 | **G4** | A `Passport` carrying a `scopes` claim survives the `X-Passport` base64 round-trip identically, and the typed-scopes API holds (`scopes()` / `has_scope` / absent = empty / malformed skipped). |
 
 **What P1–P10 prove, and what they do not.** They prove the *endpoint* behaviour —
@@ -155,8 +156,9 @@ and a *service* vector may never be given an asserted outcome.
 least one ran"** — zero failures, zero skips, and a **non-empty** report. A gate
 that greened on a skipped check (unproven, not passed) or on an empty report (zero
 checks self-certifying) would be a false-green; both are closed. `run_spawn` itself
-rejects an empty scenario set up front (`InvalidInput`) rather than stand up a
-subject to assert nothing.
+rejects an empty scenario set, or a scenario listed twice, up front
+(`InvalidInput`) rather than stand up a subject to assert nothing or to run a
+destructive scenario twice.
 
 ## Consuming service integration
 
@@ -209,16 +211,55 @@ fails loud if the bucket is missing, so the boot order is fixed:
 5. Run the scenarios (P8 last), each seeding the committed vector bytes it needs at
    the vector's own KV key, then shut down.
 
+## The subject binary
+
+The tests never compile anything. They assume the Go subject is already built and look
+for an executable named `identity-passport` (`SUBJECT_BINARY`), in this order:
+
+1. on `PATH` (absolute entries only);
+2. in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-passport-{version}`
+   (`~/Library/Caches/...` on macOS and `~/.cache/...` on Linux when `XDG_CACHE_HOME` is
+   unset; a relative `XDG_CACHE_HOME` or `HOME` is ignored, and without an absolute one
+   there is no cache directory and the lookup ends in the typed error);
+3. downloaded from this crate's own GitHub release,
+   `BotResources/br-e2e-harness` tag `conformance-passport/v{version}`, asset
+   `identity-passport-<os>-<arch>.tar.gz` with its sibling `.sha256`, into that cache
+   directory.
+
+Platforms with a release asset: `linux` and `darwin`, on `amd64` and `arm64`. The download
+fails closed: the archive must match the SHA-256 published beside it, every redirect must
+stay on an https `github.com` / `objects.githubusercontent.com` /
+`release-assets.githubusercontent.com` host, and an archive over 64 MiB is refused. Only the
+`identity-passport` entry is extracted, and only if it is a regular file, then marked
+executable. The archive is extracted with the `tar` found on the absolute entries of `PATH`.
+The lookup, the download and this crate's own tests write nothing to the system temporary
+directory (the throwaway NATS store of `br-test-harness` is that crate's own).
+
+`locate_subject()` returns the absolute path of the binary. The subject is spawned by
+that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary
+when that directory is absolute, through the child's environment only: the crate never calls
+`std::env::set_var`. `PassportHarness::start_with_binary` returns
+`ConformanceError::SubjectBinaryUnavailable` for a path that is not an executable file.
+
+When none of the three succeeds, the call returns `ConformanceError::SubjectBinaryUnavailable`
+naming the binary and what to do: put it on `PATH`, or build it yourself with
+`make -C conformance-subjects/identity-passport build` and put
+`conformance-subjects/identity-passport` on `PATH`. The retired-model guard of the subject
+(`make guard`) and its Go tests run in CI, not in this crate.
+
+The subject listens on `127.0.0.1` only; a test (`the_subject_does_not_answer_on_a_non_loopback_address`)
+proves it refuses a connection on the non-loopback address of the host.
+
 ## Running it
 
 **Two paths, two toolchains — this is the point of seeding from vectors.**
 
 | Path | Entry point | Needs |
 |---|---|---|
-| **In-repo** (drive the Go anchor) | `PassportHarness::start()` / `build_subject()` | `nats-server`, **plus `go` and `make`** — it compiles the anchor and runs its `make guard` |
-| **Consumer** (drive your own service) | `run_spawn(&SpawnTarget { binary }, …)` / `start_with_binary` | `nats-server` only — **no Go, no make**; the seeds are the committed vectors, and your binary is never asked to seal |
+| **In-repo** (drive the Go anchor) | `PassportHarness::start()` / `locate_subject()` | `nats-server` and the prebuilt `identity-passport` binary (see "The subject binary") |
+| **Consumer** (drive your own service) | `run_spawn(&SpawnTarget { binary }, …)` / `start_with_binary` | `nats-server` only; the seeds are the committed vectors, and your binary is never asked to seal |
 
-No external binary is required either way — the bucket is provisioned in-process.
+No other external binary is required — the bucket is provisioned in-process.
 The tests are `#[ignore]`-gated so the default `cargo test` stays green:
 
 ```sh
@@ -226,7 +267,9 @@ The tests are `#[ignore]`-gated so the default `cargo test` stays green:
 cargo test -p conformance-passport
 
 # full P1..P10 battery against the Go anchor (real infra)
-cargo test -p conformance-passport --test conformance -- --ignored --test-threads=1
+make -C conformance-subjects/identity-passport build
+export PATH="$PWD/conformance-subjects/identity-passport:$PATH"
+cargo test -p conformance-passport --all-targets -- --ignored --test-threads=1
 ```
 
 ## Install
@@ -237,7 +280,7 @@ single source of `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.0", version = "0.1.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
 ```
 
 ## License

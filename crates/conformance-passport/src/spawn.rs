@@ -28,6 +28,7 @@ pub async fn run_spawn(
             "run_spawn requires at least one scenario; pass &ALL".to_string(),
         ));
     }
+    reject_repeated(scenarios)?;
     let harness = PassportHarness::start_with_binary(target.binary.clone()).await?;
     let seeder = harness.seeder();
     let config = SubjectConfig::new(&harness.nats_url());
@@ -60,6 +61,18 @@ pub async fn run_spawn(
     Ok(report)
 }
 
+fn reject_repeated(scenarios: &[Scenario]) -> Result<()> {
+    for (index, scenario) in scenarios.iter().enumerate() {
+        if scenarios[..index].contains(scenario) {
+            return Err(ConformanceError::InvalidInput(format!(
+                "run_spawn runs each scenario once; {} is listed twice",
+                scenario.code()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn ordered_for_destruction(scenarios: &[Scenario]) -> Vec<Scenario> {
     let mut ordered: Vec<Scenario> = scenarios
         .iter()
@@ -84,6 +97,42 @@ mod tests {
         let ordered = ordered_for_destruction(&input);
         assert_eq!(*ordered.last().unwrap(), Scenario::KvErrorFailsLoud);
         assert_eq!(ordered.len(), input.len());
+    }
+
+    #[tokio::test]
+    async fn run_spawn_rejects_a_repeated_destructive_scenario_before_touching_infra() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(
+            &target,
+            &[Scenario::KvErrorFailsLoud, Scenario::KvErrorFailsLoud],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a repeated destructive scenario must be rejected up front");
+        assert!(
+            matches!(&err, ConformanceError::InvalidInput(m) if m.contains("p8")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_spawn_rejects_any_repeated_scenario_before_touching_infra() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(
+            &target,
+            &[
+                Scenario::ValidBearerResolvesToPassport,
+                Scenario::ValidBearerResolvesToPassport,
+            ],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a repeated scenario must be rejected up front");
+        assert!(matches!(err, ConformanceError::InvalidInput(_)));
     }
 
     #[tokio::test]

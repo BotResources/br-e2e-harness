@@ -79,9 +79,31 @@ impl PassportEndpoint {
         Ok(response.status())
     }
 
+    pub async fn status_for_bearer_within(
+        &self,
+        raw_token: &str,
+        timeout: Duration,
+    ) -> Result<StatusCode> {
+        let response = self
+            .send_within(Some(&format!("Bearer {raw_token}")), Some(timeout))
+            .await?;
+        Ok(response.status())
+    }
+
     async fn send(&self, authorization: Option<&str>) -> Result<reqwest::Response> {
+        self.send_within(authorization, None).await
+    }
+
+    async fn send_within(
+        &self,
+        authorization: Option<&str>,
+        timeout: Option<Duration>,
+    ) -> Result<reqwest::Response> {
         let url = format!("{}{PASSPORT_PATH}", self.base_url);
         let mut request = self.client.get(&url);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
         if let Some(authorization) = authorization {
             request = request.header("Authorization", authorization);
         }

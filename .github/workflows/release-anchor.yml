@@ -1,0 +1,146 @@
+name: release-anchor
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag of a conformance library (conformance-directory, conformance-identity or conformance-passport) whose Go binaries to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-anchor-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+
+jobs:
+  gate:
+    name: resolve version from the library tag + gate
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
+      bin: ${{ steps.gate.outputs.bin }}
+      subject_dir: ${{ steps.gate.outputs.subject_dir }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: resolve version + gate on existing assets
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LIBRARY="${RELEASE_TAG%%/*}"
+          case "${LIBRARY}" in
+            conformance-directory) BIN=identity-directory ;;
+            conformance-identity) BIN=identity-acceptor ;;
+            conformance-passport) BIN=identity-passport ;;
+            *)
+              echo "::error::${LIBRARY} publishes no Go binary through this workflow"
+              exit 1
+              ;;
+          esac
+          bash .github/scripts/artifact-tag.sh "${LIBRARY}" "${RELEASE_TAG}"
+          echo "bin=${BIN}" >> "$GITHUB_OUTPUT"
+          echo "subject_dir=conformance-subjects/${BIN}" >> "$GITHUB_OUTPUT"
+          marker="${BIN}-linux-amd64.tar.gz"
+          if gh release view "${RELEASE_TAG}" --json assets \
+               --jq '.assets[].name' 2>/dev/null | grep -qx "${marker}"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${RELEASE_TAG} already carries ${marker} — nothing to build"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: build ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: gate
+    if: needs.gate.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.26"
+
+      - name: build and package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          BIN: ${{ needs.gate.outputs.bin }}
+          SUBJECT_DIR: ${{ needs.gate.outputs.subject_dir }}
+        run: |
+          set -euo pipefail
+          asset="${BIN}-${GOOS}-${GOARCH}.tar.gz"
+          mkdir -p out
+          go build -C "${SUBJECT_DIR}" -trimpath -o "${PWD}/out/${BIN}" .
+          chmod +x "out/${BIN}"
+          tar -C out -czf "${asset}" "${BIN}"
+          sha256sum "${asset}" > "${asset}.sha256"
+
+      - name: upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ needs.gate.outputs.bin }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            ${{ needs.gate.outputs.bin }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            ${{ needs.gate.outputs.bin }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: attach the binaries to the library release
+    needs: [gate, build]
+    if: needs.gate.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: upload assets to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/*.tar.gz dist/*.sha256)
+          if [ ${#assets[@]} -ne 8 ]; then
+            echo "::error::expected 8 built assets under dist/, found ${#assets[@]}"
+            exit 1
+          fi
+          gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber

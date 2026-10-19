@@ -95,12 +95,17 @@ jobs:
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
       - name: nats-fabric conformance battery
         run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
-      - name: identity-passport anchor tests (freezes the committed wire vectors)
+      - name: identity-passport anchor checks (freezes the committed wire vectors) and build onto PATH
         run: |
+          set -euo pipefail
+          make -C conformance-subjects/identity-passport guard
           go -C conformance-subjects/identity-passport vet ./...
           go -C conformance-subjects/identity-passport test -count=1 ./...
+          mkdir -p "$RUNNER_TEMP/passport-bin"
+          CGO_ENABLED=0 go build -C conformance-subjects/identity-passport -o "$RUNNER_TEMP/passport-bin/identity-passport" .
+          echo "$RUNNER_TEMP/passport-bin" >> "$GITHUB_PATH"
       - name: passport conformance battery
-        run: cargo test -p conformance-passport --test conformance --locked -- --ignored --test-threads=1
+        run: cargo test -p conformance-passport --all-targets --locked -- --ignored --test-threads=1
       - name: directory conformance battery
         run: cargo test -p conformance-directory --test conformance --locked -- --ignored --test-threads=1
 
