@@ -2,13 +2,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::checks::{CheckContext, run_scenario};
-use crate::error::Result;
+use crate::error::{ConformanceError, Result};
 use crate::expected::{ExpectedDeclaration, SAMPLE_FALLBACK_SCOPE};
 use crate::harness::ScopeHarness;
-use crate::outcome::ConformanceReport;
+use crate::outcome::{CheckOutcome, ConformanceReport};
+use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::runner::service_key;
-use crate::scenario::{AcceptorBehavior, Scenario};
+use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
 use crate::subject::{Subject, SubjectConfig};
 
 const SPAWN_WAIT_TIMEOUT: &str = "500ms";
@@ -24,7 +25,9 @@ pub async fn run_spawn(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
+    require_selection(scenarios)?;
     let service_key = service_key(expected)?;
+    let platform_only = uniform_platform_only(expected)?;
     let mut report = ConformanceReport::default();
 
     let observed: Vec<Scenario> = scenarios
@@ -34,25 +37,20 @@ pub async fn run_spawn(
         .collect();
     if !observed.is_empty() {
         let harness = ScopeHarness::start_with_binary(target.binary.clone()).await?;
-        crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
-        let capture = harness.capture_declares().await?;
-        let subject = Subject::spawn(harness.binary(), &enabled_config(&harness, expected));
-        let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
-        let ctx = CheckContext {
-            fabric: harness.fabric(),
-            readyz: &readyz,
-            capture: &capture,
+        let outcomes = observe_batch(
+            &harness,
             expected,
-            service_key: &service_key,
+            platform_only,
             behavior,
+            &service_key,
+            &observed,
             timeout,
-        };
-        for scenario in &observed {
-            report.push(run_scenario(*scenario, &ctx).await);
-        }
-        subject.shutdown().await;
-        capture.stop().await;
+        )
+        .await;
         harness.shutdown().await;
+        for outcome in outcomes? {
+            report.push(outcome);
+        }
     }
 
     for scenario in scenarios
@@ -61,48 +59,167 @@ pub async fn run_spawn(
         .filter(|s| s.requires_subject_lifecycle())
     {
         report.push(
-            run_lifecycle_scenario(target, expected, behavior, &service_key, scenario, timeout)
-                .await?,
+            run_lifecycle_scenario(
+                target,
+                expected,
+                platform_only,
+                behavior,
+                &service_key,
+                scenario,
+                timeout,
+            )
+            .await?,
         );
     }
 
     Ok(report)
 }
 
+fn uniform_platform_only(expected: &ExpectedDeclaration) -> Result<bool> {
+    let Some(first) = expected.scopes.first() else {
+        return Ok(false);
+    };
+    if expected
+        .scopes
+        .iter()
+        .all(|scope| scope.platform_only == first.platform_only)
+    {
+        return Ok(first.platform_only);
+    }
+    let flags = expected
+        .scopes
+        .iter()
+        .map(|scope| format!("{}={}", scope.key, scope.platform_only))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(ConformanceError::InvalidInput(format!(
+        "spawn mode drives the subject with one platform_only flag for every scope, so an \
+         expectation with mixed flags cannot be satisfied by any subject ({flags}); use attach \
+         mode for a mixed declaration"
+    )))
+}
+
+async fn observe_batch(
+    harness: &ScopeHarness,
+    expected: &ExpectedDeclaration,
+    platform_only: bool,
+    behavior: &AcceptorBehavior,
+    service_key: &br_core_scope::ServiceKey,
+    scenarios: &[Scenario],
+    timeout: Duration,
+) -> Result<Vec<CheckOutcome>> {
+    crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
+    let capture = harness.capture_declares().await?;
+    let config = enabled_config(harness, expected, platform_only);
+    let subject = match start_subject(harness, &config).await {
+        Ok(subject) => subject,
+        Err(e) => {
+            capture.stop().await;
+            return Err(e);
+        }
+    };
+    let outcomes = match ReadyzProbe::new(format!("{}/readyz", subject.base_url())) {
+        Ok(readyz) => {
+            let ctx = CheckContext {
+                fabric: harness.fabric(),
+                readyz: &readyz,
+                capture: &capture,
+                expected,
+                service_key,
+                behavior,
+                timeout,
+            };
+            let mut outcomes = Vec::new();
+            for scenario in scenarios {
+                outcomes.push(run_scenario(*scenario, &ctx).await);
+            }
+            Ok(outcomes)
+        }
+        Err(e) => Err(e),
+    };
+    subject.shutdown().await;
+    capture.stop().await;
+    outcomes
+}
+
+async fn start_subject(harness: &ScopeHarness, config: &SubjectConfig) -> Result<Subject> {
+    contained(async { Subject::spawn(harness.binary(), config) })
+        .await
+        .map_err(|e| {
+            ConformanceError::InvalidInput(format!(
+                "starting the subject binary {}: {e}",
+                harness.binary().display()
+            ))
+        })
+}
+
 async fn run_lifecycle_scenario(
     target: &SpawnTarget,
     expected: &ExpectedDeclaration,
+    platform_only: bool,
     behavior: &AcceptorBehavior,
     service_key: &br_core_scope::ServiceKey,
     scenario: Scenario,
     timeout: Duration,
-) -> Result<crate::outcome::CheckOutcome> {
+) -> Result<CheckOutcome> {
     let harness = ScopeHarness::start_with_binary(target.binary.clone()).await?;
-    crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
-    let capture = harness.capture_declares().await?;
+    let scenario_behavior = lifecycle_behavior(scenario, behavior, expected);
     let config = match scenario {
         Scenario::DisabledModeReadyWithoutDeclare => {
-            enabled_config(&harness, expected).enabled(false)
+            enabled_config(&harness, expected, platform_only).enabled(false)
         }
-        _ => enabled_config(&harness, expected),
+        _ => enabled_config(&harness, expected, platform_only),
     };
-    let subject = Subject::spawn(harness.binary(), &config);
-    let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url()))?;
-    let scenario_behavior = lifecycle_behavior(scenario, behavior, expected);
-    let ctx = CheckContext {
-        fabric: harness.fabric(),
-        readyz: &readyz,
-        capture: &capture,
+    let outcome = observe_lifecycle(
+        &harness,
         expected,
+        &config,
+        &scenario_behavior,
         service_key,
-        behavior: &scenario_behavior,
+        scenario,
         timeout,
+    )
+    .await;
+    harness.shutdown().await;
+    outcome
+}
+
+async fn observe_lifecycle(
+    harness: &ScopeHarness,
+    expected: &ExpectedDeclaration,
+    config: &SubjectConfig,
+    behavior: &AcceptorBehavior,
+    service_key: &br_core_scope::ServiceKey,
+    scenario: Scenario,
+    timeout: Duration,
+) -> Result<CheckOutcome> {
+    crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
+    let capture = harness.capture_declares().await?;
+    let subject = match start_subject(harness, config).await {
+        Ok(subject) => subject,
+        Err(e) => {
+            capture.stop().await;
+            return Err(e);
+        }
     };
-    let outcome = run_scenario(scenario, &ctx).await;
+    let outcome = match ReadyzProbe::new(format!("{}/readyz", subject.base_url())) {
+        Ok(readyz) => {
+            let ctx = CheckContext {
+                fabric: harness.fabric(),
+                readyz: &readyz,
+                capture: &capture,
+                expected,
+                service_key,
+                behavior,
+                timeout,
+            };
+            Ok(run_scenario(scenario, &ctx).await)
+        }
+        Err(e) => Err(e),
+    };
     subject.shutdown().await;
     capture.stop().await;
-    harness.shutdown().await;
-    Ok(outcome)
+    outcome
 }
 
 fn lifecycle_behavior(
@@ -123,7 +240,11 @@ fn lifecycle_behavior(
     }
 }
 
-fn enabled_config(harness: &ScopeHarness, expected: &ExpectedDeclaration) -> SubjectConfig {
+fn enabled_config(
+    harness: &ScopeHarness,
+    expected: &ExpectedDeclaration,
+    platform_only: bool,
+) -> SubjectConfig {
     SubjectConfig::new(
         &harness.nats_url(),
         harness.stream_name(),
@@ -133,6 +254,6 @@ fn enabled_config(harness: &ScopeHarness, expected: &ExpectedDeclaration) -> Sub
     .scope_keys(&expected.scope_keys_csv())
     .label_key("label.example")
     .description_key("desc.example")
-    .platform_only(expected.scopes.iter().all(|s| s.platform_only) && !expected.scopes.is_empty())
+    .platform_only(platform_only)
     .wait_timeout(SPAWN_WAIT_TIMEOUT)
 }

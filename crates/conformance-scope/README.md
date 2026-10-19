@@ -7,7 +7,7 @@ subject's source — and asserts that a scope-owning service performs the
 handshake exactly as the platform requires.
 
 > ⚠️ **TEST FIXTURE ONLY.** Add it as a **dev-dependency**, never a runtime one.
-> It builds and spawns a real binary, stands up a real `nats-server`, and plays
+> It spawns a prebuilt binary, stands up a real `nats-server`, and plays
 > the Identity side of the handshake on an isolated, throwaway test network.
 
 > **Wire — v1.0.0 `integration.*` grammar, migrated on both sides.**
@@ -77,8 +77,9 @@ Each is an `#[ignore]`-gated real-infra test (`tests/conformance.rs`), in the
 A consuming service's e2e can drive the same battery against its own
 binary by reusing the helpers, not just the tests:
 
-- `ScopeHarness` — `start()` builds the Go subject (`build_subject`) and is the
-  self-test entry point; `start_with_binary(binary)` runs the **same** battery
+- `ScopeHarness` — `start()` locates the prebuilt `scope-service` subject
+  (`locate_subject`: `PATH`, then the cache directory, then the release asset) and
+  is the self-test entry point; `start_with_binary(binary)` runs the **same** battery
   against any subject binary, so a consuming service drives it against its own.
   Either way it spawns a dedicated `SpawnedNats` and creates the handshake
   JetStream stream up front (the platform never auto-provisions, so the runner
@@ -108,22 +109,28 @@ implementation in `checks/`, returning a structured outcome instead of
 panicking. Both `tests/conformance.rs` and the [`conformance-scope-cli`] binary
 call these — there is no second copy of the protocol logic.
 
-- `CheckContext<'a>` — the parameters a check needs: a `jetstream::Context`, a
+- `CheckContext<'a>` — the parameters a check needs: a `Fabric`, a
   `ReadyzProbe`, a `DeclareCapture`, the `ExpectedDeclaration`, the declaring
-  `ServiceKey`, the `AcceptorBehavior`, and a per-step `timeout`.
+  `ServiceKey`, the `AcceptorBehavior`, and a per-step `timeout`. A check reads the
+  declare capture through `DeclareCapture::try_count` / `try_first` /
+  `try_correlation_ids`: a frame on the declare subject that is not an envelope with
+  `metadata.correlation_id` is a failed check naming that cause, never an absent
+  declare and never a panic.
 - `run_scenario(scenario, ctx) -> CheckOutcome` and the individual check
   functions (`declare_well_formed`, `declaration_content`, `readiness_gated`,
   `republishes_same_correlation_id`, `rejection_stops_readiness`,
   `duplicate_confirmations_tolerated`, `disabled_mode_ready_without_declare`).
 - `CheckId` / `CheckStatus { Pass, Fail, Skipped }` / `CheckOutcome { id, status,
   expected, observed, detail }` / `ConformanceReport { outcomes }` with
-  `passed()` / `failed()` / `skipped()` / `is_conformant()`.
+  `passed()` / `failed()` / `skipped()` / `is_conformant()`. `is_conformant()` is
+  true only for a report with at least one outcome, no failed and no skipped outcome.
 - `ExpectedDeclaration` / `ExpectedScope` / `PlatformOnly` — the assertion input.
   `platform_only` is modeled **per scope** (faithful to `br-core-scope`'s
   `ScopeSpec.platform_only`); `PlatformOnly::All(bool)` is a convenience that
   expands one bool over every scope, `PlatformOnly::PerScope` carries a
   `key → bool` map. `assert_matches` renders a wire-faithful expected-vs-observed
-  diff on mismatch.
+  diff on mismatch. Spawn mode drives the subject with one flag for every scope, so
+  `run_spawn` returns `InvalidInput` for an expectation whose scopes carry different flags.
 
 ## Two programmatic runners — spawn and attach
 
@@ -137,12 +144,13 @@ the dependencies are obtained.
   `EVENT_STREAM_NAME`, `SERVICE_KEY`, `SCOPE_KEYS`, `PLATFORM_ONLY`,
   `SCOPE_DECLARATION_ENABLED`, …). Runs the full `s1..s6` default because it
   controls the subject's config and lifecycle. Needs `nats-server` on `PATH`.
+  `run_spawn` and `run_attach` return `InvalidInput` for an empty scenario slice.
   The Go anchor freezes the v1.0.0 `integration.*` subjects and the
   `INTEGRATION_EVT` stream as constants, so this mode runs green against v1.0.0.
-- `run_attach(AttachTarget { nats_url, readyz_url, stream_name }, expected,
+- `run_attach(AttachTarget { nats_url, readyz_url }, expected,
   behavior, scenarios, timeout)` — the primary mode, with **zero host runtime
   deps**: it connects to an already-running service's NATS and polls its
-  `/readyz` URL directly, never spawning `nats-server` and never building Go. It
+  `/readyz` URL directly, never spawning `nats-server` and never starting a subject. It
   **does not** create the stream — the live service owns the handshake stream;
   the declare consumer binds to the pre-existing stream and fails loud with a
   clear error if it is absent. Default scenarios are `s1, s2` + the
@@ -159,13 +167,32 @@ human/json/junit reports), see the [`conformance-scope-cli`] crate.
 
 ## Running it
 
-Needs `nats-server` and the **Go toolchain** on `PATH` (the runner builds the
-subject). The tests are `#[ignore]`-gated so the default `cargo test` stays green
-without infra:
+The tests never compile anything. They need `nats-server` on `PATH` and the Go
+subject as a **prebuilt binary named `scope-service`**:
+
+1. on `PATH` (first match among the absolute `PATH` entries), or
+2. in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-scope-{version}`
+   (`$HOME/Library/Caches/...` on macOS, `$HOME/.cache/...` elsewhere; a relative
+   `XDG_CACHE_HOME` or `HOME` is ignored), or
+3. downloaded into that cache from this crate's own GitHub release
+   `conformance-scope/v{version}` of `BotResources/br-e2e-harness`: the asset
+   `scope-service-<os>-<arch>.tar.gz` with its sibling `.sha256` (`linux` and
+   `darwin`, `amd64` and `arm64`). The download fails closed on a SHA-256 mismatch,
+   a redirect to a host other than `github.com` / `objects.githubusercontent.com` /
+   `release-assets.githubusercontent.com`, or an archive over 64 MiB. It needs `tar` on
+   `PATH`. The spawned subject receives a `PATH` led by the directory of its binary
+   through the child's environment; the test process environment is never modified.
+
+A binary found nowhere is `ConformanceError::SubjectBinaryUnavailable`, naming the
+binary and what to do. To use your own build, put it on `PATH` before running:
 
 ```sh
-cargo test -p conformance-scope --test conformance -- --ignored
+PATH="$PWD/bin:$PATH" cargo test -p conformance-scope --all-targets -- --ignored --test-threads=1
 ```
+
+The `#[ignore]`-gated tests drive real infra, so the default `cargo test` stays
+green without it. The crate writes nothing to the system temporary directory (the
+throwaway NATS store belongs to `br-test-harness`).
 
 The suite **provisions the scope-declaration handshake topology by spawning the
 `fabric-nats` CLI** (`fabric-nats provision --manifest
@@ -175,8 +202,8 @@ capture is a thin typed view over the harness `CommandCapture`, the acceptor
 publishes accept/reject through a `Fabric`, and attach mode connects via
 `FabricTestNats::connect`.
 
-CI runs it in the `infra-e2e` job — which now additionally requires **`go`** on
-the runner (alongside `nats-server`), to build the conformance subject.
+CI runs it in the `infra-e2e` job, which builds `scope-service` outside the tests
+(dead-grammar guard, vet, Go tests, build) and puts it on `PATH` before the batteries.
 
 ## Install
 
@@ -186,7 +213,7 @@ crates.io). Keep each `br-rust-common` crate tag identical to `br-test-harness`'
 
 ```toml
 [dev-dependencies]
-conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.0", version = "0.1.0" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.1", version = "0.1.1" }
 ```
 
 ## Why — the non-obvious bits
@@ -197,10 +224,12 @@ conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", pa
 | The fake acceptor's reply `metadata` uses an `Actor::Human` | The wire spec's awaiter matches on `correlation_id` only and tolerates a defaulted human actor; emitting an unknown `actor_kind` is the one thing that hard-fails the real metadata deserializer, so the reply never invents one. |
 | `DeclareCapture` uses `DeliverPolicy::All` on the declare-capture | Attach mode attaches the capture **after** the subject's boot declare is already on the stream; replay is the only way to catch it. `New` would skip that first declare and only converge on the ~10s re-publish, making the gate slow. The declarer's own confirmation awaiter still uses `New` (a confirmation pre-published before its consumer exists is missed), which is why `accept`/`reject` publish only after the subject is up. |
 | Capture buffers via a lenient `correlation_id`-only probe, while `decode()` uses the strict real type | The buffer must record every declare to count re-publishes and read the id to echo it — that only needs the correlation_id, exactly as the real awaiter's `CorrelationProbe`. The conformance verdict (S1) is the separate, strict `decode()` against the real envelope + payload. Splitting them keeps the shape check honest without making the buffer depend on a conformant payload. |
-| The Go build uses `go build -C <dir>` | `br_test_harness::run_once` sets env but not the child's working directory; `-C` builds the package without depending on cwd, race-free under parallel `cargo test`. |
 | The streams are created by the runner, not the subject | The platform never auto-provisions (fail-loud); the subject does `get_stream`, so the harness owns stream setup. `FabricTestNats` provisions the two fixed streams — `INTEGRATION_CMD` (`integration.cmd.>`, the declare command) and `INTEGRATION_EVT` (`integration.evt.>`, both confirmations) — because the declarer awaits its publish ack and a missing stream fails the publish. |
-| The Go binary is built to a unique temp path per call | Each test builds its own subject; a shared output path would race under parallel `cargo test`. |
-| The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + `go` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
+| The tests never compile, and the subject is found by name | Compiling inside a test hides a toolchain dependency and races under parallel `cargo test`. The subject is a prebuilt `scope-service`, found on `PATH`, then in a cache directory, then downloaded from this crate's own release and verified; CI builds and vets it outside the tests. |
+| The download is verified and the child's `PATH` is passed through `Command::env` | A fetched binary is executed, so a digest mismatch, a foreign redirect host or an oversized body fail closed; `std::env::set_var` is `unsafe` in edition 2024, so the cache directory reaches the child through its environment instead. |
+| The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
+| S5 observes `/readyz` for the quiet window after the first 200 | Passing at the first 200 cannot tell a tolerant subject from one that crashes or drops to 503 on the duplicate `accepted`; the check holds the 200 for `QUIET_WINDOW` after the duplicate. |
+| `is_conformant` needs an outcome and no skip | A report that verified nothing, or only skipped checks, must not read as a pass. |
 | S4 reads the `/readyz` **body** before asserting no more declares | "It went quiet" alone is satisfiable by a reject that was never delivered. The subject writes `scope declaration rejected: <code>` into its `/readyz` body, so matching that body (the code is the real `ScopeDeclarationError` Display, not a literal) positively proves the reject was received and processed — only then is the tight `== count_at_reject` (no `+1` slack) sound. |
 | In **spawn** mode s4 always rejects, regardless of the global accept/reject flag | s4 is intrinsically a rejection scenario while s2/s3/s5 are acceptance scenarios, so the full `s1..s6` battery cannot share one global behavior. In spawn mode each lifecycle scenario drives its own fresh subject, so s4 synthesizes a rejection (the global `--reject` reason if given, else a default derived from the first expected scope key) while the others accept. The global flag customizes s4's reason; it never lets s4 silently skip. |
 | s2/s3/s5 accept unconditionally inside the check, ignoring `AcceptorBehavior` | These are acceptance scenarios; only `rejection_stops_readiness` reads `behavior`. The global `--reject` is meaningful for the rejection scenario (and in attach mode when the user selects it against their live service), not for the acceptance ones. |

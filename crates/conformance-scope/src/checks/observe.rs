@@ -2,23 +2,27 @@ use br_test_harness::wait_until;
 
 use crate::outcome::{CheckId, CheckOutcome};
 
-use super::{CheckContext, QUIET_WINDOW, readyz_status, wire_excerpt};
+use super::{
+    CheckContext, QUIET_WINDOW, await_first_declare, capture_failed, no_declare, readyz_status,
+    wire_excerpt,
+};
 
 pub async fn declare_well_formed(ctx: &CheckContext<'_>) -> CheckOutcome {
     let id = CheckId::DeclareWellFormed;
     let expected = "a declare is published on boot and deserializes into \
                     IntegrationCommand<DeclareServiceScopes>";
 
-    if !wait_until(ctx.timeout, || async { ctx.capture.count() >= 1 }).await {
-        return CheckOutcome::fail(
-            id,
-            expected,
-            "no declare captured within the timeout",
-            "the subject did not publish a declare command on boot",
-        );
-    }
-    let Some(declare) = ctx.capture.first() else {
-        return CheckOutcome::fail(id, expected, "no declare captured", "capture buffer empty");
+    let declare = match await_first_declare(ctx).await {
+        Ok(declare) => declare,
+        Err(wait) => {
+            return no_declare(
+                id,
+                expected,
+                wait,
+                "no declare captured within the timeout",
+                "the subject did not publish a declare command on boot",
+            );
+        }
     };
     match declare.decode() {
         Ok(_) => CheckOutcome::pass(id, expected, "declare captured and deserialized"),
@@ -39,16 +43,17 @@ pub async fn declaration_content(ctx: &CheckContext<'_>) -> CheckOutcome {
         ctx.expected.scope_keys_csv()
     );
 
-    if !wait_until(ctx.timeout, || async { ctx.capture.count() >= 1 }).await {
-        return CheckOutcome::fail(
-            id,
-            expected,
-            "no declare captured within the timeout",
-            "the subject did not publish a declare command on boot",
-        );
-    }
-    let Some(declare) = ctx.capture.first() else {
-        return CheckOutcome::fail(id, expected, "no declare captured", "capture buffer empty");
+    let declare = match await_first_declare(ctx).await {
+        Ok(declare) => declare,
+        Err(wait) => {
+            return no_declare(
+                id,
+                &expected,
+                wait,
+                "no declare captured within the timeout",
+                "the subject did not publish a declare command on boot",
+            );
+        }
     };
     let command = match declare.decode() {
         Ok(command) => command,
@@ -103,15 +108,21 @@ pub async fn disabled_mode_ready_without_declare(ctx: &CheckContext<'_>) -> Chec
             format!("/readyz did not reach 200: {}", readyz_status(ctx).await),
         );
     }
-    let published = wait_until(QUIET_WINDOW, || async { ctx.capture.count() > 0 }).await;
-    if published {
-        CheckOutcome::fail(
+    wait_until(QUIET_WINDOW, || async {
+        ctx.capture
+            .try_count()
+            .map(|count| count > 0)
+            .unwrap_or(true)
+    })
+    .await;
+    match ctx.capture.try_count() {
+        Ok(0) => CheckOutcome::pass(id, expected, "ready immediately, no declare published"),
+        Ok(count) => CheckOutcome::fail(
             id,
             expected,
-            format!("no declare published, saw {}", ctx.capture.count()),
+            format!("no declare published, saw {count}"),
             "disabled mode must publish no declare command",
-        )
-    } else {
-        CheckOutcome::pass(id, expected, "ready immediately, no declare published")
+        ),
+        Err(cause) => capture_failed(id, expected, &cause),
     }
 }

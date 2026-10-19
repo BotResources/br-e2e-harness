@@ -4,6 +4,8 @@ use std::path::Path;
 use br_test_harness::SpawnedProcess;
 use reqwest::StatusCode;
 
+use crate::binary::child_path;
+
 pub struct SubjectConfig {
     pub nats_url: String,
     pub command_stream: String,
@@ -87,7 +89,8 @@ impl Subject {
         let base_url = format!("http://{addr}");
         let platform_only = config.platform_only.to_string();
         let enabled = config.enabled.to_string();
-        let envs = [
+        let path = child_path(binary, std::env::var_os("PATH").as_deref());
+        let mut envs = vec![
             ("NATS_URL", config.nats_url.as_str()),
             ("HTTP_ADDR", addr.as_str()),
             ("COMMAND_STREAM_NAME", config.command_stream.as_str()),
@@ -100,6 +103,9 @@ impl Subject {
             ("WAIT_TIMEOUT", config.wait_timeout.as_str()),
             ("SCOPE_DECLARATION_ENABLED", enabled.as_str()),
         ];
+        if let Some(path) = path.as_deref() {
+            envs.push(("PATH", path));
+        }
 
         let process = SpawnedProcess::spawn(&binary.to_string_lossy(), &[], &envs);
         let client = reqwest::Client::builder()

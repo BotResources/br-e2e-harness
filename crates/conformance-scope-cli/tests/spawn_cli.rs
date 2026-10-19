@@ -1,13 +1,15 @@
 use assert_cmd::Command;
-use conformance_scope::{ScopeHarness, Subject, SubjectConfig, build_subject};
+use conformance_scope::{ScopeHarness, Subject, SubjectConfig, locate_subject};
 
 const SERVICE_KEY: &str = "notifier";
 const SCOPES: &str = "notifier:read,notifier:admin";
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
 async fn spawn_run_is_conformant_against_the_reference_subject() {
-    let binary = build_subject().await.expect("build the reference subject");
+    let binary = locate_subject()
+        .await
+        .expect("locate the reference subject");
 
     let assert = tokio::task::spawn_blocking(move || {
         Command::cargo_bin("conformance-scope")
@@ -53,7 +55,7 @@ async fn spawn_run_is_conformant_against_the_reference_subject() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
 async fn attach_run_flags_wrong_scopes_with_a_diff() {
     let harness = ScopeHarness::start().await.expect("harness");
     let nats_url = harness.nats_url();

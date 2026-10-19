@@ -88,12 +88,17 @@ pub fn parse_scenarios(raw: &str) -> Result<Vec<Scenario>> {
             scenarios.push(scenario);
         }
     }
+    require_selection(&scenarios)?;
+    Ok(scenarios)
+}
+
+pub(crate) fn require_selection(scenarios: &[Scenario]) -> Result<()> {
     if scenarios.is_empty() {
         return Err(ConformanceError::InvalidInput(
             "no scenarios selected".to_string(),
         ));
     }
-    Ok(scenarios)
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

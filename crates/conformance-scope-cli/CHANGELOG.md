@@ -10,6 +10,18 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.1.1
+
+### Fixed
+
+- The aggregate `conformant` verdict of a report is true only when it holds at least one service report and every service report is conformant; with `conformance-scope` 0.1.1 a service report with no outcome or with a skipped check is no longer conformant. A run that selects no scenario is a usage error (`conformance-scope` returns `InvalidInput`).
+- `--spawn` with an expectation whose scopes carry different `platform_only` flags is refused by `conformance-scope` before anything starts.
+- The `spawn_cli` test locates the prebuilt `scope-service` binary (`PATH`, cache directory, release asset) instead of compiling it; the `release-cli` workflow attaches the `scope-service` assets next to the CLI binaries.
+
+### Changed
+
+- Version follows `conformance-scope` (0.1.1); the path dependency requires `conformance-scope` 0.1.1.
+
 ## 0.1.0
 
 ### Changed

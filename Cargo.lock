@@ -660,7 +660,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "br-core-integration",
  "br-core-scope",
@@ -668,9 +668,11 @@ dependencies = [
  "br-test-harness",
  "br-util-nats-fabric",
  "chrono",
+ "futures-util",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "uuid",
@@ -678,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-scope-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "assert_cmd",
  "clap",

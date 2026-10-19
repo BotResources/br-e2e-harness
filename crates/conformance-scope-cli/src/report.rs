@@ -66,7 +66,7 @@ impl AggregateReport {
         let failed = services.iter().map(|s| s.failed).sum();
         let skipped = services.iter().map(|s| s.skipped).sum();
         Self {
-            conformant: failed == 0,
+            conformant: !services.is_empty() && services.iter().all(|s| s.conformant),
             passed,
             failed,
             skipped,

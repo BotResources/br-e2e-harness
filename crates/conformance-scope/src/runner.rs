@@ -9,7 +9,7 @@ use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
 use crate::outcome::ConformanceReport;
 use crate::readyz::ReadyzProbe;
-use crate::scenario::{AcceptorBehavior, Scenario};
+use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -25,16 +25,21 @@ pub async fn run_attach(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
+    require_selection(scenarios)?;
     let service_key = service_key(expected)?;
+    let readyz = ReadyzProbe::new(&target.readyz_url)?;
     let nats = FabricTestNats::connect(&target.nats_url).await;
     let fabric = nats.fabric_owned();
-    let readyz = ReadyzProbe::new(&target.readyz_url)?;
-    let capture = DeclareCapture::start(&nats).await.map_err(|e| {
-        ConformanceError::Jetstream(format!(
-            "binding the declare consumer to the fixed handshake stream failed — in attach mode \
-             the service owns the fixed handshake stream and it must already exist: {e}"
-        ))
-    })?;
+    let capture = match DeclareCapture::start(&nats).await {
+        Ok(capture) => capture,
+        Err(e) => {
+            nats.shutdown().await;
+            return Err(ConformanceError::Jetstream(format!(
+                "binding the declare consumer to the fixed handshake stream failed — in attach \
+                 mode the service owns the fixed handshake stream and it must already exist: {e}"
+            )));
+        }
+    };
 
     let ctx = CheckContext {
         fabric: &fabric,

@@ -1,21 +1,25 @@
 pub mod acceptor;
-pub mod build;
+pub mod binary;
 pub mod capture;
 pub mod checks;
 pub mod error;
 pub mod expected;
 pub mod harness;
 pub mod outcome;
+mod prerequisite;
 pub mod provision;
 pub mod readyz;
+mod release_asset;
 pub mod runner;
 pub mod scenario;
 pub mod spawn;
 pub mod subject;
 pub mod subjects;
+#[cfg(test)]
+mod test_scratch;
 
 pub use acceptor::{accept, reject};
-pub use build::{build_subject, ensure_go_available, subject_dir};
+pub use binary::{SUBJECT_BINARY, locate_subject};
 pub use capture::{CapturedDeclare, DeclareCapture};
 pub use checks::{CheckContext, run_scenario};
 pub use error::{ConformanceError, Result};

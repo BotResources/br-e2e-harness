@@ -59,9 +59,10 @@ On macOS use `shasum -a 256 -c "${asset}.sha256"` to verify.
 ### From source
 
 ```sh
-cargo build -p conformance-scope-cli --release
-# binary at target/release/conformance-scope
+cargo install --path crates/conformance-scope-cli --locked
 ```
+
+This installs the `conformance-scope` binary into `~/.cargo/bin`.
 
 ### Quick examples
 
@@ -213,8 +214,8 @@ semantics (e.g. in `attach`, selecting `s4` requires `reject`, else it is
 
 ## Exit codes
 
-- `0` — fully conformant (no failed checks).
-- `1` — at least one check failed.
+- `0` — conformant (at least one check ran, none failed, none skipped).
+- `1` — not conformant (a check failed or was skipped, or no check ran).
 - `2` — a usage / connection / I/O error (bad arguments, NATS unreachable,
   missing stream, unwritable output).
 
@@ -234,7 +235,9 @@ release. To cut a release:
 The `release-cli` workflow reads the version from the tag, builds the matrix at
 the tagged commit, packages each binary as
 `conformance-scope-<version>-<target>.tar.gz` + `.sha256`, and attaches them to
-that release. To re-cut without a new merge, run it via `workflow_dispatch` with
+that release, next to the four `scope-service-<os>-<arch>.tar.gz` assets (+ `.sha256`) of the
+Go subject, which `conformance-scope` downloads when its tests find no `scope-service` on `PATH`.
+To re-cut without a new merge, run it via `workflow_dispatch` with
 the tag.
 
 ### Adding a target
