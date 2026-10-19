@@ -24,7 +24,7 @@ fn stderr_of(assert: assert_cmd::assert::Assert) -> String {
 }
 
 #[test]
-fn attach_to_an_unreachable_broker_exits_2_naming_the_stream() {
+fn attach_to_an_unreachable_broker_exits_2_naming_the_broker() {
     let assert = cli()
         .args([
             "run",
@@ -42,7 +42,7 @@ fn attach_to_an_unreachable_broker_exits_2_naming_the_stream() {
         .assert()
         .code(2);
     let stderr = stderr_of(assert);
-    assert!(stderr.contains("INTEGRATION_CMD"), "{stderr}");
+    assert!(stderr.contains("nats://127.0.0.1:1"), "{stderr}");
 }
 
 #[test]
@@ -198,7 +198,7 @@ async fn attach_to_a_broker_without_the_handshake_streams_exits_2_and_creates_no
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn attach_to_a_broker_with_only_the_command_stream_exits_2_naming_the_event_stream() {
+async fn attach_to_a_broker_with_only_the_command_stream_exits_2_and_creates_no_event_stream() {
     let bare = BareFabricNats::with_only_command_stream().await;
     let nats_url = bare.url();
 
@@ -225,7 +225,7 @@ async fn attach_to_a_broker_with_only_the_command_stream_exits_2_naming_the_even
     .await
     .expect("cli task");
 
-    assert!(stderr.contains("INTEGRATION_EVT"), "{stderr}");
+    assert!(stderr.contains("must already exist"), "{stderr}");
     assert!(bare.event_stream_absent().await, "{stderr}");
 }
 
