@@ -95,6 +95,11 @@ jobs:
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
       - name: nats-fabric conformance battery
         run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
+      - name: no Go subject is built inside the passport conformance crates
+        run: |
+          set -euo pipefail
+          bash .github/scripts/test-go-free-gate.sh
+          bash .github/scripts/go-free-gate.sh
       - name: identity-passport anchor checks (freezes the committed wire vectors) and build onto PATH
         run: |
           set -euo pipefail
