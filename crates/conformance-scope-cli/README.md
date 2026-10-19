@@ -72,8 +72,8 @@ Attach to a live service's NATS and `/readyz`:
 conformance-scope run --attach \
   --nats nats://localhost:4222 \
   --readyz http://localhost:8080/readyz \
-  --service-key example-service \
-  --scopes example:read \
+  --service-key example_service \
+  --scopes example_service:read \
   --platform-only true
 ```
 
@@ -82,8 +82,8 @@ battery:
 
 ```sh
 conformance-scope run --spawn ./my-subject \
-  --service-key example-service \
-  --scopes example:read
+  --service-key example_service \
+  --scopes example_service:read
 ```
 
 ## Run in CI
@@ -135,8 +135,8 @@ run makes the battery read a dead correlation id.
     "$tools/conformance-scope" run \
       --nats nats://127.0.0.1:4222 \
       --readyz http://127.0.0.1:8080/readyz \
-      --service-key my-service \
-      --scopes my-service:read,my-service:admin \
+      --service-key my_service \
+      --scopes my_service:read,my_service:admin \
       --platform-only false \
       --format junit --output conformance-scope.xml
 ```
@@ -169,8 +169,8 @@ never builds anything.
 conformance-scope run \
   --nats nats://127.0.0.1:4222 \
   --readyz http://127.0.0.1:8080/readyz \
-  --service-key example-service \
-  --scopes example:read,example:admin
+  --service-key example_service \
+  --scopes example_service:read,example_service:admin
 ```
 
 The CLI binds a consumer to the **pre-existing**, fixed-name handshake stream
@@ -195,8 +195,8 @@ names it. Attach mode needs none of them.
 ```sh
 conformance-scope run \
   --spawn ./my-subject \
-  --service-key example-service \
-  --scopes example:read,example:admin
+  --service-key example_service \
+  --scopes example_service:read,example_service:admin
 ```
 
 The subject binary is configured via environment variables: `SERVICE_KEY`,
@@ -211,20 +211,20 @@ single bool applied to every scope, or a per-scope `key=bool` CSV:
 
 ```sh
 --platform-only false
---platform-only example:read=false,example:admin=true
+--platform-only example_service:read=false,example_service:admin=true
 ```
 
 A wrong `--scopes` makes the `declaration-content` check fail with an
 expected-vs-observed diff and a non-zero exit:
 
 ```text
-service: example-service
+service: example_service
   [FAIL] declaration-content
-      expected: service_key="example-service", scopes=[example:read]
-      observed: service_key="example-service", scopes=[example:read,example:admin]
+      expected: service_key="example_service", scopes=[example_service:read]
+      observed: service_key="example_service", scopes=[example_service:read,example_service:admin]
       scope set mismatch:
-        expected: example:read(platform_only=false)
-        observed: example:read(platform_only=false), example:admin(platform_only=false)
+        expected: example_service:read(platform_only=false)
+        observed: example_service:read(platform_only=false), example_service:admin(platform_only=false)
 
 NON-CONFORMANT: 2 passed, 1 failed, 0 skipped
 ```
@@ -262,18 +262,18 @@ aggregates one report. Each service is either `attach` or `spawn`:
 
 ```yaml
 services:
-  - service_key: example-service
+  - service_key: example_service
     scopes:
-      - key: example:read
+      - key: example_service:read
         platform_only: false
-      - key: example:admin
+      - key: example_service:admin
         platform_only: true
     attach:
       nats: nats://127.0.0.1:4222
       readyz: http://127.0.0.1:8080/readyz
-  - service_key: other-service
+  - service_key: other_service
     scopes:
-      - key: other:read
+      - key: other_service:read
     scenarios: s1,s2
     reject: scope_owned_by_another_service   # optional; mirrors `run --reject [REASON]`
     timeout: 30s                             # optional; per-service step timeout (default 10s)
@@ -294,7 +294,7 @@ semantics (e.g. in `attach`, selecting `s4` requires `reject`, else it is
 - `1` — not conformant (a check failed or was skipped, or no check ran).
 - `2` — a usage / connection / I/O / prerequisite error (bad arguments, NATS
   unreachable, missing stream, unwritable output, a missing `nats-server`,
-  `fabric-nats`, manifest or `scope-service` binary).
+  `fabric-nats`, an unreadable manifest, or a `--spawn` target that is not a file).
 
 ## Releasing
 

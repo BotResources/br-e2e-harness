@@ -140,18 +140,18 @@ mod tests {
     use super::load;
 
     const SAMPLE: &str = "services:
-  - service_key: example-service
+  - service_key: example_service
     scopes:
-      - key: example:read
+      - key: example_service:read
         platform_only: false
-      - key: example:admin
+      - key: example_service:admin
         platform_only: true
     attach:
       nats: nats://127.0.0.1:4222
       readyz: http://127.0.0.1:8080/readyz
-  - service_key: other-service
+  - service_key: other_service
     scopes:
-      - key: other:read
+      - key: other_service:read
     scenarios: s1,s2
     reject: scope_owned_by_another_service
     timeout: 30s
@@ -165,9 +165,9 @@ mod tests {
 
         assert_eq!(manifest.services.len(), 2);
         let first = &manifest.services[0];
-        assert_eq!(first.service_key, "example-service");
+        assert_eq!(first.service_key, "example_service");
         assert_eq!(first.scopes.len(), 2);
-        assert_eq!(first.scopes[0].key, "example:read");
+        assert_eq!(first.scopes[0].key, "example_service:read");
         assert!(!first.scopes[0].platform_only);
         assert!(first.scopes[1].platform_only);
         assert_eq!(first.timeout, "10s");

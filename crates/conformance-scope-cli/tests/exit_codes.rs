@@ -198,6 +198,39 @@ async fn attach_to_a_broker_without_the_handshake_streams_exits_2_and_creates_no
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn attach_to_a_broker_with_only_the_command_stream_exits_2_naming_the_event_stream() {
+    let bare = BareFabricNats::with_only_command_stream().await;
+    let nats_url = bare.url();
+
+    let stderr = tokio::task::spawn_blocking(move || {
+        stderr_of(
+            cli()
+                .args([
+                    "run",
+                    "--nats",
+                    &nats_url,
+                    "--readyz",
+                    "http://127.0.0.1:1/readyz",
+                    "--service-key",
+                    SERVICE_KEY,
+                    "--scopes",
+                    SCOPES,
+                    "--timeout",
+                    "1s",
+                ])
+                .assert()
+                .code(2),
+        )
+    })
+    .await
+    .expect("cli task");
+
+    assert!(stderr.contains("INTEGRATION_EVT"), "{stderr}");
+    assert!(bare.event_stream_absent().await, "{stderr}");
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn spawn_from_a_released_layout_without_fabric_nats_exits_2_naming_it() {
     let released = scratch("released-layout");
     let executable = released.join("conformance-scope");

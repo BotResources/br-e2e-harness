@@ -92,7 +92,7 @@ async fn attach_run_flags_wrong_scopes_with_a_diff() {
                 "human",
             ])
             .assert()
-            .failure();
+            .code(1);
         assert.get_output().stdout.clone()
     })
     .await

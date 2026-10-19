@@ -57,7 +57,7 @@ pub struct RunArgs {
     #[arg(
         long,
         value_name = "KEY",
-        help = "Expected declaring service key, e.g. example-service."
+        help = "Expected declaring service key, e.g. example_service."
     )]
     pub service_key: String,
 
@@ -65,7 +65,7 @@ pub struct RunArgs {
         long,
         value_name = "CSV",
         default_value = "",
-        help = "Expected scope keys, comma-separated, e.g. example:read,example:admin."
+        help = "Expected scope keys, comma-separated, e.g. example_service:read,example_service:admin."
     )]
     pub scopes: String,
 

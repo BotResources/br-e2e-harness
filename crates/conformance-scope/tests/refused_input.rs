@@ -156,3 +156,33 @@ async fn attach_to_a_broker_without_the_handshake_stream_fails_loud_and_provisio
         "attach mode must not provision the event stream"
     );
 }
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn attach_to_a_broker_with_only_the_command_stream_is_a_typed_error_naming_the_event_stream()
+{
+    let bare = br_test_harness::BareFabricNats::with_only_command_stream().await;
+    let target = AttachTarget {
+        nats_url: bare.url(),
+        readyz_url: "http://127.0.0.1:1/readyz".to_string(),
+    };
+    let result = run_attach(
+        &target,
+        &uniform(),
+        &AcceptorBehavior::Accept,
+        &[Scenario::DeclareWellFormed],
+        TIMEOUT,
+    )
+    .await;
+    match result {
+        Err(ConformanceError::Jetstream(detail)) => {
+            assert!(detail.contains("INTEGRATION_EVT"), "{detail}");
+            assert!(detail.contains("must already exist"), "{detail}");
+        }
+        other => panic!("expected a typed Jetstream error: {other:?}"),
+    }
+    assert!(
+        bare.event_stream_absent().await,
+        "attach mode must not provision the event stream"
+    );
+}

@@ -39,6 +39,20 @@ pub async fn run_attach(
             target.nats_url
         ))
     })?;
+    match contained(nats.fixed_streams_present()).await {
+        Ok(true) => {}
+        Ok(false) => {
+            nats.shutdown().await;
+            return Err(missing_streams());
+        }
+        Err(panic) => {
+            nats.shutdown().await;
+            return Err(ConformanceError::Jetstream(format!(
+                "checking the fixed streams INTEGRATION_CMD and INTEGRATION_EVT on {}: {panic}",
+                target.nats_url
+            )));
+        }
+    }
     let fabric = nats.fabric_owned();
     let capture = match contained(DeclareCapture::start(&nats)).await {
         Ok(Ok(capture)) => capture,
@@ -69,6 +83,14 @@ pub async fn run_attach(
     capture.stop().await;
     nats.shutdown().await;
     Ok(report)
+}
+
+fn missing_streams() -> ConformanceError {
+    ConformanceError::Jetstream(
+        "the fixed streams INTEGRATION_CMD and INTEGRATION_EVT must already exist in \
+         attach mode; the battery never provisions infra"
+            .to_string(),
+    )
 }
 
 fn binding_failure(cause: impl std::fmt::Display) -> ConformanceError {

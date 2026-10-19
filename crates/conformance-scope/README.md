@@ -202,7 +202,7 @@ real-life testbed. Spawn mode therefore needs the `fabric-nats` binary (the
 the manifest `tests/fixtures/scope_declaration.toml` of the conformance-scope source tree
 the executable was built from (its path is fixed at build time). When either is missing,
 `run_spawn` and `provision` return `ConformanceError::FabricProvisionUnavailable`, naming
-the missing prerequisite and what to do, and never panic; attach mode needs neither. The
+the missing prerequisite and what to do; the error never unwinds out of the call, but the harness panic text can still appear on stderr. Attach mode needs neither. The
 crate carries **no `async-nats` dependency**: the declare capture is a thin typed view over
 the harness `CommandCapture`, the acceptor publishes accept/reject through a `Fabric`, and
 attach mode connects through `FabricTestNats::attach_without_provisioning`, so attach mode
@@ -261,8 +261,8 @@ run makes the battery read a dead correlation id.
     "$tools/conformance-scope" run \
       --nats nats://127.0.0.1:4222 \
       --readyz http://127.0.0.1:8080/readyz \
-      --service-key my-service \
-      --scopes my-service:read,my-service:admin \
+      --service-key my_service \
+      --scopes my_service:read,my_service:admin \
       --platform-only false \
       --format junit --output conformance-scope.xml
 ```
