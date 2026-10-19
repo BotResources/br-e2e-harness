@@ -150,10 +150,11 @@ the dependencies are obtained.
 - `run_attach(AttachTarget { nats_url, readyz_url }, expected,
   behavior, scenarios, timeout)` — the primary mode, with **zero host runtime
   deps**: it connects to an already-running service's NATS and polls its
-  `/readyz` URL directly, never spawning `nats-server` and never starting a subject. It
-  **does not** create the stream — the live service owns the handshake stream;
-  the declare consumer binds to the pre-existing stream and fails loud with a
-  clear error if it is absent. Default scenarios are `s1, s2` + the
+  `/readyz` URL directly, never spawning `nats-server` and never starting a subject.
+  Both `INTEGRATION_CMD` and `INTEGRATION_EVT` must already exist: attach checks
+  them before anything else, never creates them, and returns a typed
+  `Jetstream` error when either is missing. A `readyz_url` that is not an
+  `http` or `https` URL with a host is `InvalidInput`. Default scenarios are `s1, s2` + the
   `declaration-content` assertion (the lifecycle-controlling scenarios
   s3/s4/s6 cannot run against an already-booted service).
 

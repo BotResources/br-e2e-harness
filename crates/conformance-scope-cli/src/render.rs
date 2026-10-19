@@ -123,3 +123,110 @@ fn xml_escape(value: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
 }
+
+#[cfg(test)]
+mod tests {
+    use conformance_scope::{CheckId, CheckOutcome, ConformanceReport};
+
+    use super::*;
+
+    const HOSTILE: &str = "a&b <c> \"d\" 'e'";
+    const HOSTILE_ESCAPED: &str = "a&amp;b &lt;c&gt; &quot;d&quot; &apos;e&apos;";
+
+    fn aggregate(outcomes: Vec<CheckOutcome>) -> AggregateReport {
+        AggregateReport::single(ServiceReport::from_report(
+            "svc",
+            &ConformanceReport { outcomes },
+        ))
+    }
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::DeclareWellFormed, "e", "o")
+    }
+
+    fn fail() -> CheckOutcome {
+        CheckOutcome::fail(CheckId::DeclarationContent, HOSTILE, HOSTILE, HOSTILE)
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::RejectionStopsReadiness, "needs a lifecycle")
+    }
+
+    #[test]
+    fn junit_counts_a_pass_a_fail_and_a_skip_and_marks_each_case() {
+        let xml = junit(&aggregate(vec![pass(), fail(), skipped()]));
+        assert!(
+            xml.contains("<testsuites tests=\"3\" failures=\"1\" skipped=\"1\">"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("<testsuite name=\"svc\" tests=\"3\" failures=\"1\" skipped=\"1\">"),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("name=\"s1\"/>") || xml.contains("name=\"declare-well-formed\"/>"),
+            "a passing case is a self-closing testcase: {xml}"
+        );
+        assert_eq!(xml.matches("<failure ").count(), 1, "{xml}");
+        assert_eq!(xml.matches("<skipped/>").count(), 1, "{xml}");
+    }
+
+    #[test]
+    fn junit_escapes_the_five_xml_specials_in_the_failure_message_and_body() {
+        let xml = junit(&aggregate(vec![fail()]));
+        let expected_message = format!(
+            "<failure message=\"expected: {HOSTILE_ESCAPED}; observed: {HOSTILE_ESCAPED}\">"
+        );
+        assert!(xml.contains(&expected_message), "{xml}");
+        assert!(
+            xml.contains(&format!("{HOSTILE_ESCAPED}</failure>")),
+            "{xml}"
+        );
+        assert!(!xml.contains(HOSTILE), "{xml}");
+    }
+
+    #[test]
+    fn junit_escapes_the_service_key_and_check_attributes() {
+        let report = AggregateReport::single(ServiceReport::from_report(
+            HOSTILE,
+            &ConformanceReport {
+                outcomes: vec![pass()],
+            },
+        ));
+        let xml = junit(&report);
+        assert!(
+            xml.contains(&format!("<testsuite name=\"{HOSTILE_ESCAPED}\"")),
+            "{xml}"
+        );
+        assert!(
+            xml.contains(&format!("classname=\"{HOSTILE_ESCAPED}\"")),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn human_shows_the_diff_of_a_failure_and_the_detail_of_a_skip() {
+        let text = human(&aggregate(vec![pass(), fail(), skipped()]));
+        assert!(text.contains("service: svc"), "{text}");
+        assert!(text.contains("[PASS]"), "{text}");
+        assert!(text.contains("[FAIL]"), "{text}");
+        assert!(text.contains("[SKIP]"), "{text}");
+        assert!(text.contains(&format!("expected: {HOSTILE}")), "{text}");
+        assert!(text.contains(&format!("observed: {HOSTILE}")), "{text}");
+        assert!(text.contains("needs a lifecycle"), "{text}");
+        assert!(
+            text.contains("NON-CONFORMANT: 1 passed, 1 failed, 1 skipped"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn human_states_conformant_when_every_check_passed() {
+        let text = human(&aggregate(vec![pass()]));
+        assert!(
+            text.contains("CONFORMANT: 1 passed, 0 failed, 0 skipped"),
+            "{text}"
+        );
+        assert!(!text.contains("NON-CONFORMANT"), "{text}");
+    }
+}

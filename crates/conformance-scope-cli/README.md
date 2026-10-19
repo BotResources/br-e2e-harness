@@ -173,9 +173,9 @@ conformance-scope run \
   --scopes example_service:read,example_service:admin
 ```
 
-The CLI binds a consumer to the **pre-existing**, fixed-name handshake stream
-(`INTEGRATION_CMD`, the wire-contract command stream) and fails loud if it is
-absent. Attach runs `s1, s2` and the `declaration-content` assertion by default —
+Both fixed-name handshake streams, `INTEGRATION_CMD` and `INTEGRATION_EVT`, must
+already exist. Attach checks them before anything else, never creates them, and
+exits `2` when either is missing. Attach runs `s1, s2` and the `declaration-content` assertion by default —
 the lifecycle-controlling scenarios (s3/s4/s6) cannot run against an
 already-booted service.
 

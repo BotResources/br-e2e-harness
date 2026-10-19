@@ -77,6 +77,27 @@ fn attach_without_nats_or_readyz_exits_2_naming_the_flag() {
 }
 
 #[test]
+fn a_readyz_url_that_is_not_an_http_url_exits_2_naming_it() {
+    let stderr = stderr_of(
+        cli()
+            .args([
+                "run",
+                "--nats",
+                "nats://127.0.0.1:1",
+                "--readyz",
+                "127.0.0.1:8080/readyz",
+                "--service-key",
+                SERVICE_KEY,
+                "--scopes",
+                SCOPES,
+            ])
+            .assert()
+            .code(2),
+    );
+    assert!(stderr.contains("127.0.0.1:8080/readyz"), "{stderr}");
+}
+
+#[test]
 fn an_unknown_scenario_exits_2() {
     let stderr = stderr_of(
         cli()
@@ -397,4 +418,62 @@ async fn manifest_run_aggregates_an_attached_service_into_the_output_file() {
         serde_json::json!(SERVICE_KEY),
         "{report}"
     );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
+async fn attach_run_writes_a_junit_file_with_the_counts_and_the_failure_element() {
+    let service = AttachedService::boot().await;
+    let (nats_url, readyz_url) = (service.nats_url.clone(), service.readyz_url.clone());
+    let dir = scratch("junit-output");
+    let output = dir.join("conformance-scope.xml");
+    let output_arg = output.to_string_lossy().to_string();
+
+    let stdout = tokio::task::spawn_blocking(move || {
+        cli()
+            .args([
+                "run",
+                "--nats",
+                &nats_url,
+                "--readyz",
+                &readyz_url,
+                "--service-key",
+                SERVICE_KEY,
+                "--scopes",
+                "notifier:read",
+                "--scenarios",
+                "declaration-content",
+                "--format",
+                "junit",
+                "--output",
+                &output_arg,
+            ])
+            .assert()
+            .code(1)
+            .get_output()
+            .stdout
+            .clone()
+    })
+    .await
+    .expect("cli task");
+    service.shutdown().await;
+
+    assert!(
+        stdout.is_empty(),
+        "with --output the report goes to the file only: {}",
+        String::from_utf8_lossy(&stdout)
+    );
+    let xml = std::fs::read_to_string(&output).expect("the junit file was written");
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(xml.starts_with("<?xml"), "{xml}");
+    assert!(
+        xml.contains("<testsuites tests=\"1\" failures=\"1\" skipped=\"0\">"),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<testcase classname=\"notifier\" name=\"declaration-content\">"),
+        "{xml}"
+    );
+    assert!(xml.contains("<failure message=\""), "{xml}");
+    assert!(xml.contains("scope set mismatch"), "{xml}");
 }
