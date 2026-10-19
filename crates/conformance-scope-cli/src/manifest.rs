@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use conformance_scope::{
-    AcceptorBehavior, AttachTarget, ExpectedDeclaration, PlatformOnly, SAMPLE_FALLBACK_SCOPE,
+    AcceptorBehavior, AttachTarget, ExpectedDeclaration, ExpectedScope, SAMPLE_FALLBACK_SCOPE,
     SpawnTarget, attach_default, parse_scenarios, run_attach, run_spawn, spawn_default,
 };
 use serde::Deserialize;
@@ -72,10 +72,7 @@ pub async fn run(manifest: &Manifest) -> Result<AggregateReport> {
 }
 
 async fn run_service(spec: &ServiceSpec) -> Result<ServiceReport> {
-    let platform_only = build_platform_only(spec);
-    let scope_keys: Vec<String> = spec.scopes.iter().map(|s| s.key.clone()).collect();
-    let expected =
-        ExpectedDeclaration::try_from_parts(&spec.service_key, &scope_keys, &platform_only)?;
+    let expected = build_expected(spec);
     let timeout = duration::parse(&spec.timeout)?;
     let behavior = build_behavior(spec, &expected)?;
 
@@ -118,13 +115,16 @@ async fn run_service(spec: &ServiceSpec) -> Result<ServiceReport> {
     Ok(ServiceReport::from_report(&spec.service_key, &report))
 }
 
-fn build_platform_only(spec: &ServiceSpec) -> PlatformOnly {
-    let entries: Vec<(String, bool)> = spec
+fn build_expected(spec: &ServiceSpec) -> ExpectedDeclaration {
+    let scopes = spec
         .scopes
         .iter()
-        .map(|s| (s.key.clone(), s.platform_only))
+        .map(|scope| ExpectedScope {
+            key: scope.key.clone(),
+            platform_only: scope.platform_only,
+        })
         .collect();
-    PlatformOnly::PerScope(entries)
+    ExpectedDeclaration::new(spec.service_key.clone(), scopes)
 }
 
 fn build_behavior(spec: &ServiceSpec, expected: &ExpectedDeclaration) -> Result<AcceptorBehavior> {

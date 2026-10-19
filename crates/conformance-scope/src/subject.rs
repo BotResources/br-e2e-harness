@@ -1,5 +1,8 @@
 use std::net::TcpListener;
 use std::path::Path;
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use br_test_harness::SpawnedProcess;
 use reqwest::StatusCode;
@@ -77,6 +80,12 @@ impl SubjectConfig {
     }
 }
 
+const BIND_ATTEMPTS: usize = 5;
+const BIND_SETTLE: Duration = Duration::from_millis(250);
+const BIND_LOOKOUT: Duration = Duration::from_secs(1);
+const LISTENING: &str = "http listening";
+const PORT_TAKEN: &str = "address already in use";
+
 pub struct Subject {
     process: SpawnedProcess,
     base_url: String,
@@ -84,6 +93,36 @@ pub struct Subject {
 }
 
 impl Subject {
+    pub async fn start(binary: &Path, config: &SubjectConfig) -> Self {
+        let mut subject = Self::spawn(binary, config);
+        for _ in 1..BIND_ATTEMPTS {
+            if !subject.lost_its_port().await {
+                break;
+            }
+            subject = Self::spawn(binary, config);
+        }
+        subject
+    }
+
+    async fn lost_its_port(&self) -> bool {
+        let started = Instant::now();
+        let mut listening_since = None;
+        loop {
+            let logs = self.process.logs();
+            if logs.contains(PORT_TAKEN) {
+                return true;
+            }
+            if logs.contains(LISTENING) {
+                listening_since.get_or_insert_with(Instant::now);
+            }
+            let settled = listening_since.is_some_and(|since| since.elapsed() >= BIND_SETTLE);
+            if settled || started.elapsed() >= BIND_LOOKOUT {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
     pub fn spawn(binary: &Path, config: &SubjectConfig) -> Self {
         let addr = free_loopback_addr();
         let base_url = format!("http://{addr}");

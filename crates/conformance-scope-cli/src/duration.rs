@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use crate::error::{CliError, Result};
 
 pub fn parse(raw: &str) -> Result<Duration> {
@@ -25,7 +27,18 @@ pub fn parse(raw: &str) -> Result<Duration> {
             )));
         }
     };
-    duration.ok_or_else(|| CliError::new(format!("invalid duration {raw:?}: value is too large")))
+    duration
+        .filter(is_representable)
+        .ok_or_else(|| CliError::new(format!("invalid duration {raw:?}: value is too large")))
+}
+
+const DEADLINE_HEADROOM: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+
+fn is_representable(duration: &Duration) -> bool {
+    duration
+        .checked_add(DEADLINE_HEADROOM)
+        .and_then(|padded| Instant::now().checked_add(padded))
+        .is_some()
 }
 
 fn split_unit(trimmed: &str) -> (&str, &str) {
@@ -65,8 +78,17 @@ mod tests {
     }
 
     #[test]
-    fn given_the_largest_whole_minutes_when_parsed_then_it_is_accepted() {
-        assert!(parse(&format!("{}m", u64::MAX / 60)).is_ok());
+    fn given_a_duration_no_deadline_can_be_built_from_when_parsed_then_it_is_refused() {
+        for raw in ["18446744073709551615s", &format!("{}m", u64::MAX / 60)] {
+            let error = parse(raw).expect_err(raw);
+            assert!(error.to_string().contains("too large"), "{raw}: {error}");
+        }
+    }
+
+    #[test]
+    fn given_a_long_but_realistic_duration_when_parsed_then_it_is_accepted() {
+        assert_eq!(parse("1440m").unwrap(), Duration::from_secs(86_400));
+        assert_eq!(parse("3600s").unwrap(), Duration::from_secs(3_600));
     }
 
     #[test]

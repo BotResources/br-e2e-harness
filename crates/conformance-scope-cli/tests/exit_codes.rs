@@ -303,7 +303,7 @@ impl AttachedService {
         .label_key("label.notifier")
         .description_key("desc.notifier")
         .wait_timeout("500ms");
-        let subject = Subject::spawn(harness.binary(), &config);
+        let subject = Subject::start(harness.binary(), &config).await;
         let readyz_url = format!("{}/readyz", subject.base_url());
         Self {
             harness,
@@ -553,7 +553,13 @@ async fn scope_keys_that_no_declaration_can_hold_exit_2_naming_the_key() {
 #[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn a_timeout_that_is_zero_or_overflows_exits_2_naming_the_value() {
     let base = ["--scopes", "my_service:read"];
-    for value in ["0s", "0ms", "0m", "307445734561825862m"] {
+    for value in [
+        "0s",
+        "0ms",
+        "0m",
+        "307445734561825862m",
+        "18446744073709551615s",
+    ] {
         let mut args = base.to_vec();
         args.extend(["--timeout", value]);
         let stderr = stderr_of_run_against_a_broker_with_both_streams(&args).await;
@@ -615,4 +621,32 @@ async fn a_manifest_whose_scope_is_not_owned_by_its_service_exits_2_naming_the_k
     std::fs::remove_dir_all(&dir).ok();
 
     assert!(stderr.contains("other_service:read"), "{stderr}");
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_manifest_listing_a_scope_twice_exits_2_saying_it_is_listed_twice() {
+    let nats = FabricTestNats::start().await;
+    let dir = scratch("manifest-duplicate-scope");
+    let manifest = dir.join("services.yaml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "services:\n  - service_key: my_service\n    timeout: 1s\n    scopes:\n      - key: my_service:read\n      - key: my_service:read\n    attach:\n      nats: {}\n      readyz: http://127.0.0.1:1/readyz\n",
+            nats.url()
+        ),
+    )
+    .expect("write manifest");
+    let manifest_arg = manifest.to_string_lossy().into_owned();
+
+    let stderr = tokio::task::spawn_blocking(move || {
+        stderr_of(cli().args(["manifest", &manifest_arg]).assert().code(2))
+    })
+    .await
+    .expect("cli task");
+    nats.shutdown().await;
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert!(stderr.contains("my_service:read"), "{stderr}");
+    assert!(stderr.contains("listed twice"), "{stderr}");
 }

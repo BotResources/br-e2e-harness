@@ -142,7 +142,7 @@ async fn observe_batch(
 }
 
 async fn start_subject(harness: &ScopeHarness, config: &SubjectConfig) -> Result<Subject> {
-    contained(async { Subject::spawn(harness.binary(), config) })
+    contained(Subject::start(harness.binary(), config))
         .await
         .map_err(|e| {
             ConformanceError::InvalidInput(format!(

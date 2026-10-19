@@ -256,7 +256,7 @@ service is still awaiting acceptance so the declare is observable.
 - `--scenarios <CSV>`, e.g. `--scenarios s1,s2` or
   `--scenarios declaration-content`. Defaults: attach ⇒ `s1,s2` + content;
   spawn ⇒ `s1..s6` + content.
-- `--timeout <DUR>` per step, e.g. `10s` (default), `500ms`, `2m`. Zero and a value too large to represent exit `2`.
+- `--timeout <DUR>` per step, e.g. `10s` (default), `500ms`, `2m`. Zero and a value too large to build a deadline from (centuries) exit `2`.
 - `--format <human|json|junit>` (default `human`), `--output <PATH>` to write to
   a file instead of stdout. Each check reports its id, expected, observed, and a
   wire/file excerpt on failure.

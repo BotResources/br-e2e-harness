@@ -30,6 +30,8 @@ form to decide whether a version ships.
 - A `--platform-only` style per-scope entry that names no expected scope was dropped silently and a duplicate key kept the first value, so a typo (`my_service:admn=true`) read as a pass. `ExpectedDeclaration::try_from_parts` returns `InvalidInput` naming the stray or duplicated key. Pinned by `tests/refused_input.rs`.
 - A service key or scope keys that no `ScopeDeclaration` can hold (invalid `ScopeKey`, not owned by the expected service, listed twice) were judged as a `declaration-content` failure of the service. `run_attach` and `run_spawn` now return `InvalidInput` naming the key before any I/O (spawn: before the binary is looked at). Pinned by `tests/refused_input.rs`; its `mixed()` fixture now uses scopes owned by its service.
 
+- The tests and `run_spawn` picked the subject's port by binding and releasing a free port, then the subject bound it itself; another process could take it in between ("address already in use", a 10-second timeout that read as a failed S3/S4). They now start the subject with `Subject::start`, which starts it again on a new port, up to five attempts, when its log shows the port was taken. Pinned by `tests/port_race.rs`.
+
 ### Removed
 
 - The public items of the `build` module, removed with the module: `build_subject`, `subject_dir`, `run_dead_grammar_guard` and the Go-toolchain availability function, and the root re-exports of the first, second and fourth. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
@@ -37,6 +39,7 @@ form to decide whether a version ships.
 
 ### Added
 
+- `Subject::start`: `Subject::spawn` with a new port when the subject lost its port to another process (`spawn` is unchanged).
 - `ExpectedDeclaration::try_from_parts` (fallible form of `from_parts`, which is unchanged) and `ExpectedDeclaration::validate`.
 - `ConformanceError::FabricProvisionUnavailable { detail }`: the typed error of a spawn-mode prerequisite (`fabric-nats` binary, provisioning manifest) that is missing.
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
