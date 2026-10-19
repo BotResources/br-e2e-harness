@@ -102,6 +102,8 @@ against *an* identity without depending on any project's private one.
 `conformance-scope`, and its binaries ride that crate's release.
 
 `conformance-passport-cli` follows the same rule with `conformance-passport`.
+A `conformance-passport` tag also starts `release-anchor` (the Go binary) and
+`release-cli-passport` (the CLI binaries).
 
 ## Distribution
 
@@ -144,8 +146,7 @@ only after the siblings it pins have released.
 1. In your PR, bump `version` in the crate's own `Cargo.toml`, add a plain
    `## X.Y.Z` section to that crate's `CHANGELOG.md` (no brackets: the release
    pipeline greps that exact heading), and move the crate's install pin in this
-   README to the new tag. `conformance-scope-cli` moves with `conformance-scope`,
-   and `conformance-passport-cli` with `conformance-passport`.
+   README to the new tag. `conformance-scope-cli` moves with `conformance-scope`.
 2. CI gates the PR: fmt, clippy, tests, deny, machete, semver-checks (the
    `oidc-test-idp` and `br-test-harness` libraries; the conformance batteries are
    executable specs and are exempt), changelog entry, README pins, sibling pins,
@@ -153,10 +154,8 @@ only after the siblings it pins have released.
 3. On merge to `main`, `release-tags` detects each tracked crate whose version
    has no `{crate}/v{version}` tag, applies the release-line law, tags, creates
    the GitHub release and records the API listing and dependencies. It then
-   starts `cd` (the `oidc-test-idp` image), `release-cli` (the
-   `conformance-scope` binaries) or `release-anchor` (the
-   `conformance-passport` Go binary) with the new tag; a `conformance-passport`
-   tag also starts `release-cli-passport` (the `conformance-passport` CLI binaries).
+   starts `cd` (the `oidc-test-idp` image) or `release-cli` (the
+   `conformance-scope` binaries) with the new tag.
 
 ## Why
 
