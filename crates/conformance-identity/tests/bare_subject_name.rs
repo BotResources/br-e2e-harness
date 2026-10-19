@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use br_test_harness::wait_until;
 use conformance_identity::{
-    ConformanceError, IdentityHarness, SUBJECT_BINARY, Subject, SubjectConfig,
+    ConformanceError, IdentityHarness, SUBJECT_BINARY, Scenario, SpawnTarget, Subject,
+    SubjectConfig, run_spawn,
 };
 
 mod common;
@@ -103,6 +104,20 @@ async fn a_bare_name_found_only_in_the_cwd_is_refused() {
         }
         Err(other) => panic!("a name only in the cwd must be a missing binary: {other:?}"),
         Ok(_) => panic!("the cwd must never be searched"),
+    }
+    let target = SpawnTarget { binary: bare() };
+    match run_spawn(
+        &target,
+        &[Scenario::CleanDeclarationAccepted],
+        Duration::from_secs(2),
+    )
+    .await
+    {
+        Err(ConformanceError::SubjectBinaryUnavailable { binary, .. }) => {
+            assert_eq!(binary, SUBJECT_BINARY);
+        }
+        Err(other) => panic!("run_spawn must report a missing binary: {other:?}"),
+        Ok(_) => panic!("run_spawn must never run a binary of the current directory"),
     }
 }
 

@@ -383,14 +383,17 @@ fn tar_is_resolved_on_absolute_path_entries_only() {
     assert!(tar_program(Some(std::ffi::OsStr::new("bin:../tar"))).is_err());
 }
 
-const NO_SH: &str = "CONFORMANCE_IDENTITY_EXTRACT_WITHOUT_SH";
+const NO_SH_ARCHIVE: &str = "CONFORMANCE_IDENTITY_EXTRACT_WITHOUT_SH_ARCHIVE";
 const NO_SH_TEST: &str =
     "release_asset::tests::an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure";
 
 #[test]
 fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {
-    if std::env::var_os(NO_SH).is_none() {
+    let Some(archive_path) = std::env::var_os(NO_SH_ARCHIVE) else {
         let dir = scratch("extract-no-sh");
+        let archive = archive_of(&dir, script);
+        let archive_path = dir.join("served.tar.gz");
+        std::fs::write(&archive_path, archive).unwrap();
         let tar_only = dir.join("tar-only");
         std::fs::create_dir_all(&tar_only).unwrap();
         std::os::unix::fs::symlink(
@@ -400,20 +403,20 @@ fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {
         .unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", NO_SH_TEST, "--nocapture"])
-            .env(NO_SH, "1")
+            .env(NO_SH_ARCHIVE, &archive_path)
             .env("PATH", &*tar_only)
             .output()
             .unwrap();
         assert_child_ran_one_passing_test(&output);
         return;
-    }
+    };
+    let archive = std::fs::read(archive_path).unwrap();
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async {
             let dir = scratch("extract-no-sh-child");
-            let archive = archive_of(&dir, script);
             let cache = dir.join("cache");
             tokio::fs::create_dir_all(&cache).await.unwrap();
             let message = install_archive(SUBJECT_BINARY, &cache, &archive)
