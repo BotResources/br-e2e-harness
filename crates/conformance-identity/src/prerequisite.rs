@@ -3,19 +3,23 @@ use std::time::Duration;
 
 use br_test_harness::run_once;
 
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) async fn nats_server() -> Result<()> {
-    match run_once("nats-server", &["--version"], &[], PROBE_TIMEOUT).await {
-        Ok(output) if output.status.success() => Ok(()),
-        Ok(output) => Err(ConformanceError::Jetstream(format!(
+    match contained(run_once("nats-server", &["--version"], &[], PROBE_TIMEOUT)).await {
+        Ok(Ok(output)) if output.status.success() => Ok(()),
+        Ok(Ok(output)) => Err(ConformanceError::Jetstream(format!(
             "nats-server is on PATH but `--version` exited with {}",
             output.status
         ))),
-        Err(e) => Err(ConformanceError::Jetstream(format!(
-            "nats-server is unavailable on PATH (install it to run the real-infra batteries): {e}"
+        Ok(Err(e)) => Err(ConformanceError::Jetstream(format!(
+            "the nats-server probe failed (the real-infra batteries need nats-server on PATH): {e}"
+        ))),
+        Err(panic) => Err(ConformanceError::Jetstream(format!(
+            "the nats-server probe could not run (the real-infra batteries need nats-server on PATH and a spawnable `sh`): {panic}"
         ))),
     }
 }

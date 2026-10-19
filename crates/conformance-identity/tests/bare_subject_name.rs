@@ -15,6 +15,9 @@ const CHILD: &str = "CONFORMANCE_IDENTITY_BARE_SUBJECT_NAME_CHILD";
 const ACCEPTED: &str = "a_bare_name_found_on_path_and_not_in_the_cwd_is_accepted";
 const REFUSED: &str = "a_bare_name_found_only_in_the_cwd_is_refused";
 const SPAWNED: &str = "a_bare_name_is_spawned_from_its_path_entry_with_that_directory_leading";
+const REFUSED_SPAWN: &str = "a_bare_name_found_only_in_the_cwd_is_never_spawned";
+const MARKER: &str = "cwd-stand-in-ran";
+const CWD_STAND_IN: &[u8] = b"#!/bin/sh\necho ran > cwd-stand-in-ran\nexec sleep 30\n";
 const STAND_IN: &[u8] = b"#!/bin/sh\necho \"CHILD_PATH=$PATH\"\nexec sleep 30\n";
 const STUB_NATS_SERVER: &[u8] =
     b"#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"nats-server: v2.14.1\"; exit 0; fi\nexit 1\n";
@@ -41,7 +44,7 @@ fn run_isolated(test: &str, on_path: bool, in_cwd: bool) {
         write_executable(&path_dir.join(SUBJECT_BINARY), STAND_IN);
     }
     if in_cwd {
-        write_executable(&cwd.join(SUBJECT_BINARY), STAND_IN);
+        write_executable(&cwd.join(SUBJECT_BINARY), CWD_STAND_IN);
     }
     let copy = deps.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
@@ -61,6 +64,10 @@ fn run_isolated(test: &str, on_path: bool, in_cwd: bool) {
         .output()
         .expect("run the isolated copy");
     common::assert_child_ran_one_passing_test(&output);
+    assert!(
+        !cwd.join(MARKER).exists(),
+        "the stand-in of the current directory must never run"
+    );
 }
 
 fn bare() -> std::path::PathBuf {
@@ -114,4 +121,31 @@ async fn a_bare_name_is_spawned_from_its_path_entry_with_that_directory_leading(
     let logs = subject.logs();
     subject.shutdown().await;
     assert!(seen, "the child PATH must lead with {expected}: {logs}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_bare_name_found_only_in_the_cwd_is_never_spawned() {
+    if std::env::var_os(CHILD).is_none() {
+        run_isolated(REFUSED_SPAWN, false, true);
+        return;
+    }
+    let spawned = std::panic::catch_unwind(|| {
+        Subject::spawn(&bare(), &SubjectConfig::new("nats://127.0.0.1:1"))
+    });
+    let payload = spawned
+        .err()
+        .expect("an unresolved bare name must not be spawned");
+    let message = panic_text(payload);
+    assert!(message.contains(SUBJECT_BINARY), "{message}");
+    assert!(message.contains("PATH"), "{message}");
+}
+
+fn panic_text(payload: Box<dyn std::any::Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_string())
+            .unwrap_or_default(),
+    }
 }

@@ -136,8 +136,11 @@ directory (the throwaway NATS store of `br-test-harness` is that crate's own).
 
 `start_with_binary(binary)`, `SpawnTarget { binary }` and `Subject::spawn` accept a bare name such as
 `identity-acceptor`: a path with no directory part is resolved on the absolute entries of `PATH` only, never
-in the current directory, and the absolute result is checked and spawned; found nowhere, it is
-`SubjectBinaryUnavailable`. A path with a directory part (`./identity-acceptor`, an absolute path) is used as given.
+in the current directory, and the absolute result is checked and spawned. Found nowhere, the two
+Result-returning entry points (`start_with_binary`, `run_spawn`) return `SubjectBinaryUnavailable`;
+`Subject::spawn` returns `Self`, so it panics with that error's text instead, and an unresolved name
+never reaches the operating system. A path with a directory part (`./identity-acceptor`, an absolute path)
+is used as given.
 
 `locate_subject()` returns the absolute path of the binary. The acceptor is spawned by
 that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary

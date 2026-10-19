@@ -382,3 +382,45 @@ fn tar_is_resolved_on_absolute_path_entries_only() {
     assert!(tar_program(Some(std::ffi::OsStr::new("."))).is_err());
     assert!(tar_program(Some(std::ffi::OsStr::new("bin:../tar"))).is_err());
 }
+
+const NO_SH: &str = "CONFORMANCE_IDENTITY_EXTRACT_WITHOUT_SH";
+const NO_SH_TEST: &str =
+    "release_asset::tests::an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure";
+
+#[test]
+fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {
+    if std::env::var_os(NO_SH).is_none() {
+        let dir = scratch("extract-no-sh");
+        let tar_only = dir.join("tar-only");
+        std::fs::create_dir_all(&tar_only).unwrap();
+        std::os::unix::fs::symlink(
+            tar_program(std::env::var_os("PATH").as_deref()).unwrap(),
+            tar_only.join("tar"),
+        )
+        .unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", NO_SH_TEST, "--nocapture"])
+            .env(NO_SH, "1")
+            .env("PATH", &*tar_only)
+            .output()
+            .unwrap();
+        assert_child_ran_one_passing_test(&output);
+        return;
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let dir = scratch("extract-no-sh-child");
+            let archive = archive_of(&dir, script);
+            let cache = dir.join("cache");
+            tokio::fs::create_dir_all(&cache).await.unwrap();
+            let message = install_archive(SUBJECT_BINARY, &cache, &archive)
+                .await
+                .unwrap_err();
+            assert!(message.contains("tar could not be run"), "{message}");
+            assert!(message.contains("sh"), "{message}");
+            assert!(!cache.join(SUBJECT_BINARY).exists());
+        });
+}

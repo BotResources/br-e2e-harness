@@ -8,6 +8,7 @@ use reqwest::redirect::Policy as RedirectPolicy;
 use sha2::{Digest, Sha256};
 
 use crate::binary::find_in_path;
+use crate::containment::contained;
 
 const RELEASE_BASE: &str = "https://github.com/BotResources/br-e2e-harness/releases/download";
 const RELEASE_HOSTS: &[&str] = &[
@@ -230,7 +231,7 @@ async fn extract_into_cache(
         .await
         .map_err(|e| format!("cannot write {}: {e}", archive_path.display()))?;
     let tar = tar_program(std::env::var_os("PATH").as_deref())?;
-    let output = run_once(
+    let output = contained(run_once(
         &tar.to_string_lossy(),
         &[
             "-xzf",
@@ -241,8 +242,9 @@ async fn extract_into_cache(
         ],
         &[],
         EXTRACT_TIMEOUT,
-    )
-    .await?;
+    ))
+    .await
+    .map_err(|panic| format!("tar could not be run (a spawnable `sh` is required): {panic}"))??;
     if !output.status.success() {
         return Err(format!(
             "tar could not extract {binary} ({}): {}",

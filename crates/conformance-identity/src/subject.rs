@@ -39,7 +39,7 @@ impl Subject {
         let enabled = config.enabled.to_string();
         let inherited = std::env::var_os("PATH");
         let binary = resolve_subject(binary.to_path_buf(), inherited.as_deref())
-            .unwrap_or_else(|_| binary.to_path_buf());
+            .unwrap_or_else(|e| panic!("{e}"));
         let path = child_path(&binary, inherited.as_deref());
         let mut envs = vec![
             ("NATS_URL", config.nats_url.as_str()),
