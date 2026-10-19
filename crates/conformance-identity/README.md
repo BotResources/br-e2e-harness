@@ -195,7 +195,7 @@ tests/fixtures/scope_declaration.toml`) — the conformance suite is the CLI's
 real-life testbed. The crate carries **no `async-nats` dependency**: the
 confirmation capture is a thin typed view over the harness `EventCapture`, the
 declarer publishes through a `Fabric`, and attach mode connects via
-`FabricTestNats::connect`.
+`FabricTestNats::attach_without_provisioning`.
 
 CI runs `cargo test -p conformance-identity --all-targets -- --ignored --test-threads=1`
 in the `infra-e2e` job. A workflow step builds `identity-acceptor` onto `PATH` after
