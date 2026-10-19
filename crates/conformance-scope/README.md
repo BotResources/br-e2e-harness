@@ -69,7 +69,7 @@ Each is an `#[ignore]`-gated real-infra test (`tests/conformance.rs`), in the
 | **S2** | `/readyz` is 503 before, 200 after the acceptor emits `accepted` (echoing the correlation_id). |
 | **S3** | Withheld past `WAIT_TIMEOUT`, the subject re-publishes the **same** correlation_id (≥2 declares); accepting it then drives `/readyz` to 200. |
 | **S4** | On `rejected`, the subject surfaces the rejection reason in its `/readyz` body (`scope declaration rejected: <code>`) — proving it received and processed the reject — then `/readyz` stays 503 and the subject stops re-publishing. |
-| **S5** | Duplicate `accepted` events are tolerated — the subject reaches ready once and stays alive. |
+| **S5** | Duplicate `accepted` events are tolerated — the subject reaches ready, and `/readyz` stays `200` for the 3-second quiet window after the duplicate. |
 | **S6** | With `SCOPE_DECLARATION_ENABLED=false`, no declare is ever published and `/readyz` is 200 immediately. |
 
 ## Public helper surface (the reusable battery)

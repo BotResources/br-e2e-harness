@@ -86,3 +86,56 @@ impl AggregateReport {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use conformance_scope::{CheckId, CheckOutcome};
+
+    use super::*;
+
+    fn service(outcomes: Vec<CheckOutcome>) -> ServiceReport {
+        ServiceReport::from_report("svc", &ConformanceReport { outcomes })
+    }
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::DeclareWellFormed, "e", "o")
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::RejectionStopsReadiness, "d")
+    }
+
+    #[test]
+    fn an_aggregate_of_no_service_is_not_conformant() {
+        assert!(!AggregateReport::from_services(Vec::new()).conformant);
+    }
+
+    #[test]
+    fn a_service_that_ran_nothing_is_not_conformant_and_neither_is_the_aggregate() {
+        let empty = service(Vec::new());
+        assert!(!empty.conformant);
+        assert!(!AggregateReport::single(empty).conformant);
+    }
+
+    #[test]
+    fn a_service_with_only_skipped_checks_is_not_conformant_and_neither_is_the_aggregate() {
+        let skipped_only = service(vec![skipped()]);
+        assert!(!skipped_only.conformant);
+        assert!(!AggregateReport::single(skipped_only).conformant);
+    }
+
+    #[test]
+    fn one_non_conformant_service_makes_the_aggregate_non_conformant() {
+        let aggregate =
+            AggregateReport::from_services(vec![service(vec![pass()]), service(vec![skipped()])]);
+        assert!(!aggregate.conformant);
+        assert_eq!((aggregate.passed, aggregate.skipped), (1, 1));
+    }
+
+    #[test]
+    fn conformant_services_make_a_conformant_aggregate() {
+        let aggregate =
+            AggregateReport::from_services(vec![service(vec![pass()]), service(vec![pass()])]);
+        assert!(aggregate.conformant);
+    }
+}

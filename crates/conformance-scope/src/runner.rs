@@ -8,6 +8,7 @@ use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
 use crate::outcome::ConformanceReport;
+use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
 
@@ -28,16 +29,26 @@ pub async fn run_attach(
     require_selection(scenarios)?;
     let service_key = service_key(expected)?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
-    let nats = FabricTestNats::connect(&target.nats_url).await;
+    let nats = contained(FabricTestNats::attach_without_provisioning(
+        &target.nats_url,
+    ))
+    .await
+    .map_err(|e| {
+        ConformanceError::Jetstream(format!(
+            "connecting the harness to NATS at {}: {e}",
+            target.nats_url
+        ))
+    })?;
     let fabric = nats.fabric_owned();
-    let capture = match DeclareCapture::start(&nats).await {
-        Ok(capture) => capture,
-        Err(e) => {
+    let capture = match contained(DeclareCapture::start(&nats)).await {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(e)) => {
             nats.shutdown().await;
-            return Err(ConformanceError::Jetstream(format!(
-                "binding the declare consumer to the fixed handshake stream failed — in attach \
-                 mode the service owns the fixed handshake stream and it must already exist: {e}"
-            )));
+            return Err(binding_failure(e));
+        }
+        Err(panic) => {
+            nats.shutdown().await;
+            return Err(binding_failure(panic));
         }
     };
 
@@ -58,6 +69,13 @@ pub async fn run_attach(
     capture.stop().await;
     nats.shutdown().await;
     Ok(report)
+}
+
+fn binding_failure(cause: impl std::fmt::Display) -> ConformanceError {
+    ConformanceError::Jetstream(format!(
+        "binding the declare consumer to the fixed handshake stream failed — in attach mode \
+         the service owns the fixed handshake stream and it must already exist: {cause}"
+    ))
 }
 
 pub(crate) fn service_key(expected: &ExpectedDeclaration) -> Result<ServiceKey> {

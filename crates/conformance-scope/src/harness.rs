@@ -5,7 +5,7 @@ use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
 use crate::binary::locate_subject;
 use crate::capture::DeclareCapture;
-use crate::error::Result;
+use crate::error::{ConformanceError, Result};
 use crate::prerequisite;
 
 pub const COMMAND_STREAM_NAME: &str = INTEGRATION_CMD;
@@ -24,7 +24,9 @@ impl ScopeHarness {
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
         prerequisite::subject_binary(&binary)?;
-        let nats = FabricTestNats::start().await;
+        let nats = prerequisite::contained(FabricTestNats::start())
+            .await
+            .map_err(|e| ConformanceError::Jetstream(format!("start the throwaway NATS: {e}")))?;
         Ok(Self { nats, binary })
     }
 
