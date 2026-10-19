@@ -105,7 +105,7 @@ pub struct RunArgs {
         long,
         value_name = "DUR",
         default_value = "10s",
-        help = "Per-step timeout, e.g. 10s, 500ms."
+        help = "Per-step timeout, e.g. 10s, 500ms, 2m. Must be greater than zero and at most 86400s (24 hours); anything else exits 2."
     )]
     pub timeout: String,
 
@@ -151,4 +151,32 @@ pub enum Format {
     Human,
     Json,
     Junit,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+    use conformance_scope::MAX_TIMEOUT;
+
+    use super::Cli;
+
+    fn cap() -> String {
+        format!("{}s (24 hours)", MAX_TIMEOUT.as_secs())
+    }
+
+    #[test]
+    fn given_the_timeout_option_when_help_is_rendered_then_it_states_the_battery_cap() {
+        let mut command = Cli::command();
+        let run = command.find_subcommand_mut("run").expect("run subcommand");
+        let help = run.render_long_help().to_string();
+
+        assert!(help.contains(&cap()), "{help}");
+    }
+
+    #[test]
+    fn given_the_readme_when_the_timeout_bound_is_read_then_it_states_the_battery_cap() {
+        let readme = include_str!("../README.md");
+
+        assert!(readme.contains(&cap()), "the README must state {}", cap());
+    }
 }

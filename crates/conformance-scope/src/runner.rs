@@ -10,6 +10,7 @@ use crate::outcome::{CheckOutcome, CheckStatus, ConformanceReport};
 use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
+use crate::timeout::validated_timeout;
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -25,6 +26,7 @@ pub async fn run_attach(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
+    let timeout = validated_timeout(timeout)?;
     require_selection(scenarios)?;
     let service_key = expected.validated_service_key()?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;

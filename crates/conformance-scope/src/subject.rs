@@ -80,10 +80,24 @@ impl SubjectConfig {
     }
 }
 
-const BIND_ATTEMPTS: usize = 5;
-const BIND_SETTLE: Duration = Duration::from_millis(250);
-const BIND_LOOKOUT: Duration = Duration::from_secs(1);
 const LOG_TAIL_LINES: usize = 20;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BootWatch {
+    pub attempts: usize,
+    pub lookout: Duration,
+    pub settle: Duration,
+}
+
+impl Default for BootWatch {
+    fn default() -> Self {
+        Self {
+            attempts: 5,
+            lookout: Duration::from_secs(1),
+            settle: Duration::from_millis(250),
+        }
+    }
+}
 
 pub struct Subject {
     process: SpawnedProcess,
@@ -93,10 +107,23 @@ pub struct Subject {
 
 impl Subject {
     pub async fn start(binary: &Path, config: &SubjectConfig) -> Result<Self> {
+        Self::start_with(binary, config, BootWatch::default()).await
+    }
+
+    pub async fn start_with(
+        binary: &Path,
+        config: &SubjectConfig,
+        watch: BootWatch,
+    ) -> Result<Self> {
+        if watch.attempts == 0 {
+            return Err(ConformanceError::InvalidInput(
+                "a boot watch with zero attempts never starts the subject".to_string(),
+            ));
+        }
         let mut last_exit = None;
-        for _ in 0..BIND_ATTEMPTS {
+        for _ in 0..watch.attempts {
             let mut subject = Self::spawn(binary, config);
-            match subject.exited_at_boot().await {
+            match subject.exited_at_boot(&watch).await {
                 None => return Ok(subject),
                 Some(status) => {
                     let log_tail = tail(&subject.logs(), LOG_TAIL_LINES);
@@ -108,20 +135,20 @@ impl Subject {
         let (status, log_tail) = last_exit.expect("at least one attempt was made");
         Err(ConformanceError::SubjectExitedAtBoot {
             binary: binary.display().to_string(),
-            attempts: BIND_ATTEMPTS,
+            attempts: watch.attempts,
             status: status.to_string(),
             log_tail,
         })
     }
 
-    async fn exited_at_boot(&mut self) -> Option<ExitStatus> {
+    async fn exited_at_boot(&mut self, watch: &BootWatch) -> Option<ExitStatus> {
         let livez = format!("{}/livez", self.base_url);
-        match self.process.await_boot(&livez, BIND_LOOKOUT).await {
+        match self.process.await_boot(&livez, watch.lookout).await {
             BootOutcome::Exited(status) => return Some(status),
             BootOutcome::TimedOut => return None,
             BootOutcome::Ready => {}
         }
-        tokio::time::sleep(BIND_SETTLE).await;
+        tokio::time::sleep(watch.settle).await;
         match self.process.await_boot(&livez, Duration::ZERO).await {
             BootOutcome::Exited(status) => Some(status),
             BootOutcome::Ready | BootOutcome::TimedOut => None,

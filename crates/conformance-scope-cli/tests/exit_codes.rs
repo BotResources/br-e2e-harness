@@ -586,20 +586,23 @@ async fn scope_keys_that_no_declaration_can_hold_exit_2_naming_the_key() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
-async fn a_timeout_that_is_zero_or_overflows_exits_2_naming_the_value() {
+async fn a_timeout_the_battery_refuses_or_that_overflows_exits_2_naming_the_value() {
     let base = ["--scopes", "my_service:read"];
-    for value in [
-        "0s",
-        "0ms",
-        "0m",
-        "307445734561825862m",
-        "18446744073709551615s",
+    for (value, named) in [
+        ("0s", "0ns"),
+        ("0ms", "0ns"),
+        ("0m", "0ns"),
+        ("86401s", "86401s"),
+        ("1441m", "86460s"),
+        ("18446744073709551615s", "18446744073709551615s"),
+        ("307445734561825862m", "307445734561825862m"),
+        ("9000000000000000000s", "9000000000000000000s"),
     ] {
         let mut args = base.to_vec();
         args.extend(["--timeout", value]);
         let stderr = stderr_of_run_against_a_broker_with_both_streams(&args).await;
 
-        assert!(stderr.contains(value), "{value}: {stderr}");
+        assert!(stderr.contains(named), "{value}: {stderr}");
     }
 }
 
@@ -684,6 +687,35 @@ async fn a_manifest_listing_a_scope_twice_exits_2_saying_it_is_listed_twice() {
 
     assert!(stderr.contains("my_service:read"), "{stderr}");
     assert!(stderr.contains("listed twice"), "{stderr}");
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_manifest_timeout_of_zero_or_above_the_cap_exits_2_naming_the_value() {
+    for (timeout, named) in [("0s", "0ns"), ("86401s", "86401s")] {
+        let nats = FabricTestNats::start().await;
+        let dir = scratch("manifest-timeout");
+        let manifest = dir.join("services.yaml");
+        std::fs::write(
+            &manifest,
+            format!(
+                "services:\n  - service_key: my_service\n    timeout: {timeout}\n    scopes:\n      - key: my_service:read\n    attach:\n      nats: {}\n      readyz: http://127.0.0.1:1/readyz\n",
+                nats.url()
+            ),
+        )
+        .expect("write manifest");
+        let manifest_arg = manifest.to_string_lossy().into_owned();
+
+        let stderr = tokio::task::spawn_blocking(move || {
+            stderr_of(cli().args(["manifest", &manifest_arg]).assert().code(2))
+        })
+        .await
+        .expect("cli task");
+        nats.shutdown().await;
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert!(stderr.contains(named), "{timeout}: {stderr}");
+    }
 }
 
 async fn attach_scenario(

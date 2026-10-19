@@ -10,6 +10,7 @@ use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
 use crate::subject::{Subject, SubjectConfig};
+use crate::timeout::validated_timeout;
 
 const SPAWN_WAIT_TIMEOUT: &str = "500ms";
 
@@ -24,6 +25,7 @@ pub async fn run_spawn(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
+    let timeout = validated_timeout(timeout)?;
     require_selection(scenarios)?;
     let service_key = expected.validated_service_key()?;
     let platform_only = uniform_platform_only(expected)?;

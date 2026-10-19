@@ -17,6 +17,7 @@ pub mod subject;
 pub mod subjects;
 #[cfg(test)]
 mod test_scratch;
+pub mod timeout;
 
 pub use acceptor::{accept, reject};
 pub use binary::{SUBJECT_BINARY, locate_subject};
@@ -34,5 +35,6 @@ pub use readyz::ReadyzProbe;
 pub use runner::{AttachTarget, DEFAULT_TIMEOUT, run_attach};
 pub use scenario::{AcceptorBehavior, Scenario, attach_default, parse_scenarios, spawn_default};
 pub use spawn::{SpawnTarget, run_spawn};
-pub use subject::{Subject, SubjectConfig};
+pub use subject::{BootWatch, Subject, SubjectConfig};
 pub use subjects::{accepted_event_subject, declare_subject, rejected_event_subject};
+pub use timeout::MAX_TIMEOUT;

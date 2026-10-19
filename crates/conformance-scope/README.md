@@ -150,7 +150,10 @@ the dependencies are obtained.
   `EVENT_STREAM_NAME`, `SERVICE_KEY`, `SCOPE_KEYS`, `PLATFORM_ONLY`,
   `SCOPE_DECLARATION_ENABLED`, …). Runs the full `s1..s6` default because it
   controls the subject's config and lifecycle. Needs `nats-server` on `PATH`.
-  `run_spawn` and `run_attach` return `InvalidInput` for an empty scenario slice.
+  `run_spawn` and `run_attach` return `InvalidInput` for an empty scenario slice and,
+  before any I/O or binary lookup, for a `timeout` of zero or above `MAX_TIMEOUT`
+  (86400s, 24 hours): no service can answer within zero, and a larger value is
+  not a per-step timeout.
   The Go anchor freezes the v1.0.0 `integration.*` subjects and the
   `INTEGRATION_EVT` stream as constants, so this mode runs green against v1.0.0.
 - `run_attach(AttachTarget { nats_url, readyz_url }, expected,
@@ -322,7 +325,7 @@ conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", pa
 | In **spawn** mode s4 always rejects, regardless of the global accept/reject flag | s4 is intrinsically a rejection scenario while s2/s3/s5 are acceptance scenarios, so the full `s1..s6` battery cannot share one global behavior. In spawn mode each lifecycle scenario drives its own fresh subject, so s4 synthesizes a rejection (the global `--reject` reason if given, else a default derived from the first expected scope key) while the others accept. The global flag customizes s4's reason; it never lets s4 silently skip. |
 | s2/s3/s5 accept unconditionally inside the check, ignoring `AcceptorBehavior` | These are acceptance scenarios; only `rejection_stops_readiness` reads `behavior`. The global `--reject` is meaningful for the rejection scenario (and in attach mode when the user selects it against their live service), not for the acceptance ones. |
 | Attach default omits s3/s4/s6 | Those depend on how the attached service was booted (a wait timeout shorter than `timeout` for s3, a pending declare and a rejection for s4, declaration disabled for s6), which the battery cannot know. Attach proves the observable contract by default: a well-formed declare, its content, and the acceptance gating; the other three run when selected and name their prerequisite when they fail. |
-| `Subject::start` restarts a subject that exits before its `/livez` answers | The signal does not depend on the subject's language or log text. A `/livez` answer is re-checked 250 ms later because a subject that lost its port can be answered by the process that holds it. After five exits it returns `SubjectExitedAtBoot`, a setup error, never a dead subject to judge. |
+| `Subject::start` restarts a subject that exits before its `/livez` answers | The signal does not depend on the subject's language or log text. A `/livez` answer is re-checked 250 ms later because a subject that lost its port can be answered by the process that holds it. After five exits it returns `SubjectExitedAtBoot`, a setup error, never a dead subject to judge. `Subject::start_with(binary, config, BootWatch { attempts, lookout, settle })` makes the watch injectable; `start` uses the defaults (5, 1 s, 250 ms). |
 | Attach mode assumes a **fresh** handshake stream per run (no leftover `declare`) | The capture replays from the start of the stream (`DeliverPolicy::All`) and takes `capture.first()` as the boot declare / correlation_id oracle; a stale cross-run declare would make the oracle pick a dead correlation_id. |
 
 ## License

@@ -29,7 +29,7 @@ form to decide whether a version ships.
 
 - The manifest ignored unknown fields, so a typo such as `platform_onyl` read as a pass; `Manifest`, `ServiceSpec`, `ScopeSpec`, `AttachSpec` and `SpawnSpec` now refuse them (exit `2`, naming the field).
 - `--platform-only key=bool` entries naming no listed scope, or given twice, and `--scopes` keys that no declaration can hold (invalid, not owned by `--service-key`, duplicated) exit `2` naming the key, no longer `0` (stray key) or `1` (blamed on the service). The CLI calls `ExpectedDeclaration::try_from_parts`; `conformance-scope` validates the rest before any I/O.
-- `--timeout` (and the manifest `timeout`) refuses `0` in every unit and a value that overflows or that no deadline can be built from (`307445734561825862m` panicked in a debug build and wrapped in a release build; `18446744073709551615s` panicked in the deadline arithmetic, exit `101`); all exit `2` naming the value.
+- `--timeout` (and the manifest `timeout`) refuses a number that overflows its unit (`307445734561825862m` panicked in a debug build and wrapped in a release build), and `conformance-scope` refuses `0` in every unit and anything above `MAX_TIMEOUT`, 86400s (24 hours), before any I/O (`18446744073709551615s` panicked in the deadline arithmetic, exit `101`); all exit `2` naming the value. `--help` and the README state the cap and a test ties both to `MAX_TIMEOUT`.
 
 ### Added
 

@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use tokio::time::Instant;
-
 use crate::error::{CliError, Result};
 
 pub fn parse(raw: &str) -> Result<Duration> {
@@ -12,11 +10,6 @@ pub fn parse(raw: &str) -> Result<Duration> {
             "invalid duration {raw:?}: expected e.g. 10s, 500ms"
         ))
     })?;
-    if amount == 0 {
-        return Err(CliError::new(format!(
-            "invalid duration {raw:?}: a timeout must be greater than zero"
-        )));
-    }
     let duration = match unit {
         "ms" => Some(Duration::from_millis(amount)),
         "s" | "" => Some(Duration::from_secs(amount)),
@@ -27,18 +20,7 @@ pub fn parse(raw: &str) -> Result<Duration> {
             )));
         }
     };
-    duration
-        .filter(is_representable)
-        .ok_or_else(|| CliError::new(format!("invalid duration {raw:?}: value is too large")))
-}
-
-const DEADLINE_HEADROOM: Duration = Duration::from_secs(365 * 24 * 60 * 60);
-
-fn is_representable(duration: &Duration) -> bool {
-    duration
-        .checked_add(DEADLINE_HEADROOM)
-        .and_then(|padded| Instant::now().checked_add(padded))
-        .is_some()
+    duration.ok_or_else(|| CliError::new(format!("invalid duration {raw:?}: value is too large")))
 }
 
 fn split_unit(trimmed: &str) -> (&str, &str) {
@@ -63,10 +45,9 @@ mod tests {
     }
 
     #[test]
-    fn given_a_zero_duration_in_any_unit_when_parsed_then_it_is_refused() {
+    fn given_a_zero_duration_when_parsed_then_it_is_passed_on_for_the_battery_to_judge() {
         for raw in ["0", "0s", "0ms", "0m", "00s"] {
-            let error = parse(raw).expect_err(raw);
-            assert!(error.to_string().contains(raw), "{raw}: {error}");
+            assert_eq!(parse(raw).unwrap(), Duration::ZERO, "{raw}");
         }
     }
 
@@ -78,11 +59,12 @@ mod tests {
     }
 
     #[test]
-    fn given_a_duration_no_deadline_can_be_built_from_when_parsed_then_it_is_refused() {
-        for raw in ["18446744073709551615s", &format!("{}m", u64::MAX / 60)] {
-            let error = parse(raw).expect_err(raw);
-            assert!(error.to_string().contains("too large"), "{raw}: {error}");
-        }
+    fn given_seconds_that_fill_a_u64_when_parsed_then_they_are_passed_on_for_the_battery_to_judge()
+    {
+        assert_eq!(
+            parse("18446744073709551615s").unwrap(),
+            Duration::from_secs(u64::MAX)
+        );
     }
 
     #[test]
