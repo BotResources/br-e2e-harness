@@ -214,6 +214,12 @@ single bool applied to every scope, or a per-scope `key=bool` CSV:
 --platform-only example_service:read=false,example_service:admin=true
 ```
 
+The assertion is checked before anything is contacted. A `--scopes` key that no
+declaration can hold (not `<service>:<capability>` in the allowed charset, not owned by
+`--service-key`, or listed twice), a `--platform-only` key that names no listed scope or
+appears twice, and a malformed `--service-key` exit `2` naming the key; they are never
+reported as a failed check of the service.
+
 A wrong `--scopes` makes the `declaration-content` check fail with an
 expected-vs-observed diff and a non-zero exit:
 
@@ -250,7 +256,7 @@ service is still awaiting acceptance so the declare is observable.
 - `--scenarios <CSV>`, e.g. `--scenarios s1,s2` or
   `--scenarios declaration-content`. Defaults: attach ⇒ `s1,s2` + content;
   spawn ⇒ `s1..s6` + content.
-- `--timeout <DUR>` per step, e.g. `10s` (default), `500ms`.
+- `--timeout <DUR>` per step, e.g. `10s` (default), `500ms`, `2m`. Zero and a value too large to represent exit `2`.
 - `--format <human|json|junit>` (default `human`), `--output <PATH>` to write to
   a file instead of stdout. Each check reports its id, expected, observed, and a
   wire/file excerpt on failure.
@@ -275,16 +281,19 @@ services:
     scopes:
       - key: other_service:read
     scenarios: s1,s2
-    reject: scope_owned_by_another_service   # optional; mirrors `run --reject [REASON]`
-    timeout: 30s                             # optional; per-service step timeout (default 10s)
+    reject: scope_owned_by_another_service
+    timeout: 30s
     spawn:
       path: ./other-subject
 ```
 
-Each service takes the same per-service options as `run` — `scenarios`,
-`reject` (a reason code), `timeout` — and follows the same scenario/acceptor
+`reject` and `timeout` are optional (`timeout` defaults to `10s`). Each service takes the
+same per-service options as `run` — `scenarios`, `reject` (a reason code), `timeout` — and follows the same scenario/acceptor
 semantics (e.g. in `attach`, selecting `s4` requires `reject`, else it is
 `skipped`).
+
+A key the manifest does not know (a typo such as `platform_onyl`) is refused with exit `2`
+naming it; the manifest never ignores a field.
 
 `--format` / `--output` apply to the aggregate report.
 

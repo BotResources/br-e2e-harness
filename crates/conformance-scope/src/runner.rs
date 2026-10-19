@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use br_core_scope::ServiceKey;
 use br_test_harness::FabricTestNats;
 
 use crate::capture::DeclareCapture;
@@ -27,7 +26,7 @@ pub async fn run_attach(
     timeout: Duration,
 ) -> Result<ConformanceReport> {
     require_selection(scenarios)?;
-    let service_key = service_key(expected)?;
+    let service_key = expected.validated_service_key()?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
     let nats = contained(FabricTestNats::attach_without_provisioning(
         &target.nats_url,
@@ -98,13 +97,4 @@ fn binding_failure(cause: impl std::fmt::Display) -> ConformanceError {
         "binding the declare consumer to the fixed handshake stream failed — in attach mode \
          the service owns the fixed handshake stream and it must already exist: {cause}"
     ))
-}
-
-pub(crate) fn service_key(expected: &ExpectedDeclaration) -> Result<ServiceKey> {
-    ServiceKey::new(expected.service_key.clone()).map_err(|e| {
-        ConformanceError::InvalidInput(format!(
-            "service key {:?} is not a valid ServiceKey: {e}",
-            expected.service_key
-        ))
-    })
 }

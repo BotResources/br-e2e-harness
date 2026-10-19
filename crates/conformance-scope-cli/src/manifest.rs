@@ -11,11 +11,13 @@ use crate::error::{CliError, Result};
 use crate::report::{AggregateReport, ServiceReport};
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub services: Vec<ServiceSpec>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceSpec {
     pub service_key: String,
     #[serde(default)]
@@ -33,6 +35,7 @@ pub struct ServiceSpec {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScopeSpec {
     pub key: String,
     #[serde(default)]
@@ -40,12 +43,14 @@ pub struct ScopeSpec {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AttachSpec {
     pub nats: String,
     pub readyz: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpawnSpec {
     pub path: PathBuf,
 }
@@ -69,7 +74,8 @@ pub async fn run(manifest: &Manifest) -> Result<AggregateReport> {
 async fn run_service(spec: &ServiceSpec) -> Result<ServiceReport> {
     let platform_only = build_platform_only(spec);
     let scope_keys: Vec<String> = spec.scopes.iter().map(|s| s.key.clone()).collect();
-    let expected = ExpectedDeclaration::from_parts(&spec.service_key, &scope_keys, &platform_only);
+    let expected =
+        ExpectedDeclaration::try_from_parts(&spec.service_key, &scope_keys, &platform_only)?;
     let timeout = duration::parse(&spec.timeout)?;
     let behavior = build_behavior(spec, &expected)?;
 
@@ -188,6 +194,53 @@ mod tests {
             std::path::PathBuf::from("./other-subject")
         );
         assert!(second.attach.is_none());
+    }
+
+    #[test]
+    fn given_an_unknown_field_when_loaded_then_it_is_refused_naming_the_field() {
+        let typo_on_scope = "services:
+  - service_key: my_service
+    scopes:
+      - key: my_service:admin
+        platform_onyl: true
+    attach:
+      nats: nats://127.0.0.1:4222
+      readyz: http://127.0.0.1:8080/readyz
+";
+        let typo_on_service = "services:
+  - service_key: my_service
+    scenarioz: s1
+    attach:
+      nats: nats://127.0.0.1:4222
+      readyz: http://127.0.0.1:8080/readyz
+";
+        let typo_on_attach = "services:
+  - service_key: my_service
+    attach:
+      nats: nats://127.0.0.1:4222
+      readyz: http://127.0.0.1:8080/readyz
+      timeout: 5s
+";
+        let typo_on_spawn = "services:
+  - service_key: my_service
+    spawn:
+      path: ./subject
+      args: []
+";
+        let typo_on_root = "services: []\nextra: true\n";
+
+        for (raw, field) in [
+            (typo_on_scope, "platform_onyl"),
+            (typo_on_service, "scenarioz"),
+            (typo_on_attach, "timeout"),
+            (typo_on_spawn, "args"),
+            (typo_on_root, "extra"),
+        ] {
+            let error = load(raw).expect_err(field);
+            let message = error.to_string();
+            assert!(message.contains("invalid manifest"), "{message}");
+            assert!(message.contains(field), "{field}: {message}");
+        }
     }
 
     #[test]

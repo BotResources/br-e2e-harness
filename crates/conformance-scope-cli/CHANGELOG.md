@@ -24,9 +24,13 @@ form to decide whether a version ships.
 - `--spawn` without the `fabric-nats` binary beside the executable (the released archive holds only `conformance-scope`) or without the provisioning manifest exits `2` with an error naming it, no longer exit `101` (the harness panic text can still appear on stderr before the typed error); both READMEs name the prerequisite and the exit-code contract lists it.
 - The `observed` field of a failed check holds what was seen, in the human, JSON and JUnit output.
 
+- The manifest ignored unknown fields, so a typo such as `platform_onyl` read as a pass; `Manifest`, `ServiceSpec`, `ScopeSpec`, `AttachSpec` and `SpawnSpec` now refuse them (exit `2`, naming the field).
+- `--platform-only key=bool` entries naming no listed scope, or given twice, and `--scopes` keys that no declaration can hold (invalid, not owned by `--service-key`, duplicated) exit `2` naming the key, no longer `0` (stray key) or `1` (blamed on the service). The CLI calls `ExpectedDeclaration::try_from_parts`; `conformance-scope` validates the rest before any I/O.
+- `--timeout` (and the manifest `timeout`) refuses `0` in every unit and a value that overflows (`307445734561825862m` panicked in a debug build, wrapped in a release build); both exit `2` naming the value.
+
 ### Added
 
-- `tests/exit_codes.rs`: assert_cmd tests of the exit-code contract against a real `nats-server`: exit `2` for an unreachable broker, a broker without the handshake streams (none is created), a missing `--nats` or `--readyz`, an unknown scenario, a spawn binary that is not a file, a missing `nats-server` on `PATH`, a released layout without `fabric-nats` and an unreadable or malformed manifest; exit `0` with a passing JSON report for an attached conformant service, and the manifest mode writing its aggregate report to `--output`.
+- `tests/exit_codes.rs`: assert_cmd tests of the exit-code contract against a real `nats-server`: exit `2` for an unreachable broker, a broker without the handshake streams (none is created), a missing `--nats` or `--readyz`, an unknown scenario, a spawn binary that is not a file, a missing `nats-server` on `PATH`, a released layout without `fabric-nats` and an unreadable or malformed manifest; exit `0` with a passing JSON report for an attached conformant service, and the manifest mode writing its aggregate report to `--output`; exit `2` for an unknown manifest field, a stray or duplicated `--platform-only` key, scope keys no declaration can hold, and a zero or overflowing `--timeout`, each against a broker that holds both streams.
 - A "Run in CI" section in the README, with the pinned, checksum-verified download of the released binary and the attach-mode run against the service's own booted binary.
 
 ### Changed

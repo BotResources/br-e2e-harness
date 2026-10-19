@@ -131,6 +131,12 @@ call these — there is no second copy of the protocol logic.
   `key → bool` map. `assert_matches` renders a wire-faithful expected-vs-observed
   diff on mismatch. Spawn mode drives the subject with one flag for every scope, so
   `run_spawn` returns `InvalidInput` for an expectation whose scopes carry different flags.
+  `ExpectedDeclaration::try_from_parts` refuses a per-scope key that names no listed scope
+  or appears twice; `ExpectedDeclaration::validate` (called first by `run_attach` and
+  `run_spawn`, before any I/O) refuses a service key or a scope key that no
+  `ScopeDeclaration` can hold (invalid `ScopeKey`, not owned by the service, listed
+  twice). Both return `InvalidInput` naming the key, so a typo in the assertion is never
+  reported as a failed check of the service.
 
 ## Two programmatic runners — spawn and attach
 

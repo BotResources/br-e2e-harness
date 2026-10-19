@@ -8,7 +8,6 @@ use crate::harness::ScopeHarness;
 use crate::outcome::{CheckOutcome, ConformanceReport};
 use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
-use crate::runner::service_key;
 use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
 use crate::subject::{Subject, SubjectConfig};
 
@@ -26,7 +25,7 @@ pub async fn run_spawn(
     timeout: Duration,
 ) -> Result<ConformanceReport> {
     require_selection(scenarios)?;
-    let service_key = service_key(expected)?;
+    let service_key = expected.validated_service_key()?;
     let platform_only = uniform_platform_only(expected)?;
     let mut report = ConformanceReport::default();
 

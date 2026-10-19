@@ -1,4 +1,6 @@
-use br_core_scope::ScopeDeclaration;
+use std::collections::HashSet;
+
+use br_core_scope::{ScopeDeclaration, ScopeKey, ServiceKey};
 
 use crate::error::{ConformanceError, Result};
 
@@ -37,6 +39,50 @@ impl ExpectedDeclaration {
             })
             .collect();
         Self::new(service_key, scopes)
+    }
+
+    pub fn try_from_parts(
+        service_key: impl Into<String>,
+        scope_keys: &[String],
+        platform_only: &PlatformOnly,
+    ) -> Result<Self> {
+        platform_only.check_against(scope_keys)?;
+        Ok(Self::from_parts(service_key, scope_keys, platform_only))
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        self.validated_service_key().map(|_| ())
+    }
+
+    pub(crate) fn validated_service_key(&self) -> Result<ServiceKey> {
+        let service_key = ServiceKey::new(self.service_key.clone()).map_err(|e| {
+            ConformanceError::InvalidInput(format!(
+                "service key {:?} is not a valid ServiceKey: {e}",
+                self.service_key
+            ))
+        })?;
+        let mut seen = HashSet::new();
+        for scope in &self.scopes {
+            let key = ScopeKey::new(scope.key.clone()).map_err(|e| {
+                ConformanceError::InvalidInput(format!(
+                    "expected scope key {:?} is not a valid ScopeKey: {e}",
+                    scope.key
+                ))
+            })?;
+            if !key.is_owned_by(&service_key) {
+                return Err(ConformanceError::InvalidInput(format!(
+                    "expected scope key {:?} is not owned by service {:?}; no declaration can hold it",
+                    scope.key, self.service_key
+                )));
+            }
+            if !seen.insert(scope.key.as_str()) {
+                return Err(ConformanceError::InvalidInput(format!(
+                    "expected scope key {:?} is listed twice; no declaration can hold it",
+                    scope.key
+                )));
+            }
+        }
+        Ok(service_key)
     }
 
     pub fn scope_keys_csv(&self) -> String {
@@ -92,6 +138,26 @@ impl PlatformOnly {
                 .map(|(_, value)| *value)
                 .unwrap_or(false),
         }
+    }
+
+    fn check_against(&self, scope_keys: &[String]) -> Result<()> {
+        let PlatformOnly::PerScope(entries) = self else {
+            return Ok(());
+        };
+        let mut seen = HashSet::new();
+        for (key, _) in entries {
+            if !seen.insert(key.as_str()) {
+                return Err(ConformanceError::InvalidInput(format!(
+                    "platform-only key {key:?} appears twice"
+                )));
+            }
+            if !scope_keys.iter().any(|scope| scope == key) {
+                return Err(ConformanceError::InvalidInput(format!(
+                    "platform-only key {key:?} names no expected scope"
+                )));
+            }
+        }
+        Ok(())
     }
 }
 

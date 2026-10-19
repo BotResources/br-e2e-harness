@@ -27,6 +27,9 @@ form to decide whether a version ships.
 - A failed check reported the wanted state as the observation (for example `observed: /readyz stayed 200` for a run that dropped to `503`, or `200 despite a duplicate acceptance` when `/readyz` never reached `200`). `observed` now holds what was seen (`/readyz answered 503 during the quiet window`, `/readyz did not answer after acceptance`, `3 declares captured, 2 at the rejection`) for S2 to S6, and `expected` keeps the wanted state, so the human, JSON and JUnit output of the CLI are honest. Pinned by `tests/duplicate_confirmations.rs` and `tests/readyz_observations.rs`.
 - The README no longer says attach mode connects through `FabricTestNats::connect`: it uses `attach_without_provisioning` and never creates a stream.
 
+- A `--platform-only` style per-scope entry that names no expected scope was dropped silently and a duplicate key kept the first value, so a typo (`my_service:admn=true`) read as a pass. `ExpectedDeclaration::try_from_parts` returns `InvalidInput` naming the stray or duplicated key. Pinned by `tests/refused_input.rs`.
+- A service key or scope keys that no `ScopeDeclaration` can hold (invalid `ScopeKey`, not owned by the expected service, listed twice) were judged as a `declaration-content` failure of the service. `run_attach` and `run_spawn` now return `InvalidInput` naming the key before any I/O (spawn: before the binary is looked at). Pinned by `tests/refused_input.rs`; its `mixed()` fixture now uses scopes owned by its service.
+
 ### Removed
 
 - The public items of the `build` module, removed with the module: `build_subject`, `subject_dir`, `run_dead_grammar_guard` and the Go-toolchain availability function, and the root re-exports of the first, second and fourth. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
@@ -34,6 +37,7 @@ form to decide whether a version ships.
 
 ### Added
 
+- `ExpectedDeclaration::try_from_parts` (fallible form of `from_parts`, which is unchanged) and `ExpectedDeclaration::validate`.
 - `ConformanceError::FabricProvisionUnavailable { detail }`: the typed error of a spawn-mode prerequisite (`fabric-nats` binary, provisioning manifest) that is missing.
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
 - `DeclareCapture::try_count`, `DeclareCapture::try_first` and `DeclareCapture::try_correlation_ids`: the non-panicking forms of `count`, `first` and `correlation_ids`.

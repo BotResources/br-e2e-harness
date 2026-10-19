@@ -32,11 +32,11 @@ pub async fn run_single(args: &RunArgs) -> Result<ServiceReport> {
 fn build_expected(args: &RunArgs) -> Result<ExpectedDeclaration> {
     let scope_keys = parse_scope_keys(&args.scopes);
     let platform_only = parse_platform_only(&args.platform_only)?;
-    Ok(ExpectedDeclaration::from_parts(
+    Ok(ExpectedDeclaration::try_from_parts(
         &args.service_key,
         &scope_keys,
         &platform_only,
-    ))
+    )?)
 }
 
 fn build_behavior(args: &RunArgs, expected: &ExpectedDeclaration) -> Result<AcceptorBehavior> {
