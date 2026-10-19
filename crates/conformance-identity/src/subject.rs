@@ -4,7 +4,7 @@ use std::path::Path;
 use br_test_harness::SpawnedProcess;
 use reqwest::StatusCode;
 
-use crate::binary::child_path;
+use crate::binary::{child_path, resolve_subject};
 
 pub struct SubjectConfig {
     pub nats_url: String,
@@ -37,7 +37,10 @@ impl Subject {
         let addr = free_loopback_addr();
         let base_url = format!("http://{addr}");
         let enabled = config.enabled.to_string();
-        let path = child_path(binary, std::env::var_os("PATH").as_deref());
+        let inherited = std::env::var_os("PATH");
+        let binary = resolve_subject(binary.to_path_buf(), inherited.as_deref())
+            .unwrap_or_else(|_| binary.to_path_buf());
+        let path = child_path(&binary, inherited.as_deref());
         let mut envs = vec![
             ("NATS_URL", config.nats_url.as_str()),
             ("HTTP_ADDR", addr.as_str()),

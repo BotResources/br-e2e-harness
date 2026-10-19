@@ -1,11 +1,7 @@
-use std::any::Any;
-use std::future::Future;
-use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use br_test_harness::run_once;
-use futures_util::FutureExt;
 
 use crate::error::{ConformanceError, Result};
 
@@ -59,25 +55,6 @@ pub(crate) fn subject_binary(binary: &Path) -> Result<()> {
             "the acceptor binary {} does not exist, is not a file or is not executable",
             binary.display()
         )))
-    }
-}
-
-pub(crate) async fn contained<T>(
-    future: impl Future<Output = T>,
-) -> std::result::Result<T, String> {
-    AssertUnwindSafe(future)
-        .catch_unwind()
-        .await
-        .map_err(panic_message)
-}
-
-pub(crate) fn panic_message(payload: Box<dyn Any + Send>) -> String {
-    match payload.downcast::<String>() {
-        Ok(message) => *message,
-        Err(payload) => match payload.downcast::<&'static str>() {
-            Ok(message) => (*message).to_string(),
-            Err(_) => "the harness panicked with a non-string payload".to_string(),
-        },
     }
 }
 
@@ -139,18 +116,5 @@ mod tests {
         }
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(subject_binary(&file).is_ok());
-    }
-
-    #[tokio::test]
-    async fn a_panic_in_the_harness_is_contained_with_its_message() {
-        let formatted = contained(async { panic!("harness exploded: {}", 7) }).await;
-        assert_eq!(formatted.unwrap_err(), "harness exploded: 7");
-        let literal = contained(async { panic!("plain literal") }).await;
-        assert_eq!(literal.unwrap_err(), "plain literal");
-    }
-
-    #[tokio::test]
-    async fn a_value_passes_through_containment() {
-        assert_eq!(contained(async { 41 + 1 }).await.unwrap(), 42);
     }
 }

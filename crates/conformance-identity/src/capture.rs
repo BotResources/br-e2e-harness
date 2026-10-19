@@ -8,8 +8,8 @@ use br_test_harness::{CapturedMessage, EventCapture, FabricTestNats};
 use br_util_nats_fabric::event_subject;
 use uuid::Uuid;
 
+use crate::containment::{contained, panic_message};
 use crate::error::{ConformanceError, Result};
-use crate::prerequisite::{contained, panic_message};
 
 #[derive(Clone)]
 pub struct CapturedConfirmation {

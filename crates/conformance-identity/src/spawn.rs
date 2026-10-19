@@ -5,10 +5,10 @@ use br_test_harness::wait_until;
 use uuid::Uuid;
 
 use crate::checks::{CheckContext, run_scenario};
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 use crate::harness::IdentityHarness;
 use crate::outcome::ConformanceReport;
-use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{Scenario, require_selection};
 use crate::subject::{Subject, SubjectConfig};

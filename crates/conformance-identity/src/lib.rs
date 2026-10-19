@@ -1,6 +1,7 @@
 pub mod binary;
 pub mod capture;
 pub mod checks;
+mod containment;
 pub mod declarer;
 pub mod error;
 pub mod harness;

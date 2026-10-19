@@ -5,10 +5,10 @@ use uuid::Uuid;
 
 use crate::capture::ConfirmationCapture;
 use crate::checks::{CheckContext, run_scenario};
+use crate::containment::contained;
 use crate::declarer::Declarer;
 use crate::error::{ConformanceError, Result};
 use crate::outcome::ConformanceReport;
-use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{Scenario, require_selection};
 

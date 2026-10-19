@@ -134,6 +134,11 @@ executable. The archive is extracted with the `tar` found on the absolute entrie
 The lookup, the download and this crate's own tests write nothing to the system temporary
 directory (the throwaway NATS store of `br-test-harness` is that crate's own).
 
+`start_with_binary(binary)`, `SpawnTarget { binary }` and `Subject::spawn` accept a bare name such as
+`identity-acceptor`: a path with no directory part is resolved on the absolute entries of `PATH` only, never
+in the current directory, and the absolute result is checked and spawned; found nowhere, it is
+`SubjectBinaryUnavailable`. A path with a directory part (`./identity-acceptor`, an absolute path) is used as given.
+
 `locate_subject()` returns the absolute path of the binary. The acceptor is spawned by
 that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary
 when that directory is absolute, through the child's environment only: the crate never calls

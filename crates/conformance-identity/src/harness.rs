@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
-use crate::binary::locate_subject;
+use crate::binary::{locate_subject, resolve_subject};
 use crate::capture::ConfirmationCapture;
+use crate::containment::contained;
 use crate::declarer::Declarer;
 use crate::error::{ConformanceError, Result};
 use crate::prerequisite;
@@ -24,10 +25,11 @@ impl IdentityHarness {
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
+        let binary = resolve_subject(binary, std::env::var_os("PATH").as_deref())?;
         prerequisite::subject_binary(&binary)?;
         prerequisite::fabric_nats()?;
         prerequisite::nats_server().await?;
-        let fabric_nats = prerequisite::contained(FabricTestNats::start())
+        let fabric_nats = contained(FabricTestNats::start())
             .await
             .map_err(|e| ConformanceError::Jetstream(format!("start the throwaway NATS: {e}")))?;
         Ok(Self {

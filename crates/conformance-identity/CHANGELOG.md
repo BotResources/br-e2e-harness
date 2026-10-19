@@ -32,13 +32,14 @@ form to decide whether a version ships.
 
 ### Added
 
-- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
+- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary: String, detail: String }`: the lookup above.
 - `DecodedConfirmation`, `CapturedConfirmation::decode_confirmation`, `ConfirmationCapture::confirmation_decoded_for`, `expected_step_confirmations`, `oracle::confirmation_code`, `oracle::outcome_to_confirmation`: the verdict together with the service the confirmation names.
 - `ConfirmationCapture::try_confirmation_for` and `ConfirmationCapture::try_count`: the non-panicking forms of `confirmation_for` and `count`.
 
 ### Changed
 
 - `Subject::spawn` hands the acceptor a `PATH` led by the directory of its binary, through the child's environment.
+- A path with no directory part handed to `IdentityHarness::start_with_binary`, `SpawnTarget { binary }` (`run_spawn`) or `Subject::spawn` (for example `identity-acceptor`) is resolved on the absolute entries of `PATH` only, never in the current directory, and the absolute result is the file that is checked, kept in `IdentityHarness::binary()` and spawned; a name found nowhere on `PATH` is `ConformanceError::SubjectBinaryUnavailable`. 0.1.0 handed the bare name to `Command` and so searched `PATH` (relative entries included); an intermediate 0.1.1 state checked it against the current directory and refused it. A path with a directory part (`./identity-acceptor`, `bin/identity-acceptor`, an absolute path) is used as given, as in 0.1.0. Pinned by `tests/bare_subject_name.rs`.
 - Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
 - A consumer that moves to 0.1.1 pins `br-test-harness/v0.1.2`, `br-util-nats-fabric/v0.1.0`, `br-core-integration/v0.1.0`, `br-core-scope/v0.1.0` and `br-identity-domain/v0.1.0` with the same git url and tag string as this crate: its public signatures name their types (`FabricTestNats`, `CapturedMessage`, `Fabric`, `CoordError`, `DeclareServiceScopes`, `DeclarationOutcome`), and two different tags give two copies and a type error. The README Install block lists the pins.
 - Five crate tests re-run the test binary on one filtered test (`tests/absent_subject_binary.rs`, `tests/absent_nats_server.rs`, `tests/absent_fabric_nats.rs`, `tests/nats_cannot_start.rs`, `release_asset::tests::a_download_ignores_the_system_proxy`) and assert that the child ran exactly that test (`1 passed`), so a renamed or moved test fails the parent instead of running nothing.

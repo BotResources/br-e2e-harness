@@ -46,11 +46,30 @@ pub(crate) async fn locate(
     Ok(cached)
 }
 
-pub(crate) fn unavailable(binary: &'static str, detail: &str) -> ConformanceError {
+pub(crate) fn unavailable(binary: &str, detail: &str) -> ConformanceError {
     ConformanceError::SubjectBinaryUnavailable {
-        binary,
+        binary: binary.to_string(),
         detail: detail.to_string(),
     }
+}
+
+pub(crate) fn is_bare_name(binary: &Path) -> bool {
+    binary
+        .parent()
+        .is_some_and(|parent| parent.as_os_str().is_empty())
+}
+
+pub(crate) fn resolve_subject(binary: PathBuf, path: Option<&OsStr>) -> Result<PathBuf> {
+    if !is_bare_name(&binary) {
+        return Ok(binary);
+    }
+    path.and_then(|path| find_in_path(&binary, path))
+        .ok_or_else(|| {
+            unavailable(
+                &binary.to_string_lossy(),
+                "no executable file of that name on any absolute PATH entry (the current directory is never searched)",
+            )
+        })
 }
 
 pub(crate) fn cache_dir_from(lookup: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
@@ -82,7 +101,8 @@ pub(crate) fn absolute_entries(path: &OsStr) -> Vec<PathBuf> {
         .collect()
 }
 
-pub(crate) fn find_in_path(binary: &str, path: &OsStr) -> Option<PathBuf> {
+pub(crate) fn find_in_path(binary: impl AsRef<Path>, path: &OsStr) -> Option<PathBuf> {
+    let binary = binary.as_ref();
     absolute_entries(path)
         .into_iter()
         .map(|dir| dir.join(binary))
@@ -236,6 +256,49 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn a_bare_name_is_resolved_on_absolute_path_entries_only() {
+        let dir = scratch("bare-resolve");
+        let binary = write_binary(&dir, SUBJECT_BINARY, 0o755);
+        let path = std::env::join_paths([Path::new("relative"), &dir]).unwrap();
+        assert_eq!(
+            resolve_subject(PathBuf::from(SUBJECT_BINARY), Some(&path)).unwrap(),
+            binary
+        );
+        match resolve_subject(
+            PathBuf::from(SUBJECT_BINARY),
+            Some(OsStr::new("relative:.")),
+        ) {
+            Err(ConformanceError::SubjectBinaryUnavailable { binary, detail }) => {
+                assert_eq!(binary, SUBJECT_BINARY);
+                assert!(detail.contains("PATH"), "{detail}");
+            }
+            other => panic!("expected a typed missing-binary error: {other:?}"),
+        }
+        assert!(matches!(
+            resolve_subject(PathBuf::from(SUBJECT_BINARY), None),
+            Err(ConformanceError::SubjectBinaryUnavailable { .. })
+        ));
+    }
+
+    #[test]
+    fn a_name_with_a_directory_part_is_kept_as_given() {
+        let path = OsStr::new("/usr/bin");
+        for given in [
+            "./identity-acceptor",
+            "bin/identity-acceptor",
+            "/abs/identity-acceptor",
+        ] {
+            assert_eq!(
+                resolve_subject(PathBuf::from(given), Some(path)).unwrap(),
+                PathBuf::from(given)
+            );
+        }
+        assert!(is_bare_name(Path::new("identity-acceptor")));
+        assert!(!is_bare_name(Path::new("./identity-acceptor")));
+        assert!(!is_bare_name(Path::new("")));
     }
 
     #[test]

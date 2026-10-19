@@ -4,14 +4,12 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ConformanceError {
     #[error(
-        "the `{binary}` binary is not available: {detail}. Put it on PATH (the release asset \
-         `{binary}-<os>-<arch>.tar.gz` of the conformance-identity GitHub release carries it) \
-         or build it from conformance-subjects/identity-acceptor outside the tests"
+        "the `{binary}` binary is not available: {detail}. Put it on an absolute PATH entry (the \
+         release asset `identity-acceptor-<os>-<arch>.tar.gz` of the conformance-identity GitHub \
+         release carries the acceptor) or build it from conformance-subjects/identity-acceptor \
+         outside the tests"
     )]
-    SubjectBinaryUnavailable {
-        binary: &'static str,
-        detail: String,
-    },
+    SubjectBinaryUnavailable { binary: String, detail: String },
     #[error("deriving the contract coordinates failed: {0}")]
     Coord(#[from] CoordError),
     #[error("nats jetstream error: {0}")]

@@ -3,9 +3,9 @@ mod judged;
 use std::time::Duration;
 
 use crate::capture::ConfirmationCapture;
+use crate::containment::contained;
 use crate::declarer::Declarer;
 use crate::outcome::CheckOutcome;
-use crate::prerequisite::contained;
 use crate::scenario::Scenario;
 
 use judged::run_judged_scenario;
