@@ -83,6 +83,34 @@ fn an_overflowing_timeout_exits_2_instead_of_wrapping() {
 }
 
 #[test]
+fn a_timeout_the_clock_cannot_represent_exits_2_before_any_infra() {
+    for timeout in [
+        "18446744073709551615s",
+        "9223372036854775807s",
+        "200000000000000000m",
+    ] {
+        let assert = cli()
+            .args([
+                "run",
+                "--spawn",
+                "/nonexistent/never-spawned",
+                "--timeout",
+                timeout,
+            ])
+            .assert()
+            .code(2);
+        let stderr = stderr_of(assert);
+        assert!(stderr.contains("--timeout"), "{timeout}: {stderr}");
+        assert!(stderr.contains("value too large"), "{timeout}: {stderr}");
+        assert!(
+            !stderr.contains("not an executable file"),
+            "{timeout}: {stderr}"
+        );
+        assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
+    }
+}
+
+#[test]
 fn an_unknown_scenario_exits_2_before_any_infra() {
     let assert = cli()
         .args([

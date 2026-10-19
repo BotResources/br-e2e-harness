@@ -29,6 +29,7 @@ pub async fn run_spawn(
         ));
     }
     reject_repeated(scenarios)?;
+    reject_unrepresentable_timeout(timeout)?;
     let harness = PassportHarness::start_with_binary(target.binary.clone()).await?;
     let seeder = harness.seeder();
     let config = SubjectConfig::new(&harness.nats_url());
@@ -59,6 +60,15 @@ pub async fn run_spawn(
     subject.shutdown().await;
     harness.shutdown().await;
     Ok(report)
+}
+
+fn reject_unrepresentable_timeout(timeout: Duration) -> Result<()> {
+    match tokio::time::Instant::now().checked_add(timeout) {
+        Some(_) => Ok(()),
+        None => Err(ConformanceError::InvalidInput(format!(
+            "run_spawn timeout {timeout:?} is too large for this platform's clock"
+        ))),
+    }
 }
 
 fn reject_repeated(scenarios: &[Scenario]) -> Result<()> {
@@ -178,6 +188,20 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
         assert!(
             matches!(&err, ConformanceError::BinaryNotExecutable { path } if path == &file),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_spawn_rejects_an_unrepresentable_timeout_before_touching_infra() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(&target, &[Scenario::NoCredentialIsAnonymous], Duration::MAX)
+            .await
+            .expect_err("a timeout the clock cannot represent must be rejected up front");
+        assert!(
+            matches!(&err, ConformanceError::InvalidInput(m) if m.contains("timeout")),
             "{err:?}"
         );
     }

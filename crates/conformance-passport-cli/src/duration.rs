@@ -10,17 +10,29 @@ pub fn parse(raw: &str) -> Result<Duration> {
             "invalid duration {raw:?}: expected e.g. 10s, 500ms"
         ))
     })?;
-    match unit {
-        "ms" => Ok(Duration::from_millis(amount)),
-        "s" | "" => Ok(Duration::from_secs(amount)),
+    let duration = match unit {
+        "ms" => Duration::from_millis(amount),
+        "s" | "" => Duration::from_secs(amount),
         "m" => amount
             .checked_mul(60)
             .map(Duration::from_secs)
-            .ok_or_else(|| CliError::new(format!("invalid duration {raw:?}: value too large"))),
-        other => Err(CliError::new(format!(
-            "invalid duration unit {other:?} in {raw:?}: use ms, s, or m"
-        ))),
-    }
+            .ok_or_else(|| too_large(raw))?,
+        other => {
+            return Err(CliError::new(format!(
+                "invalid duration unit {other:?} in {raw:?}: use ms, s, or m"
+            )));
+        }
+    };
+    tokio::time::Instant::now()
+        .checked_add(duration)
+        .ok_or_else(|| too_large(raw))?;
+    Ok(duration)
+}
+
+fn too_large(raw: &str) -> CliError {
+    CliError::new(format!(
+        "invalid --timeout {raw:?}: value too large for this platform's clock"
+    ))
 }
 
 fn split_unit(trimmed: &str) -> (&str, &str) {
@@ -67,5 +79,23 @@ mod tests {
     fn minutes_that_overflow_are_rejected_not_wrapped() {
         assert!(message("307445734561825861m").contains("value too large"));
         assert!(message("99999999999999999999s").contains("invalid duration"));
+    }
+
+    #[test]
+    fn durations_that_overflow_the_clock_are_rejected_naming_the_flag() {
+        for raw in [
+            "9223372036854775807s",
+            "18446744073709551615s",
+            "200000000000000000m",
+        ] {
+            let text = message(raw);
+            assert!(text.contains("--timeout"), "{raw}: {text}");
+            assert!(text.contains("value too large"), "{raw}: {text}");
+        }
+    }
+
+    #[test]
+    fn a_long_but_representable_timeout_is_accepted() {
+        assert_eq!(parse("3600s").unwrap(), Duration::from_secs(3600));
     }
 }
