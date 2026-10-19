@@ -26,14 +26,35 @@ pub async fn run_attach(
 ) -> Result<ConformanceReport> {
     require_selection(scenarios)?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
-    let fabric_nats = contained(FabricTestNats::connect(&target.nats_url))
-        .await
-        .map_err(|e| {
-            ConformanceError::Jetstream(format!(
-                "connecting the harness to NATS at {}: {e}",
+    let fabric_nats = contained(FabricTestNats::attach_without_provisioning(
+        &target.nats_url,
+    ))
+    .await
+    .map_err(|e| {
+        ConformanceError::Jetstream(format!(
+            "connecting the harness to NATS at {}: {e}",
+            target.nats_url
+        ))
+    })?;
+
+    match contained(fabric_nats.fixed_streams_present()).await {
+        Ok(true) => {}
+        Ok(false) => {
+            fabric_nats.shutdown().await;
+            return Err(ConformanceError::Jetstream(format!(
+                "the fixed streams INTEGRATION_CMD and INTEGRATION_EVT are not both present on \
+                 NATS at {}: in attach mode the deployment owns them",
                 target.nats_url
-            ))
-        })?;
+            )));
+        }
+        Err(e) => {
+            fabric_nats.shutdown().await;
+            return Err(ConformanceError::Jetstream(format!(
+                "reading the fixed streams on NATS at {}: {e}",
+                target.nats_url
+            )));
+        }
+    }
 
     if !wait_until(timeout, || async { readyz.is_ready().await }).await {
         fabric_nats.shutdown().await;
@@ -48,8 +69,9 @@ pub async fn run_attach(
         Err(e) => {
             fabric_nats.shutdown().await;
             return Err(ConformanceError::Jetstream(format!(
-                "binding the confirmation consumer to the fixed event stream failed — in attach \
-                 mode the acceptor owns the fabric streams and they must already exist: {e}"
+                "binding the confirmation consumer to the fixed event stream failed on NATS at \
+                 {}: {e}",
+                target.nats_url
             )));
         }
     };

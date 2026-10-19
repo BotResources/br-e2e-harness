@@ -169,8 +169,9 @@ programmatic runners call it.
 - `run_attach(AttachTarget { nats_url, readyz_url }, scenarios, timeout)`
   — connects to an already-running Identity service's NATS and polls its `/readyz`
   directly; never spawns `nats-server` and never builds anything. It does **not** create the
-  streams — the live service owns the fixed `INTEGRATION_EVT`; the confirmation
-  consumer binds to it and fails loud if it is absent. **Caveat:** driving declarations
+  streams — the deployment owns `INTEGRATION_CMD` and `INTEGRATION_EVT`; the runner attaches
+  without provisioning, checks that both are present and returns a typed
+  `ConformanceError::Jetstream` naming them if either is absent. **Caveat:** driving declarations
   **mutates a live registry**; the runner uses **unique per-run service/scope keys**
   (a fresh UUIDv7 namespace) to bound pollution, so A1–A7 are safe to run repeatedly
   against the same live service.
