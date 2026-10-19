@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::Duration;
 
 mod common;
+mod scratch;
 
 use conformance_identity::{
     ConformanceError, IdentityHarness, Result, Scenario, SpawnTarget, run_spawn,
@@ -23,8 +24,7 @@ fn assert_names_the_missing_server<T: Debug>(what: &str, result: Result<T>) {
 
 fn run_in_isolated_copy() {
     let exe = std::env::current_exe().expect("test executable");
-    let isolated = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("no-nats-server-{}", uuid::Uuid::now_v7().simple()));
+    let isolated = scratch::scratch("no-nats-server");
     let deps = isolated.join("deps");
     let empty = isolated.join("empty-path");
     std::fs::create_dir_all(&deps).expect("create the isolated target directory");
@@ -36,10 +36,9 @@ fn run_in_isolated_copy() {
     let output = Command::new(&copy)
         .args(["--exact", TEST, "--nocapture"])
         .env(CHILD, "1")
-        .env("PATH", &empty)
+        .env("PATH", &*empty)
         .output()
         .expect("run the isolated copy");
-    std::fs::remove_dir_all(&isolated).ok();
     common::assert_child_ran_one_passing_test(&output);
 }
 

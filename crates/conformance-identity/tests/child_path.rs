@@ -4,11 +4,11 @@ use std::time::Duration;
 use br_test_harness::wait_until;
 use conformance_identity::{Subject, SubjectConfig};
 
+mod scratch;
+
 #[tokio::test(flavor = "current_thread")]
 async fn the_subject_directory_leads_the_path_of_the_spawned_child() {
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("child-path-{}", uuid::Uuid::now_v7().simple()));
-    std::fs::create_dir_all(&dir).expect("create the subject directory");
+    let dir = scratch::scratch("child-path");
     let binary = dir.join("identity-acceptor");
     std::fs::write(
         &binary,
@@ -26,6 +26,5 @@ async fn the_subject_directory_leads_the_path_of_the_spawned_child() {
     .await;
     let logs = subject.logs();
     subject.shutdown().await;
-    std::fs::remove_dir_all(&dir).ok();
     assert!(seen, "the child PATH must lead with {expected}: {logs}");
 }

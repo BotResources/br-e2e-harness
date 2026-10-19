@@ -132,7 +132,6 @@ mod tests {
         let binary = write_binary(&dir, SUBJECT_BINARY, 0o755);
         let path = std::env::join_paths([&dir]).unwrap();
         assert_eq!(find_in_path(SUBJECT_BINARY, &path), Some(binary));
-        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
@@ -141,7 +140,6 @@ mod tests {
         write_binary(&dir, SUBJECT_BINARY, 0o644);
         let path = std::env::join_paths([&dir]).unwrap();
         assert_eq!(find_in_path(SUBJECT_BINARY, &path), None);
-        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
@@ -165,8 +163,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(found, expected);
-        std::fs::remove_dir_all(on_path).ok();
-        std::fs::remove_dir_all(cache).ok();
     }
 
     #[tokio::test]
@@ -177,7 +173,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(found, expected);
-        std::fs::remove_dir_all(cache).ok();
     }
 
     #[tokio::test]
@@ -191,7 +186,6 @@ mod tests {
             }
             other => panic!("expected a typed missing-binary error: {other:?}"),
         }
-        std::fs::remove_dir_all(cache).ok();
     }
 
     #[tokio::test]

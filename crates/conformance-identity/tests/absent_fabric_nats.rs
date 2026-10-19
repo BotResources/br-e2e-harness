@@ -1,6 +1,7 @@
 use std::process::Command;
 
 mod common;
+mod scratch;
 
 use conformance_identity::{ConformanceError, IdentityHarness, provision};
 
@@ -14,8 +15,7 @@ fn fabric_nats_cli_absent_is_a_typed_error() {
         return;
     }
     let exe = std::env::current_exe().expect("test executable");
-    let isolated = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("no-fabric-nats-{}", uuid::Uuid::now_v7().simple()));
+    let isolated = scratch::scratch("no-fabric-nats");
     let deps = isolated.join("deps");
     std::fs::create_dir_all(&deps).expect("create the isolated target directory");
     let copy = deps.join(exe.file_name().expect("test executable name"));
@@ -26,7 +26,6 @@ fn fabric_nats_cli_absent_is_a_typed_error() {
         .env(ISOLATED, "1")
         .output()
         .expect("run the isolated copy");
-    std::fs::remove_dir_all(&isolated).ok();
     common::assert_child_ran_one_passing_test(&output);
 }
 

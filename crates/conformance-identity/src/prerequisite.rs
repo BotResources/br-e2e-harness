@@ -95,7 +95,6 @@ mod tests {
             Err(ConformanceError::Jetstream(detail)) => assert!(detail.contains("fabric-nats")),
             other => panic!("expected a typed fabric-nats error: {other:?}"),
         }
-        std::fs::remove_dir_all(target).ok();
     }
 
     #[test]
@@ -108,12 +107,12 @@ mod tests {
             fabric_nats_beside(&exe).unwrap(),
             target.join("fabric-nats")
         );
-        std::fs::remove_dir_all(target).ok();
     }
 
     #[test]
     fn a_missing_subject_binary_is_a_typed_input_error() {
-        let absent = scratch("absent-subject").join("identity-acceptor");
+        let scratch_dir = scratch("absent-subject");
+        let absent = scratch_dir.join("identity-acceptor");
         match subject_binary(&absent) {
             Err(ConformanceError::InvalidInput(detail)) => {
                 assert!(detail.contains(&absent.display().to_string()));
