@@ -6,6 +6,7 @@ use std::time::Duration;
 use br_core_scope::ServiceKey;
 use br_test_harness::wait_until;
 use br_util_nats_fabric::Fabric;
+use reqwest::StatusCode;
 
 use crate::capture::{CapturedDeclare, DeclareCapture};
 use crate::error::ConformanceError;
@@ -104,11 +105,22 @@ pub(crate) fn no_declare(
     }
 }
 
-pub(crate) async fn readyz_status(ctx: &CheckContext<'_>) -> String {
-    match ctx.readyz.status().await {
+pub(crate) fn status_text(status: Option<StatusCode>) -> String {
+    match status {
         Some(status) => status.as_u16().to_string(),
         None => "unreachable".to_string(),
     }
+}
+
+pub(crate) fn seen_readyz(status: Option<StatusCode>, when: &str) -> String {
+    match status {
+        Some(status) => format!("/readyz answered {} {when}", status.as_u16()),
+        None => format!("/readyz did not answer {when}"),
+    }
+}
+
+pub(crate) async fn readyz_seen(ctx: &CheckContext<'_>, when: &str) -> String {
+    seen_readyz(ctx.readyz.status().await, when)
 }
 
 pub(crate) fn wire_excerpt(raw: &[u8]) -> String {
@@ -118,5 +130,22 @@ pub(crate) fn wire_excerpt(raw: &[u8]) -> String {
         format!("{}…", text.chars().take(MAX).collect::<String>())
     } else {
         text.into_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_observed_readyz_states_what_was_seen() {
+        assert_eq!(
+            seen_readyz(Some(StatusCode::SERVICE_UNAVAILABLE), "after acceptance"),
+            "/readyz answered 503 after acceptance"
+        );
+        assert_eq!(
+            seen_readyz(None, "after acceptance"),
+            "/readyz did not answer after acceptance"
+        );
     }
 }

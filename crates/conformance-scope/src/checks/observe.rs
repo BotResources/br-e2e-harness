@@ -3,7 +3,7 @@ use br_test_harness::wait_until;
 use crate::outcome::{CheckId, CheckOutcome};
 
 use super::{
-    CheckContext, QUIET_WINDOW, await_first_declare, capture_failed, no_declare, readyz_status,
+    CheckContext, QUIET_WINDOW, await_first_declare, capture_failed, no_declare, readyz_seen,
     wire_excerpt,
 };
 
@@ -104,8 +104,8 @@ pub async fn disabled_mode_ready_without_declare(ctx: &CheckContext<'_>) -> Chec
         return CheckOutcome::fail(
             id,
             expected,
-            "200 immediately in disabled mode",
-            format!("/readyz did not reach 200: {}", readyz_status(ctx).await),
+            readyz_seen(ctx, "in disabled mode").await,
+            "/readyz did not reach 200",
         );
     }
     wait_until(QUIET_WINDOW, || async {
@@ -120,7 +120,7 @@ pub async fn disabled_mode_ready_without_declare(ctx: &CheckContext<'_>) -> Chec
         Ok(count) => CheckOutcome::fail(
             id,
             expected,
-            format!("no declare published, saw {count}"),
+            format!("{count} declare(s) published"),
             "disabled mode must publish no declare command",
         ),
         Err(cause) => capture_failed(id, expected, &cause),

@@ -110,11 +110,18 @@ absent. Attach runs `s1, s2` and the `declaration-content` assertion by default 
 the lifecycle-controlling scenarios (s3/s4/s6) cannot run against an
 already-booted service.
 
-### Spawn — convenience, needs `nats-server`
+### Spawn — convenience, needs `nats-server` and `fabric-nats`
 
 Stand up a throwaway `nats-server`, launch a subject binary with the env
 contract, and run the full `s1..s6` battery plus the content assertion. Requires
-`nats-server` on `PATH`.
+`nats-server` on `PATH`, the `fabric-nats` binary (the `fabric-nats` bin of the
+`br-test-harness` package, built outside the tests) in the directory of the
+`conformance-scope` executable, and the manifest
+`crates/conformance-scope/tests/fixtures/scope_declaration.toml` of the source tree
+the executable was built from. The released archive holds only `conformance-scope`,
+so a released binary cannot run `--spawn` unless `fabric-nats` is placed beside it
+and the build tree is present; a missing prerequisite exits `2` with an error that
+names it. Attach mode needs none of them.
 
 ```sh
 conformance-scope run \
@@ -216,8 +223,9 @@ semantics (e.g. in `attach`, selecting `s4` requires `reject`, else it is
 
 - `0` — conformant (at least one check ran, none failed, none skipped).
 - `1` — not conformant (a check failed or was skipped, or no check ran).
-- `2` — a usage / connection / I/O error (bad arguments, NATS unreachable,
-  missing stream, unwritable output).
+- `2` — a usage / connection / I/O / prerequisite error (bad arguments, NATS
+  unreachable, missing stream, unwritable output, a missing `nats-server`,
+  `fabric-nats`, manifest or `scope-service` binary).
 
 ## Releasing
 

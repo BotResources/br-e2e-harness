@@ -197,10 +197,17 @@ throwaway NATS store belongs to `br-test-harness`).
 The suite **provisions the scope-declaration handshake topology by spawning the
 `fabric-nats` CLI** (`fabric-nats provision --manifest
 tests/fixtures/scope_declaration.toml`) — the conformance suite is the CLI's
-real-life testbed. The crate carries **no `async-nats` dependency**: the declare
-capture is a thin typed view over the harness `CommandCapture`, the acceptor
-publishes accept/reject through a `Fabric`, and attach mode connects via
-`FabricTestNats::connect`.
+real-life testbed. Spawn mode therefore needs the `fabric-nats` binary (the
+`fabric-nats` bin of the `br-test-harness` package, built outside the tests) in the directory of the running executable, and
+the manifest `tests/fixtures/scope_declaration.toml` of the conformance-scope source tree
+the executable was built from (its path is fixed at build time). When either is missing,
+`run_spawn` and `provision` return `ConformanceError::FabricProvisionUnavailable`, naming
+the missing prerequisite and what to do, and never panic; attach mode needs neither. The
+crate carries **no `async-nats` dependency**: the declare capture is a thin typed view over
+the harness `CommandCapture`, the acceptor publishes accept/reject through a `Fabric`, and
+attach mode connects through `FabricTestNats::attach_without_provisioning`, so attach mode
+never creates a stream: a missing `INTEGRATION_CMD` or `INTEGRATION_EVT` is a typed
+`ConformanceError::Jetstream`.
 
 CI runs it in the `infra-e2e` job, which builds `scope-service` outside the tests
 (dead-grammar guard, vet, Go tests, build) and puts it on `PATH` before the batteries.
@@ -228,6 +235,7 @@ conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", pa
 | The tests never compile, and the subject is found by name | Compiling inside a test hides a toolchain dependency and races under parallel `cargo test`. The subject is a prebuilt `scope-service`, found on `PATH`, then in a cache directory, then downloaded from this crate's own release and verified; CI builds and vets it outside the tests. |
 | The download is verified and the child's `PATH` is passed through `Command::env` | A fetched binary is executed, so a digest mismatch, a foreign redirect host or an oversized body fail closed; `std::env::set_var` is `unsafe` in edition 2024, so the cache directory reaches the child through its environment instead. |
 | The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + a spawned binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
+| A failed check's `observed` holds what was seen, `expected` what was wanted | The CLI prints both side by side; an `observed` that restates the wanted state (for example "stayed 200") reports a failure as a pass in the human, JSON and JUnit output. |
 | S5 observes `/readyz` for the quiet window after the first 200 | Passing at the first 200 cannot tell a tolerant subject from one that crashes or drops to 503 on the duplicate `accepted`; the check holds the 200 for `QUIET_WINDOW` after the duplicate. |
 | `is_conformant` needs an outcome and no skip | A report that verified nothing, or only skipped checks, must not read as a pass. |
 | S4 reads the `/readyz` **body** before asserting no more declares | "It went quiet" alone is satisfiable by a reject that was never delivered. The subject writes `scope declaration rejected: <code>` into its `/readyz` body, so matching that body (the code is the real `ScopeDeclarationError` Display, not a literal) positively proves the reject was received and processed — only then is the tight `== count_at_reject` (no `+1` slack) sound. |

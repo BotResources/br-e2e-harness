@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use br_test_harness::wait_until;
+use reqwest::StatusCode;
 
 use crate::acceptor::{accept, reject};
 use crate::outcome::{CheckId, CheckOutcome};
@@ -8,7 +9,7 @@ use crate::scenario::AcceptorBehavior;
 
 use super::{
     CheckContext, DeclareWait, QUIET_WINDOW, await_declares, await_first_declare, capture_failed,
-    no_declare, readyz_status,
+    no_declare, readyz_seen, seen_readyz, status_text,
 };
 
 pub async fn readiness_gated(ctx: &CheckContext<'_>) -> CheckOutcome {
@@ -27,19 +28,25 @@ pub async fn readiness_gated(ctx: &CheckContext<'_>) -> CheckOutcome {
             );
         }
     };
-    if !ctx.readyz.is_not_ready().await {
+    let before = ctx.readyz.status().await;
+    if before != Some(StatusCode::SERVICE_UNAVAILABLE) {
         return CheckOutcome::fail(
             id,
             expected,
-            "503 before acceptance",
+            seen_readyz(before, "before acceptance"),
             format!(
                 "/readyz was not 503 before acceptance: {}",
-                readyz_status(ctx).await
+                status_text(before)
             ),
         );
     }
     if let Err(detail) = accept(ctx.fabric, ctx.service_key, correlation_id).await {
-        return CheckOutcome::fail(id, expected, "acceptance published", detail.to_string());
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "the acceptance could not be published",
+            detail.to_string(),
+        );
     }
     if wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
         CheckOutcome::pass(id, expected, "503 before, 200 after acceptance")
@@ -47,11 +54,8 @@ pub async fn readiness_gated(ctx: &CheckContext<'_>) -> CheckOutcome {
         CheckOutcome::fail(
             id,
             expected,
-            "200 after acceptance",
-            format!(
-                "/readyz did not reach 200 after acceptance: {}",
-                readyz_status(ctx).await
-            ),
+            readyz_seen(ctx, "after acceptance").await,
+            "/readyz did not reach 200 after acceptance",
         )
     }
 }
@@ -66,11 +70,11 @@ pub async fn republishes_same_correlation_id(ctx: &CheckContext<'_>) -> CheckOut
             return CheckOutcome::fail(
                 id,
                 expected,
-                "at least two declares with one correlation_id",
                 format!(
-                    "saw {} declare(s); the subject must re-publish past its wait timeout",
+                    "{} declare(s) captured within the timeout",
                     ctx.capture.try_count().unwrap_or_default()
                 ),
+                "the subject must re-publish past its wait timeout",
             );
         }
         Err(DeclareWait::Capture(cause)) => return capture_failed(id, expected, &cause),
@@ -84,12 +88,17 @@ pub async fn republishes_same_correlation_id(ctx: &CheckContext<'_>) -> CheckOut
         return CheckOutcome::fail(
             id,
             expected,
-            "every re-publish carries one correlation_id",
             format!("correlation_ids diverged: {ids:?}"),
+            "every re-publish must carry the same correlation_id",
         );
     }
     if let Err(detail) = accept(ctx.fabric, ctx.service_key, first).await {
-        return CheckOutcome::fail(id, expected, "acceptance published", detail.to_string());
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "the acceptance could not be published",
+            detail.to_string(),
+        );
     }
     if wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
         CheckOutcome::pass(
@@ -101,8 +110,8 @@ pub async fn republishes_same_correlation_id(ctx: &CheckContext<'_>) -> CheckOut
         CheckOutcome::fail(
             id,
             expected,
-            "200 after accepting the re-published id",
-            format!("/readyz did not reach 200: {}", readyz_status(ctx).await),
+            readyz_seen(ctx, "after accepting the re-published id").await,
+            "/readyz did not reach 200",
         )
     }
 }
@@ -118,7 +127,7 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
                 id,
                 expected,
                 wait,
-                "a declare to reject",
+                "no declare captured within the timeout",
                 "the subject did not publish a declare command",
             );
         }
@@ -134,7 +143,12 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
     };
     let expected_body = format!("scope declaration rejected: {reason}");
     if let Err(detail) = reject(ctx.fabric, ctx.service_key, reason, correlation_id).await {
-        return CheckOutcome::fail(id, expected, "rejection published", detail.to_string());
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "the rejection could not be published",
+            detail.to_string(),
+        );
     }
     let surfaced = wait_until(ctx.timeout, || async {
         ctx.readyz.body().await.as_deref() == Some(expected_body.as_str())
@@ -144,7 +158,10 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
         return CheckOutcome::fail(
             id,
             &expected_body,
-            ctx.readyz.body().await.unwrap_or_default(),
+            ctx.readyz
+                .body()
+                .await
+                .unwrap_or_else(|| "no /readyz body".to_string()),
             "the subject did not surface the rejection reason in its /readyz body",
         );
     }
@@ -164,7 +181,7 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
             return CheckOutcome::fail(
                 id,
                 expected,
-                "re-publishing continued after a processed rejection",
+                format!("{count} declares captured, {count_at_reject} at the rejection"),
                 "the subject kept re-publishing after the rejection it had processed",
             );
         }
@@ -177,7 +194,7 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
         CheckOutcome::fail(
             id,
             "/readyz stays 503 after rejection",
-            readyz_status(ctx).await,
+            readyz_seen(ctx, "after the rejection").await,
             "/readyz left 503 after a rejection",
         )
     }
@@ -195,7 +212,7 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
                 id,
                 expected,
                 wait,
-                "a declare to confirm",
+                "no declare captured within the timeout",
                 "the subject did not publish a declare command",
             );
         }
@@ -204,7 +221,7 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
         return CheckOutcome::fail(
             id,
             expected,
-            "first acceptance published",
+            "the first acceptance could not be published",
             detail.to_string(),
         );
     }
@@ -212,7 +229,7 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
         return CheckOutcome::fail(
             id,
             expected,
-            "second acceptance published",
+            "the second acceptance could not be published",
             detail.to_string(),
         );
     }
@@ -220,8 +237,8 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
         return CheckOutcome::fail(
             id,
             expected,
-            "200 despite a duplicate acceptance",
-            format!("/readyz did not reach 200: {}", readyz_status(ctx).await),
+            readyz_seen(ctx, "after the duplicate acceptance").await,
+            "/readyz did not reach 200",
         );
     }
     match stays_ready(ctx).await {
@@ -233,17 +250,21 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
         Err(status) => CheckOutcome::fail(
             id,
             expected,
-            format!("/readyz stayed 200 for {QUIET_WINDOW:?} after the duplicate acceptance"),
-            format!("/readyz left 200 after the duplicate acceptance: {status}"),
+            seen_readyz(status, "during the quiet window"),
+            format!(
+                "/readyz left 200 after the duplicate acceptance: {}",
+                status_text(status)
+            ),
         ),
     }
 }
 
-async fn stays_ready(ctx: &CheckContext<'_>) -> Result<(), String> {
+async fn stays_ready(ctx: &CheckContext<'_>) -> Result<(), Option<StatusCode>> {
     let deadline = tokio::time::Instant::now() + QUIET_WINDOW;
     loop {
-        if !ctx.readyz.is_ready().await {
-            return Err(readyz_status(ctx).await);
+        let status = ctx.readyz.status().await;
+        if status != Some(StatusCode::OK) {
+            return Err(status);
         }
         if tokio::time::Instant::now() >= deadline {
             return Ok(());

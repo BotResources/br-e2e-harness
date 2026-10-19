@@ -22,6 +22,10 @@ form to decide whether a version ships.
 - The tests never compile anything. The `scope-service` binary is looked up on `PATH`, then in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-scope-{version}`, then downloaded from this crate's own release (`conformance-scope/v{version}`, asset `scope-service-<os>-<arch>.tar.gz` with its `.sha256`; `linux` and `darwin`, `amd64` and `arm64`), failing closed on a SHA-256 mismatch, a redirect to a host other than `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`, or an archive over 64 MiB. A binary found nowhere is `ConformanceError::SubjectBinaryUnavailable`, naming the binary and what to do. `ScopeHarness::start` uses this lookup instead of building the subject. The `release-cli` workflow now attaches the four `scope-service` assets to the `conformance-scope/v{version}` release, and the `infra-e2e` job builds the subject outside the tests and puts it on `PATH`.
 - The lookup, the download and the crate's own tests no longer write to the system temporary directory (the throwaway NATS store of `br-test-harness` stays that crate's own): the former build output is gone, and the scratch directories of the tests live under the test target directory.
 
+- Spawn mode panicked (exit 101 in the CLI) when the `fabric-nats` binary was not next to the executable, as with the released CLI archive, which holds only `conformance-scope`. `provision` and `run_spawn` now return `ConformanceError::FabricProvisionUnavailable`, naming `fabric-nats` or the missing manifest and what to do, and the CLI exits `2`. Pinned by `tests/absent_fabric_nats.rs`, which re-runs the test executable copied into an empty directory.
+- A failed check reported the wanted state as the observation (for example `observed: /readyz stayed 200` for a run that dropped to `503`, or `200 despite a duplicate acceptance` when `/readyz` never reached `200`). `observed` now holds what was seen (`/readyz answered 503 during the quiet window`, `/readyz did not answer after acceptance`, `3 declares captured, 2 at the rejection`) for S2 to S6, and `expected` keeps the wanted state, so the human, JSON and JUnit output of the CLI are honest. Pinned by `tests/duplicate_confirmations.rs` and `tests/readyz_observations.rs`.
+- The README no longer says attach mode connects through `FabricTestNats::connect`: it uses `attach_without_provisioning` and never creates a stream.
+
 ### Removed
 
 - The public items of the `build` module, removed with the module: `build_subject`, `ensure_go_available`, `subject_dir` and `run_dead_grammar_guard`, and the root re-exports of the first three. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
@@ -29,6 +33,7 @@ form to decide whether a version ships.
 
 ### Added
 
+- `ConformanceError::FabricProvisionUnavailable { detail }`: the typed error of a spawn-mode prerequisite (`fabric-nats` binary, provisioning manifest) that is missing.
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
 - `DeclareCapture::try_count`, `DeclareCapture::try_first` and `DeclareCapture::try_correlation_ids`: the non-panicking forms of `count`, `first` and `correlation_ids`.
 
