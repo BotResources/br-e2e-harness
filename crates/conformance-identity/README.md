@@ -154,7 +154,7 @@ programmatic runners call it.
   confirmation.
 - A missing prerequisite is a typed `ConformanceError`, never a panic: no scenario
   selected (`InvalidInput`), a path handed to `start_with_binary` / `run_spawn` that is
-  not a file (`InvalidInput`), no `identity-acceptor` binary on `PATH`, in the cache or
+  not an executable file (`InvalidInput`), no `identity-acceptor` binary on `PATH`, in the cache or
   in the release (`SubjectBinaryUnavailable`), `nats-server` not on `PATH`, the
   `fabric-nats` CLI not built beside the test executable, a harness start or an
   unreachable NATS (`Jetstream`). A harness panic while observing a scenario is contained and reported as a failed check.

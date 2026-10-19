@@ -18,7 +18,6 @@ fn stand_in(label: &str, mode: u32, body: &[u8]) -> (scratch::Scratch, PathBuf) 
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "real-infra: needs `nats-server` on PATH and the fabric-nats CLI built"]
 async fn a_subject_that_cannot_be_executed_is_a_typed_input_error() {
     let (_dir, binary) = stand_in("not-executable", 0o644, b"#!/bin/sh\nexit 0\n");
     let result = run_spawn(

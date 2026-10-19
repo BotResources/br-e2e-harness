@@ -52,11 +52,11 @@ pub(crate) fn fabric_nats_beside(exe: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn subject_binary(binary: &Path) -> Result<()> {
-    if binary.is_file() {
+    if crate::binary::is_executable_file(binary) {
         Ok(())
     } else {
         Err(ConformanceError::InvalidInput(format!(
-            "the acceptor binary {} does not exist or is not a file",
+            "the acceptor binary {} does not exist, is not a file or is not executable",
             binary.display()
         )))
     }
@@ -120,6 +120,25 @@ mod tests {
             other => panic!("expected a typed input error: {other:?}"),
         }
         assert!(subject_binary(&std::env::current_exe().unwrap()).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_subject_binary_without_the_execute_bit_is_a_typed_input_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch_dir = scratch("not-executable-subject");
+        let file = scratch_dir.join("identity-acceptor");
+        std::fs::write(&file, b"#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        match subject_binary(&file) {
+            Err(ConformanceError::InvalidInput(detail)) => {
+                assert!(detail.contains("not executable"), "{detail}");
+                assert!(detail.contains(&file.display().to_string()));
+            }
+            other => panic!("expected a typed input error: {other:?}"),
+        }
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(subject_binary(&file).is_ok());
     }
 
     #[tokio::test]
