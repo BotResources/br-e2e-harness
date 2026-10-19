@@ -14,11 +14,12 @@ form to decide whether a version ships.
 ### Fixed
 
 - The Go reference subject listened on `0.0.0.0` and answered `/internal/passport` without authentication on every interface of the test machine. It binds `127.0.0.1` only (`listenAddr` in `conformance-subjects/identity-passport`), pinned by a Go test and by the `the_subject_does_not_answer_on_a_non_loopback_address` real-infra test, which fails on the old binary.
-- P8 passed when the call after the bucket loss failed (refused connection, crash, or no answer): it proved no answer, not a 5xx. P8 now passes only on a 5xx received within 10 seconds (`PassportEndpoint::status_for_bearer_within`); any transport error fails the check, and the observed text carries the full error chain (`operation timed out`, `Connection refused`), so a hang and a crash read differently; this applies to the failure text of every check that calls the endpoint. The README contract and the P8 row say so.
+- P8 passed when the call after the bucket loss failed (refused connection, crash, or no answer): it proved no answer, not a 5xx. P8 now passes only on a 5xx received within 10 seconds; any transport error fails the check, and the observed text carries the full error chain (`operation timed out`, `Connection refused`), so a hang and a crash read differently; this applies to the failure text of every check that calls the endpoint. The README contract and the P8 row say so.
 - `run_spawn` returns `ConformanceError::InvalidInput` when a scenario is listed twice, before touching any infra; a repeated `p8` seeded into the bucket the first one deleted and panicked in the harness, losing the whole report.
 - `PassportHarness::start_with_binary` and `run_spawn` return `ConformanceError::BinaryNotExecutable { path }` for a caller-supplied path that is not an executable file (the message names that path: build it and mark it executable), instead of a panic when the child is spawned.
 - The tests never compile anything. The `identity-passport` binary is looked up on `PATH`, then in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-passport-{version}`, then downloaded from this crate's own release (`conformance-passport/v{version}`, asset `identity-passport-<os>-<arch>.tar.gz` with its `.sha256`; `linux` and `darwin`, `amd64` and `arm64`), failing closed on a SHA-256 mismatch, a redirect to a host other than `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`, or an archive over 64 MiB. A binary found nowhere is `ConformanceError::SubjectBinaryUnavailable`, naming the binary and what to do. `PassportHarness::start` uses this lookup instead of building the subject.
-- The crate writes nothing to the system temporary directory: the former build output is gone, and the scratch directories of the tests live under the test target directory.
+- The crate writes nothing to the system temporary directory: the former build output is gone, and the scratch directories of the tests live under the test target directory. The one exception is outside the crate: every `PassportHarness::start*` starts a `br-test-harness` NATS server whose store `br-test-harness` creates in the system temporary directory.
+- `PassportHarness::start_with_binary` and `run_spawn` resolve a bare program name (`identity-passport`) on `PATH`, as spawning it directly did in 0.1.0, and hand the absolute result to the child. A bare name found nowhere is `SubjectBinaryUnavailable` with "was not found on PATH"; only a path with a directory part can be `BinaryNotExecutable`.
 
 ### Removed
 
@@ -29,11 +30,10 @@ form to decide whether a version ships.
 
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above, used only when the binary is found on `PATH`, in the cache or by download.
 - `ConformanceError::BinaryNotExecutable { path }`: a caller-supplied binary path that is not an executable file.
-- `PassportEndpoint::status_for_bearer_within(raw_token, timeout)`.
 
 ### Changed
 
-- `Subject::spawn` hands the subject a `PATH` led by the directory of its binary, through the child's environment.
+- `Subject::spawn` hands the subject a `PATH` led by the directory of its binary, through the child's environment, when that directory is absolute, is valid UTF-8 and contains no `:`; otherwise the child inherits `PATH` unchanged.
 - Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
 - New dependency `sha2` to verify the release asset.
 

@@ -190,7 +190,7 @@ and is asserted separately, not via the report.
 | `NATS_URL` | the throwaway broker URL |
 | `PORT` | the loopback port to bind; `base_url = http://127.0.0.1:$PORT` |
 | `BEARER_SEAL_KEY` | `seal_key_b64` read straight out of the vector file |
-| `PATH` | the parent `PATH` led by the directory of the subject binary, when that directory is absolute |
+| `PATH` | the parent `PATH` led by the directory of the subject binary, when that directory is absolute, valid UTF-8 and free of `:`; otherwise the parent `PATH` unchanged (`Subject::spawn` returns `Self`, so it cannot fail loud) |
 
 Nothing else is required of the subject — it serves, it never seals.
 
@@ -238,9 +238,10 @@ directory (the throwaway NATS store of `br-test-harness` is that crate's own).
 
 `locate_subject()` returns the absolute path of the binary. The subject is spawned by
 that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary
-when that directory is absolute, through the child's environment only: the crate never calls
-`std::env::set_var`. `PassportHarness::start_with_binary` and `run_spawn` return
-`ConformanceError::BinaryNotExecutable { path }` for a caller-supplied path that is not an executable file (build it and mark it executable); `SubjectBinaryUnavailable` is only for the `PATH`, cache and download lookup.
+when that directory is absolute, valid UTF-8 and free of `:` (otherwise the child inherits `PATH` unchanged, silently), through the child's environment only: the crate never calls
+`std::env::set_var`. `PassportHarness::start_with_binary` and `run_spawn` resolve a bare program name on `PATH`
+(as spawning it did in 0.1.0; absent from `PATH` is `SubjectBinaryUnavailable`, "was not found on PATH") and return
+`ConformanceError::BinaryNotExecutable { path }` for a path with a directory part that is not an executable file (build it and mark it executable); `SubjectBinaryUnavailable` is only for the `PATH`, cache and download lookup.
 
 When none of the three succeeds, the call returns `ConformanceError::SubjectBinaryUnavailable`
 naming the binary and what to do: put it on `PATH`, or build it yourself with

@@ -80,7 +80,7 @@ impl PassportEndpoint {
         Ok(response.status())
     }
 
-    pub async fn status_for_bearer_within(
+    pub(crate) async fn status_for_bearer_within(
         &self,
         raw_token: &str,
         timeout: Duration,

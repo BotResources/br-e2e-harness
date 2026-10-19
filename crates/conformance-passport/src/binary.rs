@@ -46,6 +46,27 @@ pub(crate) async fn locate(
     Ok(cached)
 }
 
+pub(crate) fn resolve_caller_binary(binary: PathBuf, path: Option<&OsStr>) -> Result<PathBuf> {
+    if !is_bare_name(&binary) {
+        return if is_executable_file(&binary) {
+            Ok(binary)
+        } else {
+            Err(ConformanceError::BinaryNotExecutable { path: binary })
+        };
+    }
+    let name = binary.to_string_lossy();
+    path.and_then(|path| find_in_path(&name, path))
+        .ok_or_else(|| unavailable(SUBJECT_BINARY, &format!("`{name}` was not found on PATH")))
+}
+
+fn is_bare_name(binary: &Path) -> bool {
+    let mut components = binary.components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
+}
+
 pub(crate) fn unavailable(binary: &'static str, detail: &str) -> ConformanceError {
     ConformanceError::SubjectBinaryUnavailable {
         binary,
@@ -152,6 +173,49 @@ mod tests {
             [PathBuf::from("/usr/bin"), PathBuf::from("/bin")]
         );
         assert!(absolute_entries(OsStr::new("")).is_empty());
+    }
+
+    #[test]
+    fn a_bare_name_is_resolved_on_path() {
+        let dir = scratch("bare-hit");
+        let binary = write_binary(&dir, "my-passport", 0o755);
+        let path = std::env::join_paths([&dir]).unwrap();
+        let resolved = resolve_caller_binary(PathBuf::from("my-passport"), Some(&path)).unwrap();
+        assert_eq!(resolved, binary);
+        assert!(resolved.is_absolute());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_bare_name_absent_from_path_says_not_found_on_path() {
+        let dir = scratch("bare-miss");
+        let path = std::env::join_paths([&dir]).unwrap();
+        for search in [Some(path.as_os_str()), None] {
+            match resolve_caller_binary(PathBuf::from("my-passport"), search) {
+                Err(error @ ConformanceError::SubjectBinaryUnavailable { .. }) => {
+                    let message = error.to_string();
+                    assert!(
+                        message.contains("`my-passport` was not found on PATH"),
+                        "{message}"
+                    );
+                }
+                other => panic!("expected a not-found-on-PATH error: {other:?}"),
+            }
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_path_with_a_directory_is_checked_as_given() {
+        let dir = scratch("given");
+        let binary = write_binary(&dir, "my-passport", 0o755);
+        assert_eq!(resolve_caller_binary(binary.clone(), None).unwrap(), binary);
+        let plain = write_binary(&dir, "plain", 0o644);
+        assert!(matches!(
+            resolve_caller_binary(plain.clone(), None),
+            Err(ConformanceError::BinaryNotExecutable { path }) if path == plain
+        ));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[tokio::test]
