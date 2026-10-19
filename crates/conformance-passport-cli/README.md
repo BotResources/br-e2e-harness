@@ -30,7 +30,8 @@ conformance-passport run --help
 
 **Exit codes:** `0` conformant, `1` non-conformant (a check failed or was skipped), `2`
 the run could not complete (bad flag, unknown scenario, binary not found or not
-executable, anchor unavailable, `nats-server` not on `PATH`, subject never ready).
+executable, anchor unavailable, `nats-server` not on `PATH`, subject never ready, report
+could not be written to stdout or `--output`).
 
 **Spawn only, no attach mode.** The battery owns the broker: it provisions the
 `PUBLISHED_LANGUAGE` bucket, seeds the vectors, and P8 deletes the bucket under the

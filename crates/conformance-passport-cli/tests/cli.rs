@@ -288,6 +288,32 @@ async fn a_subject_that_never_reports_ready_exits_2_with_the_readiness_sentence(
     );
 }
 
+#[test]
+#[ignore = "real-infra: needs `nats-server` and the prebuilt `identity-passport` on PATH"]
+fn a_closed_stdout_exits_2_with_one_error_line_instead_of_a_silent_101() {
+    let (reader, writer) = std::io::pipe().expect("pipe");
+    let bin = assert_cmd::cargo::cargo_bin("conformance-passport");
+    let mut child = std::process::Command::new(bin)
+        .args(["run", "--anchor", "--scenarios", "p4", "--format", "json"])
+        .stdout(writer)
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn the cli");
+    drop(reader);
+
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().expect("stderr"), &mut stderr)
+        .expect("read stderr");
+    let status = child.wait().expect("wait");
+
+    assert_eq!(status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with("error: writing report to stdout"),
+        "{stderr}"
+    );
+    assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
+}
+
 fn scratch() -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("conformance-passport-cli");
     std::fs::create_dir_all(&dir).expect("scratch dir");

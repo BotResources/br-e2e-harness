@@ -5,6 +5,7 @@ mod render;
 mod report;
 mod run;
 
+use std::io::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -43,8 +44,11 @@ where
     F: std::future::Future<Output = Result<T>> + Send + 'static,
     T: Send + 'static,
 {
+    let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    match tokio::spawn(work).await {
+    let joined = tokio::spawn(work).await;
+    std::panic::set_hook(previous_hook);
+    match joined {
         Ok(outcome) => outcome,
         Err(join) if join.is_panic() => Err(CliError::new(panic_message(join.into_panic()))),
         Err(join) => Err(CliError::new(format!("the run was cancelled: {join}"))),
@@ -66,7 +70,63 @@ fn emit(report: &SubjectReport, output: &OutputArgs) -> Result<bool> {
     match &output.output {
         Some(path) => std::fs::write(path, rendered)
             .map_err(|e| CliError::new(format!("writing report to {}: {e}", path.display())))?,
-        None => print!("{rendered}"),
+        None => write_all_flushed(&mut std::io::stdout().lock(), rendered.as_bytes())
+            .map_err(|e| CliError::new(format!("writing report to stdout: {e}")))?,
     }
     Ok(report.conformant)
+}
+
+fn write_all_flushed(writer: &mut impl Write, bytes: &[u8]) -> std::io::Result<()> {
+    writer.write_all(bytes)?;
+    writer.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, ErrorKind, Write};
+
+    use super::write_all_flushed;
+
+    struct BrokenPipe;
+
+    impl Write for BrokenPipe {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailingFlush;
+
+    impl Write for FailingFlush {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from(ErrorKind::StorageFull))
+        }
+    }
+
+    #[test]
+    fn a_broken_pipe_is_returned_as_an_error_instead_of_panicking() {
+        let error = write_all_flushed(&mut BrokenPipe, b"report").expect_err("broken pipe");
+        assert_eq!(error.kind(), ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn a_failing_flush_is_returned_as_an_error() {
+        let error = write_all_flushed(&mut FailingFlush, b"report").expect_err("flush");
+        assert_eq!(error.kind(), ErrorKind::StorageFull);
+    }
+
+    #[test]
+    fn a_healthy_writer_receives_every_byte() {
+        let mut sink = Vec::new();
+        write_all_flushed(&mut sink, b"report").expect("write");
+        assert_eq!(sink, b"report");
+    }
 }
