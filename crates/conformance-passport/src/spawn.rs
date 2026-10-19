@@ -150,10 +150,13 @@ mod tests {
         assert!(
             matches!(
                 &err,
-                ConformanceError::SubjectBinaryUnavailable { binary, .. } if *binary == crate::binary::SUBJECT_BINARY
+                ConformanceError::BinaryNotExecutable { path } if path == &PathBuf::from("/nonexistent/never-spawned")
             ),
             "{err:?}"
         );
+        let message = err.to_string();
+        assert!(message.contains("/nonexistent/never-spawned"), "{message}");
+        assert!(!message.contains("identity-passport"), "{message}");
     }
 
     #[tokio::test]
@@ -164,7 +167,9 @@ mod tests {
         std::fs::write(&file, b"#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
         let err = run_spawn(
-            &SpawnTarget { binary: file },
+            &SpawnTarget {
+                binary: file.clone(),
+            },
             &[Scenario::NoCredentialIsAnonymous],
             DEFAULT_TIMEOUT,
         )
@@ -172,7 +177,7 @@ mod tests {
         .expect_err("a non-executable file must be an error");
         std::fs::remove_dir_all(dir).ok();
         assert!(
-            matches!(&err, ConformanceError::SubjectBinaryUnavailable { .. }),
+            matches!(&err, ConformanceError::BinaryNotExecutable { path } if path == &file),
             "{err:?}"
         );
     }

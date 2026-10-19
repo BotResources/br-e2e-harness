@@ -3,6 +3,7 @@ use std::time::Duration;
 use br_core_auth::{Passport, PassportHeader};
 use reqwest::StatusCode;
 
+use crate::cause::describe;
 use crate::error::{ConformanceError, Result};
 
 pub const PASSPORT_PATH: &str = "/internal/passport";
@@ -110,6 +111,6 @@ impl PassportEndpoint {
         request
             .send()
             .await
-            .map_err(|e| ConformanceError::Request(format!("GET {url}: {e}")))
+            .map_err(|e| ConformanceError::Request(format!("GET {url}: {}", describe(&e))))
     }
 }

@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -8,6 +7,7 @@ use reqwest::redirect::Policy as RedirectPolicy;
 use sha2::{Digest, Sha256};
 
 use crate::binary::find_in_path;
+use crate::cause::describe;
 
 const RELEASE_BASE: &str = "https://github.com/BotResources/br-e2e-harness/releases/download";
 const RELEASE_HOSTS: &[&str] = &[
@@ -192,17 +192,6 @@ async fn fetch_capped(
         body.extend_from_slice(&chunk);
     }
     Ok(body)
-}
-
-fn describe(error: &dyn Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    text
 }
 
 async fn install_archive(

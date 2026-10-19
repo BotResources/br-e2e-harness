@@ -239,8 +239,8 @@ directory (the throwaway NATS store of `br-test-harness` is that crate's own).
 `locate_subject()` returns the absolute path of the binary. The subject is spawned by
 that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary
 when that directory is absolute, through the child's environment only: the crate never calls
-`std::env::set_var`. `PassportHarness::start_with_binary` returns
-`ConformanceError::SubjectBinaryUnavailable` for a path that is not an executable file.
+`std::env::set_var`. `PassportHarness::start_with_binary` and `run_spawn` return
+`ConformanceError::BinaryNotExecutable { path }` for a caller-supplied path that is not an executable file (build it and mark it executable); `SubjectBinaryUnavailable` is only for the `PATH`, cache and download lookup.
 
 When none of the three succeeds, the call returns `ConformanceError::SubjectBinaryUnavailable`
 naming the binary and what to do: put it on `PATH`, or build it yourself with

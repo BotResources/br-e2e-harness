@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,6 +13,11 @@ pub enum ConformanceError {
         binary: &'static str,
         detail: String,
     },
+    #[error(
+        "the subject binary `{}` is not an executable file: build it and mark it executable",
+        path.display()
+    )]
+    BinaryNotExecutable { path: PathBuf },
     #[error("sealing/publishing a bearer into the PUBLISHED_LANGUAGE bucket failed: {0}")]
     Seed(String),
     #[error("calling GET /internal/passport failed: {0}")]

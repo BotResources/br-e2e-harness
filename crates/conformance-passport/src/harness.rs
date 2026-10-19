@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, KvKey, PublishedLanguagePublisher};
 
-use crate::binary::{SUBJECT_BINARY, is_executable_file, locate_subject, unavailable};
+use crate::binary::{is_executable_file, locate_subject};
 use crate::error::{ConformanceError, Result};
 use crate::seal::SealedSeeder;
 
@@ -20,10 +20,7 @@ impl PassportHarness {
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
         if !is_executable_file(&binary) {
-            return Err(unavailable(
-                SUBJECT_BINARY,
-                &format!("{} is not an executable file", binary.display()),
-            ));
+            return Err(ConformanceError::BinaryNotExecutable { path: binary });
         }
         let nats = FabricTestNats::start().await;
         let nats = nats.with_published_language().await;

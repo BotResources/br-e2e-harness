@@ -89,7 +89,6 @@ fn label(seed: &SealedSeed) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ConformanceError;
 
     fn is_pass(verdict: &LoudVerdict) -> bool {
         matches!(verdict, LoudVerdict::Pass { .. })
@@ -105,28 +104,30 @@ mod tests {
         assert!(is_pass(&classify(&Ok(StatusCode::SERVICE_UNAVAILABLE))));
     }
 
-    #[test]
-    fn a_refused_connection_is_not_a_loud_failure() {
-        let refused: Result<StatusCode> =
-            Err(ConformanceError::Request("connection refused".to_string()));
-        assert!(!is_pass(&classify(&refused)));
-    }
-
-    #[test]
-    fn no_answer_in_time_is_not_a_loud_failure() {
-        let hung: Result<StatusCode> = Err(ConformanceError::Request(
-            "GET http://127.0.0.1:1/internal/passport: operation timed out".to_string(),
-        ));
-        match classify(&hung) {
-            LoudVerdict::Fail { observed, .. } => {
-                assert!(observed.contains("timed out"), "{observed}")
-            }
-            LoudVerdict::Pass { observed } => panic!("a hang must not pass: {observed}"),
+    async fn observed_failure(result: Result<StatusCode>) -> String {
+        match classify(&result) {
+            LoudVerdict::Fail { observed, .. } => observed,
+            LoudVerdict::Pass { observed } => panic!("no answer must not pass: {observed}"),
         }
     }
 
     #[tokio::test]
-    async fn a_listener_that_never_answers_fails_within_the_time_limit() {
+    async fn a_refused_connection_fails_and_the_observed_text_says_refused() {
+        let port = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let endpoint =
+            crate::endpoint::PassportEndpoint::new(&format!("http://127.0.0.1:{port}")).unwrap();
+        let result = endpoint
+            .status_for_bearer_within("brk_refused", Duration::from_secs(2))
+            .await;
+        let observed = observed_failure(result).await;
+        assert!(observed.to_lowercase().contains("refused"), "{observed}");
+    }
+
+    #[tokio::test]
+    async fn a_listener_that_never_answers_fails_and_the_observed_text_says_timed_out() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let _held = tokio::spawn(async move {
@@ -138,8 +139,8 @@ mod tests {
         let result = endpoint
             .status_for_bearer_within("brk_hang", Duration::from_millis(300))
             .await;
-        assert!(result.is_err(), "{result:?}");
-        assert!(!is_pass(&classify(&result)));
+        let observed = observed_failure(result).await;
+        assert!(observed.contains("timed out"), "{observed}");
     }
 
     #[test]
