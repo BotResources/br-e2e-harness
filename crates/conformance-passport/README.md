@@ -240,7 +240,7 @@ directory (the throwaway NATS store of `br-test-harness` is that crate's own).
 that path, and `Subject::spawn` hands the child a `PATH` led by the directory of the binary
 when that directory is absolute, valid UTF-8 and free of `:` (otherwise the child inherits `PATH` unchanged, silently), through the child's environment only: the crate never calls
 `std::env::set_var`. `PassportHarness::start_with_binary` and `run_spawn` resolve a bare program name on `PATH`
-(as spawning it did in 0.1.0; absent from `PATH` is `SubjectBinaryUnavailable`, "was not found on PATH") and return
+(as spawning it did in 0.1.0; absent from `PATH` is `ConformanceError::BinaryNotOnPath { name }`, naming the caller's binary, "was not found on PATH") and return
 `ConformanceError::BinaryNotExecutable { path }` for a path with a directory part that is not an executable file (build it and mark it executable); `SubjectBinaryUnavailable` is only for the `PATH`, cache and download lookup.
 
 When none of the three succeeds, the call returns `ConformanceError::SubjectBinaryUnavailable`

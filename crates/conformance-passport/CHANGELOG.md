@@ -19,7 +19,7 @@ form to decide whether a version ships.
 - `PassportHarness::start_with_binary` and `run_spawn` return `ConformanceError::BinaryNotExecutable { path }` for a caller-supplied path that is not an executable file (the message names that path: build it and mark it executable), instead of a panic when the child is spawned.
 - The tests never compile anything. The `identity-passport` binary is looked up on `PATH`, then in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-passport-{version}`, then downloaded from this crate's own release (`conformance-passport/v{version}`, asset `identity-passport-<os>-<arch>.tar.gz` with its `.sha256`; `linux` and `darwin`, `amd64` and `arm64`), failing closed on a SHA-256 mismatch, a redirect to a host other than `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`, or an archive over 64 MiB. A binary found nowhere is `ConformanceError::SubjectBinaryUnavailable`, naming the binary and what to do. `PassportHarness::start` uses this lookup instead of building the subject.
 - The crate writes nothing to the system temporary directory: the former build output is gone, and the scratch directories of the tests live under the test target directory. The one exception is outside the crate: every `PassportHarness::start*` starts a `br-test-harness` NATS server whose store `br-test-harness` creates in the system temporary directory.
-- `PassportHarness::start_with_binary` and `run_spawn` resolve a bare program name (`identity-passport`) on `PATH`, as spawning it directly did in 0.1.0, and hand the absolute result to the child. A bare name found nowhere is `SubjectBinaryUnavailable` with "was not found on PATH"; only a path with a directory part can be `BinaryNotExecutable`.
+- `PassportHarness::start_with_binary` and `run_spawn` resolve a bare program name (`identity-passport`) on `PATH`, as spawning it directly did in 0.1.0, and hand the absolute result to the child. A bare name found nowhere is `ConformanceError::BinaryNotOnPath { name }`, which names the caller's binary and not `identity-passport`; only a path with a directory part can be `BinaryNotExecutable`. The bare-name test is `#[ignore]` (real-infra: it starts `nats-server`) and its child run asserts it really ran.
 
 ### Removed
 
@@ -28,7 +28,8 @@ form to decide whether a version ships.
 
 ### Added
 
-- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above, used only when the binary is found on `PATH`, in the cache or by download.
+- `ConformanceError::BinaryNotOnPath { name }`: a caller-supplied bare program name that is not on `PATH`.
+- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above, `SubjectBinaryUnavailable` is returned only by `locate_subject()` (`PATH`, cache, download).
 - `ConformanceError::BinaryNotExecutable { path }`: a caller-supplied binary path that is not an executable file.
 
 ### Changed

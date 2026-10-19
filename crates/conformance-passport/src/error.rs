@@ -13,6 +13,8 @@ pub enum ConformanceError {
         binary: &'static str,
         detail: String,
     },
+    #[error("the binary `{name}` was not found on PATH: put it on PATH or pass its path")]
+    BinaryNotOnPath { name: String },
     #[error(
         "the subject binary `{}` is not an executable file: build it and mark it executable",
         path.display()

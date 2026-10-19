@@ -56,7 +56,9 @@ pub(crate) fn resolve_caller_binary(binary: PathBuf, path: Option<&OsStr>) -> Re
     }
     let name = binary.to_string_lossy();
     path.and_then(|path| find_in_path(&name, path))
-        .ok_or_else(|| unavailable(SUBJECT_BINARY, &format!("`{name}` was not found on PATH")))
+        .ok_or_else(|| ConformanceError::BinaryNotOnPath {
+            name: name.into_owned(),
+        })
 }
 
 fn is_bare_name(binary: &Path) -> bool {
@@ -192,12 +194,13 @@ mod tests {
         let path = std::env::join_paths([&dir]).unwrap();
         for search in [Some(path.as_os_str()), None] {
             match resolve_caller_binary(PathBuf::from("my-passport"), search) {
-                Err(error @ ConformanceError::SubjectBinaryUnavailable { .. }) => {
+                Err(error @ ConformanceError::BinaryNotOnPath { .. }) => {
                     let message = error.to_string();
                     assert!(
                         message.contains("`my-passport` was not found on PATH"),
                         "{message}"
                     );
+                    assert!(!message.contains(SUBJECT_BINARY), "{message}");
                 }
                 other => panic!("expected a not-found-on-PATH error: {other:?}"),
             }

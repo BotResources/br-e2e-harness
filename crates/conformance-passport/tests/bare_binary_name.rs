@@ -8,6 +8,7 @@ const CHILD: &str = "CONFORMANCE_PASSPORT_BARE_NAME_CHILD";
 const TEST: &str = "a_bare_binary_name_is_resolved_on_path_like_a_spawned_command";
 
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "real-infra: needs nats-server"]
 async fn a_bare_binary_name_is_resolved_on_path_like_a_spawned_command() {
     if std::env::var_os(CHILD).is_none() {
         let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -21,14 +22,24 @@ async fn a_bare_binary_name_is_resolved_on_path_like_a_spawned_command() {
         entries.extend(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
         ));
-        let status = Command::new(std::env::current_exe().expect("test executable"))
-            .args(["--exact", TEST, "--nocapture"])
+        let output = Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", TEST, "--include-ignored", "--nocapture"])
             .env(CHILD, dir.as_os_str())
             .env("PATH", std::env::join_paths(entries).expect("join PATH"))
-            .status()
+            .output()
             .expect("run the child test");
         std::fs::remove_dir_all(&dir).ok();
-        assert!(status.success(), "the child must pass: {status}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "the child must pass: {}\n{stdout}\n{stderr}",
+            output.status
+        );
+        assert!(
+            stdout.contains("1 passed"),
+            "the child must run the test, not skip it:\n{stdout}"
+        );
         return;
     }
 
@@ -40,8 +51,13 @@ async fn a_bare_binary_name_is_resolved_on_path_like_a_spawned_command() {
     harness.shutdown().await;
 
     match PassportHarness::start_with_binary(PathBuf::from("no-such-subject-binary")).await {
-        Err(ConformanceError::SubjectBinaryUnavailable { detail, .. }) => {
-            assert!(detail.contains("not found on PATH"), "{detail}");
+        Err(error @ ConformanceError::BinaryNotOnPath { .. }) => {
+            let message = error.to_string();
+            assert!(
+                message.contains("`no-such-subject-binary` was not found on PATH"),
+                "{message}"
+            );
+            assert!(!message.contains("identity-passport"), "{message}");
         }
         Err(other) => panic!("expected not found on PATH: {other:?}"),
         Ok(_) => panic!("an absent bare name must not start"),
