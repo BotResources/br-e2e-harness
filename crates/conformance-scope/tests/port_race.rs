@@ -3,6 +3,9 @@ use std::path::PathBuf;
 
 use std::time::Duration;
 
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+
 use conformance_scope::{BootWatch, ConformanceError, Subject, SubjectConfig};
 
 const KEEPS_THE_PORT: &str = "exec sleep 30\n";
@@ -24,6 +27,17 @@ fn counting_then_keeping_the_port() -> String {
     format!("echo x >> \"$(dirname \"$0\")/attempts\"\n{KEEPS_THE_PORT}")
 }
 
+fn losing_the_port_to_a_process_that_answers_livez() -> String {
+    format!(
+        "dir=\"$(dirname \"$0\")\"\n\
+         echo \"$HTTP_ADDR\" >> \"$dir/addrs\"\n\
+         if [ \"$(wc -l < \"$dir/addrs\")\" -le 1 ]; then\n\
+         until [ -f \"$dir/answered\" ]; do sleep 0.02; done\n\
+         exit 98\n\
+         fi\n{KEEPS_THE_PORT}"
+    )
+}
+
 fn stand_in(name: &str, body: &str) -> (PathBuf, PathBuf) {
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("{name}-{}", uuid::Uuid::now_v7().simple()));
@@ -43,6 +57,46 @@ fn attempts(dir: &std::path::Path) -> usize {
     std::fs::read_to_string(dir.join("attempts"))
         .map(|raw| raw.lines().count())
         .unwrap_or(0)
+}
+
+fn announced_addresses(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join("addrs"))
+        .map(|raw| raw.lines().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+async fn answer_livez(listener: TcpListener, marker: Option<PathBuf>) {
+    loop {
+        let Ok((mut connection, _)) = listener.accept().await else {
+            return;
+        };
+        let mut request = [0u8; 1024];
+        if connection.read(&mut request).await.is_err() {
+            continue;
+        }
+        let answer = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let flushed =
+            connection.write_all(answer).await.is_ok() && connection.flush().await.is_ok();
+        if flushed && let Some(marker) = &marker {
+            std::fs::write(marker, "x").ok();
+        }
+    }
+}
+
+async fn answer_every_announced_address(dir: PathBuf) {
+    let mut bound = 0;
+    let mut tasks = Vec::new();
+    loop {
+        let announced = announced_addresses(&dir);
+        while bound < announced.len() {
+            if let Ok(listener) = TcpListener::bind(&announced[bound]).await {
+                let marker = (bound == 0).then(|| dir.join("answered"));
+                tasks.push(tokio::spawn(answer_livez(listener, marker)));
+            }
+            bound += 1;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 const EXIT_LOOKOUT: Duration = Duration::from_secs(60);
@@ -152,4 +206,37 @@ async fn a_boot_watch_with_zero_attempts_is_refused_without_starting_the_subject
         "zero attempts must be InvalidInput"
     );
     assert_eq!(tries, 0);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_subject_that_lost_its_port_to_a_process_answering_livez_is_started_again() {
+    let (dir, binary) = stand_in(
+        "port-race-answered-by-the-holder",
+        &losing_the_port_to_a_process_that_answers_livez(),
+    );
+    let holder = tokio::spawn(answer_every_announced_address(dir.clone()));
+    let patient = BootWatch {
+        lookout: Duration::from_secs(10),
+        settle: Duration::from_secs(3),
+        ..BootWatch::default()
+    };
+
+    let started = Subject::start_with(&binary, &config(), patient).await;
+    let announced = announced_addresses(&dir);
+    holder.abort();
+    let logs = match started {
+        Ok(subject) => {
+            let logs = subject.logs();
+            subject.shutdown().await;
+            logs
+        }
+        Err(error) => panic!("the subject must be started again on another port: {error}"),
+    };
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert_eq!(
+        announced.len(),
+        2,
+        "addresses: {announced:?}\nlogs:\n{logs}"
+    );
 }
