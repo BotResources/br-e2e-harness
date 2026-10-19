@@ -130,7 +130,7 @@ Two anchors keep it honest:
 - **Anti-drift, anti-hand-edit.** `vectors_test.go` regenerates the whole file in
   memory and asserts **byte-equality** with the committed one. A change in the Go
   seal, or a hand edit of the JSON, fails `make check` and the `identity-passport
-  anchor tests` step of the `infra-e2e` CI job. Regenerating is
+  anchor checks` step of the `infra-e2e` CI job. Regenerating is
   `make -C conformance-subjects/identity-passport vectors`.
 - **Anti-nonsense.** `vectors_test.go` also opens every faithful vector and asserts
   it yields its declared identity, and asserts every `resolves: anonymous` vector
