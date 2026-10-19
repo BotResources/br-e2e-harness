@@ -12,13 +12,13 @@ line="$3"
 tag="${crate}/v${version}"
 
 case "$crate" in
-    oidc-test-idp) workflow="cd.yml" ;;
-    conformance-scope) workflow="release-cli.yml" ;;
     conformance-passport)
         gh workflow run "release-anchor.yml" --ref "$line" -f "tag=${tag}"
         echo "dispatched release-anchor.yml for ${tag} on ${line}"
         workflow="release-cli-passport.yml"
         ;;
+    oidc-test-idp) workflow="cd.yml" ;;
+    conformance-scope) workflow="release-cli.yml" ;;
     *)
         echo "${crate}: no artifact beyond the tag and the release."
         exit 0

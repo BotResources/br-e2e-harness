@@ -118,9 +118,6 @@ depends on its kind:
 - **Service fixtures** ship as a **container image** built from the crate's tag:
   `ghcr.io/botresources/br-<crate>:<version>` (multi-arch, amd64 + arm64), the
   version being the one in the `oidc-test-idp/v{version}` tag.
-- **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
-  (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
-  release, the version being the one in that tag.
 - **CLI tool** (`conformance-passport-cli`) ships as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-passport/v{version}`
   release, next to the Go subject binary below.
@@ -130,6 +127,9 @@ depends on its kind:
   The crate never compiles: it looks for its binary on `PATH`, then in its
   cache directory, then downloads and verifies the asset of its own release into
   that cache.
+- **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
+  (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
+  release, the version being the one in that tag.
 
 A crate that names a sibling's types in its public API pins that sibling by the
 same git url and the same tag string, and the workspace root maps the url to the
