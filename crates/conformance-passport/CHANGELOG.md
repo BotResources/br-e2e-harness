@@ -38,7 +38,7 @@ form to decide whether a version ships.
 
 ### Changed
 
-- The `identity-passport` Go anchor is published as release assets `identity-passport-<os>-<arch>.tar.gz` (with `.sha256`) of each `conformance-passport` release by the `release-anchor` workflow, built with `CGO_ENABLED=0`; the linux builds are asserted static. CI builds the anchor once onto `PATH` and runs the battery against it; `.github/scripts/go-free-gate.sh` fails CI if a conformance crate named in `GO_FREE_CRATES` (this one and its CLI) contains `go build`, `go vet`, `go install`, `go run`, `go test`, `Command::new("go")`, the literals `"go"` or `"make"`, `ensure_go_available` or, in `src` and `tests`, `temp_dir`.
+- The `identity-passport` Go anchor is published as release assets `identity-passport-<os>-<arch>.tar.gz` (with `.sha256`) of each `conformance-passport` release by the `release-anchor-passport` workflow, built with `CGO_ENABLED=0`; the linux builds are asserted static. CI builds the anchor once onto `PATH` and runs the battery against it; `.github/scripts/go-free-gate.sh` fails CI if a conformance crate named in `GO_FREE_CRATES` (this one and its CLI) contains `go build`, `go vet`, `go install`, `go run`, `go test`, `Command::new("go")`, the literals `"go"` or `"make"`, `ensure_go_available` or, in `src` and `tests`, `temp_dir`.
 - `Subject::spawn` hands the subject a `PATH` led by the directory of its binary, through the child's environment, when that directory is absolute, is valid UTF-8 and contains no `:`; otherwise the child inherits `PATH` unchanged.
 - Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
 - New dependency `sha2` to verify the release asset.

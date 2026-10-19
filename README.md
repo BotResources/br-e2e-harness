@@ -102,7 +102,7 @@ against *an* identity without depending on any project's private one.
 `conformance-scope`, and its binaries ride that crate's release.
 
 `conformance-passport-cli` follows the same rule with `conformance-passport`.
-A `conformance-passport` tag also starts `release-anchor` (the Go binary) and
+A `conformance-passport` tag also starts `release-anchor-passport` (the Go binary) and
 `release-cli-passport` (the CLI binaries).
 
 ## Distribution
