@@ -50,12 +50,16 @@ async fn run_against_a_forged_first_confirmation(
         timeout: SHORT,
     };
     let forger = async {
-        let correlation_id = loop {
-            if let Some(id) = commands.correlation_ids().first() {
-                break *id;
+        let correlation_id = tokio::time::timeout(SHORT, async {
+            loop {
+                if let Some(id) = commands.correlation_ids().first() {
+                    break *id;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        };
+        })
+        .await
+        .expect("the declare command was never captured");
         let event = IntegrationEvent::new(
             uuid::Uuid::now_v7(),
             "service_scope.rejected",

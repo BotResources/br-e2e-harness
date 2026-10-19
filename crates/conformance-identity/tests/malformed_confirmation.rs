@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use br_core_integration::IntegrationEvent;
 use br_scope_declaration_contract::{VERSION, declare_command_coords, rejected_event_coords};
-use br_test_harness::FabricTestNats;
+use br_test_harness::{FabricTestNats, wait_until};
 use conformance_identity::checks::{CheckContext, run_scenario};
 use conformance_identity::declarer::declaring_metadata;
 use conformance_identity::{
@@ -32,12 +32,16 @@ async fn run_against_a_subject_answering(forgery: Forgery) -> CheckOutcome {
         timeout: SHORT,
     };
     let forger = async {
-        let correlation_id = loop {
-            if let Some(id) = commands.correlation_ids().first() {
-                break *id;
+        let correlation_id = tokio::time::timeout(SHORT, async {
+            loop {
+                if let Some(id) = commands.correlation_ids().first() {
+                    break *id;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        };
+        })
+        .await
+        .expect("the declare command was never captured");
         let body = match forgery {
             Forgery::NotJson => b"this is not an envelope".to_vec(),
             Forgery::EnvelopeWithAnUnreadablePayload => {
@@ -116,7 +120,13 @@ async fn a_direct_read_after_junk_on_the_rejected_subject_is_a_typed_error_not_a
     let rejected_coords = rejected_event_coords().expect("rejected coordinates");
     nats.publish_event_envelope(&rejected_coords, b"this is not an envelope")
         .await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        wait_until(SHORT, || async {
+            capture.try_confirmation_for(uuid::Uuid::now_v7()).is_err()
+        })
+        .await,
+        "the junk was never ingested by the capture"
+    );
 
     let (verdict, decoded) = direct_reads(&capture).await;
 
@@ -146,7 +156,10 @@ async fn a_direct_read_after_the_broker_is_gone_is_a_typed_error_not_a_panic() {
     let nats = FabricTestNats::start().await;
     let capture = ConfirmationCapture::start(&nats).await.expect("capture");
     nats.shutdown().await;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        wait_until(SHORT, || async { capture.try_count().is_err() }).await,
+        "the capture never noticed the broker was gone"
+    );
 
     let (verdict, decoded) = direct_reads(&capture).await;
 
