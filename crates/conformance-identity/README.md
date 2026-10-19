@@ -175,6 +175,13 @@ programmatic runners call it.
   **mutates a live registry**; the runner uses **unique per-run service/scope keys**
   (a fresh UUIDv7 namespace) to bound pollution, so A1–A7 are safe to run repeatedly
   against the same live service.
+  **New in 0.1.1 (through `br-test-harness` 0.1.2):** the confirmation capture replays the
+  whole history of `INTEGRATION_EVT` for the two confirmation subjects (`DeliverPolicy::All`)
+  and stops at the first frame that is not a JSON envelope with a readable correlation id.
+  It fails closed and records the cause, and every later read of the capture fails: all
+  seven checks then fail with the cause in the detail. One such frame already in a live stream
+  therefore fails A1–A7 in every later run until the stream is purged (0.1.0 skipped the
+  frame). Spawn mode is not affected: its broker is fresh.
 
 ## Running it
 
@@ -237,7 +244,7 @@ br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", p
 | `ConfirmationCapture` starts **before** the subject is spawned | The capture and the acceptor both consume with `DeliverPolicy::All`, so nothing published early is missed; the order keeps the capture armed for the whole run and lets a boot failure surface as a `Timeout` carrying the subject logs. |
 | The runner waits for `/readyz=200` **before** declaring | A subject that never reports ready is a `Timeout` with its logs, not a declare that goes unanswered. |
 | Keys are **namespaced per run** with a UUIDv7 | spawn mode is isolated anyway, but the same scenarios drive an attach run against a live, stateful registry; unique keys keep re-runs from colliding with each other or with prior state, and bound the pollution of a real registry. |
-| **attach drives all A1–A7, not a read-only subset like G3** | Unlike G3, whose attach default skips the scenarios that would stall a live service (timeout/re-publish, rejection-blocks-readiness), no G2 scenario durably mutes or blocks the acceptor — every one is a one-shot declare→verdict. With per-run key namespacing bounding the pollution, all seven are safe to drive repeatedly against a live registry, so `attach_default()` is the full set. |
+| **attach drives all A1–A7, not a read-only subset like G3** | Unlike G3, whose attach default skips the scenarios that would stall a live service (timeout/re-publish, rejection-blocks-readiness), no G2 scenario durably mutes or blocks the acceptor — every one is a one-shot declare→verdict. With per-run key namespacing bounding the pollution, all seven are safe to drive repeatedly against a live registry, so `attach_default()` is the full set. One limit, new in 0.1.1 through `br-test-harness` 0.1.2: the capture replays the whole stream history and stops, fail-closed with the cause named, at the first non-envelope frame on the two confirmation subjects, so such a frame already in a live stream fails all seven checks in every later run until the stream is purged. Spawn mode is not affected (fresh broker). |
 | The Go subject is a faithful reimpl of `judge_declaration`, not a binding | It is the tautology-break: an independent encoding of the wire + policy. If it merely called the lib, green would prove nothing. Its Go unit tests pin the rejection wire shapes to the frozen `scope-wire-v1` golden JSON. |
 | The tests never compile and the binary comes from `PATH`, a cache or a verified release asset | Compiling in a test hid the toolchain, wrote a binary to the system temporary directory and made the importer's test run depend on a Go build. A prebuilt binary found by name is the same artifact the release publishes, and a missing one is a typed error that says what to do. |
 | The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + the prebuilt `identity-acceptor` binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
