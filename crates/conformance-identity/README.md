@@ -32,8 +32,10 @@ never hand-rolled JSON, never a re-stated decision table:
   `br-identity-domain`. For each scenario the runner constructs a real `ScopeRegistry`,
   replays the **same** declaration sequence through the real lib, obtains the expected
   `DeclarationOutcome` per step, and asserts the subject's emitted event (accept vs
-  reject, and the exact `ScopeDeclarationError`) **equals** the lib's verdict. The
-  expected outcome is **computed from the lib, never hard-coded.**
+  reject, the service the event names, and the exact `ScopeDeclarationError`)
+  **equals** the lib's verdict. A rejection that names another service than the
+  declared one fails the check. The expected outcome is **computed from the lib,
+  never hard-coded.**
 - The handshake **subjects** are read from `br-scope-declaration-contract`
   (`declare_subject()` / `accepted_event_subject()` / `rejected_event_subject()`),
   not hardcoded — so the anchor covers the *subject strings* too: a renamed or
@@ -84,11 +86,20 @@ context by driving a prior accepted declaration, then drives the contested one.
 - `ConfirmationCapture` — a thin typed view over the harness `EventCapture`
   (a **replaying** background-drain consumer, `DeliverPolicy::All`,
   `AckPolicy::None`) filtered to both event subjects;
-  `verdict_for(correlation_id)` decodes the reply by `from_slice` into the real
-  `IntegrationEvent<…>` types — the type-oracle check.
-- `oracle::expected_verdict` / `expected_step_verdicts` — replays a declaration
-  sequence through the real `judge_declaration` / `ScopeRegistry` and returns the
-  per-step `Verdict`. This is the authoritative expected outcome.
+  `confirmation_decoded_for(correlation_id)` decodes the reply by `from_slice` into the
+  real `IntegrationEvent<…>` types and returns a `DecodedConfirmation { service, verdict }`
+  — the type-oracle check, and the authoritative decode: it keeps the service of a
+  rejection. `verdict_for` is the `Verdict`-level view of the same decode; `Verdict::Rejected`
+  carries no service, so it drops it.
+- `oracle::expected_step_confirmations` — replays a declaration sequence through the
+  real `judge_declaration` / `ScopeRegistry` and returns the per-step
+  `DecodedConfirmation { service, verdict }`. Together with
+  `ConfirmationCapture::confirmation_decoded_for` it is the authoritative pair:
+  `run_scenario` compares exactly these two, so a rejection naming another service
+  fails. The `Verdict`-level helpers — `verdict_for`, `expected_verdict`,
+  `expected_step_verdicts`, `outcome_to_verdict` — drop the service of a rejection
+  (`Verdict::Rejected { reason }` has none): a check built only from them accepts a
+  rejection that names another service, so do not build a check from them.
 - `Scenario` (A1–A7) with `sequence(namespace)` — the declaration sequences,
   namespaced so each run uses unique service/scope keys.
 - `Subject` / `SubjectConfig` — spawn the built binary with its env wiring
