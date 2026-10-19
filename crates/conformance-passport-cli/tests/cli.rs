@@ -58,6 +58,17 @@ fn a_missing_go_anchor_exits_2_with_the_typed_error() {
 }
 
 #[test]
+fn a_missing_nats_server_aborts_the_run_with_the_harness_panic_exit_101() {
+    let assert = cli()
+        .env("PATH", "")
+        .args(["run", "--spawn", "/bin/sh"])
+        .assert()
+        .code(101);
+    let stderr = stderr_of(assert);
+    assert!(stderr.contains("nats-server not found on PATH"), "{stderr}");
+}
+
+#[test]
 fn an_unknown_scenario_exits_2_before_any_infra() {
     let assert = cli()
         .args([

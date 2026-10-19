@@ -15,9 +15,9 @@ case "$crate" in
     oidc-test-idp) workflow="cd.yml" ;;
     conformance-scope) workflow="release-cli.yml" ;;
     conformance-passport)
-        gh workflow run "release-cli-passport.yml" --ref "$line" -f "tag=${tag}"
-        echo "dispatched release-cli-passport.yml for ${tag} on ${line}"
-        workflow="release-anchor.yml"
+        gh workflow run "release-anchor.yml" --ref "$line" -f "tag=${tag}"
+        echo "dispatched release-anchor.yml for ${tag} on ${line}"
+        workflow="release-cli-passport.yml"
         ;;
     *)
         echo "${crate}: no artifact beyond the tag and the release."

@@ -292,7 +292,7 @@ cargo build --release --locked
 ./conformance-passport run --spawn target/release/my-service --format junit --output passport-conformance.xml
 ```
 
-Exit code `0` is conformant, `1` non-conformant, `2` the run could not complete. There is no
+Exit code `0` is conformant, `1` non-conformant, `2` the run could not complete, `101` `nats-server` is not on `PATH`. There is no
 attach mode: P8 destroys the `PUBLISHED_LANGUAGE` bucket of the broker the battery owns.
 Rust services use `run_spawn` directly (see "Consuming service integration").
 

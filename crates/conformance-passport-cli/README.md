@@ -28,9 +28,10 @@ conformance-passport run --help
 | `--subject-label <LABEL>` | Subject name in the report (default: the binary's file name). |
 | `--format human\|json\|junit`, `--output <PATH>` | Report format, and a file instead of stdout. |
 
-**Exit codes:** `0` conformant, `1` non-conformant (a check failed, was skipped, or none
-ran), `2` the run could not complete (bad flag, unknown scenario, binary not found or
-not executable, anchor unavailable, subject never ready).
+**Exit codes:** `0` conformant, `1` non-conformant (a check failed or was skipped), `2`
+the run could not complete (bad flag, unknown scenario, binary not found or not
+executable, anchor unavailable, subject never ready), `101` the `br-test-harness`
+aborted because `nats-server` is not on `PATH`.
 
 **Spawn only, no attach mode.** The battery owns the broker: it provisions the
 `PUBLISHED_LANGUAGE` bucket, seeds the vectors, and P8 deletes the bucket under the
