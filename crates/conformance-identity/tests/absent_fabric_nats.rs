@@ -1,5 +1,7 @@
 use std::process::Command;
 
+mod common;
+
 use conformance_identity::{ConformanceError, IdentityHarness, provision};
 
 const ISOLATED: &str = "CONFORMANCE_IDENTITY_ISOLATED_COPY";
@@ -19,13 +21,13 @@ fn fabric_nats_cli_absent_is_a_typed_error() {
     let copy = deps.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside no fabric-nats");
 
-    let status = Command::new(&copy)
+    let output = Command::new(&copy)
         .args(["--exact", TEST, "--nocapture"])
         .env(ISOLATED, "1")
-        .status()
+        .output()
         .expect("run the isolated copy");
     std::fs::remove_dir_all(&isolated).ok();
-    assert!(status.success(), "the isolated copy must pass: {status}");
+    common::assert_child_ran_one_passing_test(&output);
 }
 
 fn assert_typed_errors() {

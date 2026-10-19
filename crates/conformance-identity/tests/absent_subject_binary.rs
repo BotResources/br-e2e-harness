@@ -1,5 +1,7 @@
 use std::process::Command;
 
+mod common;
+
 use conformance_identity::{ConformanceError, IdentityHarness, SUBJECT_BINARY, locate_subject};
 
 const CHILD: &str = "CONFORMANCE_IDENTITY_NO_SUBJECT_BINARY_CHILD";
@@ -11,16 +13,16 @@ async fn a_missing_subject_binary_is_a_typed_error_naming_it_and_nothing_is_buil
         let empty = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("no-subject-{}", uuid::Uuid::now_v7().simple()));
         std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
-        let status = Command::new(std::env::current_exe().expect("test executable"))
+        let output = Command::new(std::env::current_exe().expect("test executable"))
             .args(["--exact", TEST, "--nocapture"])
             .env(CHILD, "1")
             .env("PATH", &empty)
             .env_remove("XDG_CACHE_HOME")
             .env_remove("HOME")
-            .status()
+            .output()
             .expect("run the child test");
         std::fs::remove_dir_all(&empty).ok();
-        assert!(status.success(), "the child must pass: {status}");
+        common::assert_child_ran_one_passing_test(&output);
         return;
     }
 

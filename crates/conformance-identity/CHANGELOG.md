@@ -42,6 +42,8 @@ form to decide whether a version ships.
 
 - `Subject::spawn` hands the acceptor a `PATH` led by the directory of its binary, through the child's environment.
 - Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
+- A consumer that moves to 0.1.1 pins `br-test-harness/v0.1.2`, `br-util-nats-fabric/v0.1.0`, `br-core-integration/v0.1.0`, `br-core-scope/v0.1.0` and `br-identity-domain/v0.1.0` with the same git url and tag string as this crate: its public signatures name their types (`FabricTestNats`, `CapturedMessage`, `Fabric`, `CoordError`, `DeclareServiceScopes`, `DeclarationOutcome`), and two different tags give two copies and a type error. The README Install block lists the pins.
+- The four crate tests that re-run the test binary on one filtered test (`tests/absent_subject_binary.rs`, `tests/absent_nats_server.rs`, `tests/absent_fabric_nats.rs`, `release_asset::tests::a_download_ignores_the_system_proxy`) now assert that the child ran exactly that test (`1 passed`), so a renamed or moved test fails the parent instead of running nothing.
 - New dependencies `futures-util` (default features off, `std`) to contain harness panics and `sha2` to verify the release asset.
 
 ## 0.1.0

@@ -205,12 +205,24 @@ installed on the runner (shared with G3).
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no crates.io).
-Keep each `br-rust-common` crate tag identical to `br-test-harness`'s (per-crate
-`<crate>/v0.1.0`) so Cargo resolves a single source and never duplicates `br-core-*`:
+Its public signatures name types of five sibling libraries: `br-test-harness`
+(`FabricTestNats`, `CapturedMessage`, taken by `ConfirmationCapture::start` and the
+`From<CapturedMessage>` conversion), `br-util-nats-fabric` (`Fabric`, taken by
+`Declarer::new` and returned by `IdentityHarness::fabric`), `br-core-integration`
+(`CoordError`, and the event types through its own pins), `br-core-scope`
+(`DeclareServiceScopes` and the declaration types) and `br-identity-domain`
+(`DeclarationOutcome`, taken by `oracle::outcome_to_confirmation`). Pin each of them with
+the same git url and the same tag string as this crate, or the build holds two copies of
+the type and fails with a type mismatch:
 
 ```toml
 [dev-dependencies]
 conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.1", version = "0.1.1" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
+br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "br-util-nats-fabric/v0.1.0", version = "0.1.0" }
+br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "br-core-integration/v0.1.0", version = "0.1.0" }
+br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "br-core-scope/v0.1.0", version = "0.1.0" }
+br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", package = "br-identity-domain", tag = "br-identity-domain/v0.1.0", version = "0.1.0" }
 ```
 
 ## Why — the non-obvious bits

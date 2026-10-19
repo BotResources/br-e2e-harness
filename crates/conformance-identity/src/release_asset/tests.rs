@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use super::*;
 use crate::binary::{SUBJECT_BINARY, is_executable_file, locate};
 use crate::error::ConformanceError;
-use crate::test_scratch::scratch;
+use crate::test_scratch::{assert_child_ran_one_passing_test, scratch};
 
 const LOCAL: Policy = Policy {
     https_only: false,
@@ -247,8 +247,8 @@ const PROXIED_TEST: &str = "release_asset::tests::a_download_ignores_the_system_
 fn a_download_ignores_the_system_proxy() {
     if std::env::var_os(PROXIED).is_none() {
         let unreachable_proxy = "http://127.0.0.1:9";
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", PROXIED_TEST])
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", PROXIED_TEST, "--nocapture"])
             .env(PROXIED, "1")
             .env("HTTP_PROXY", unreachable_proxy)
             .env("http_proxy", unreachable_proxy)
@@ -256,9 +256,9 @@ fn a_download_ignores_the_system_proxy() {
             .env("all_proxy", unreachable_proxy)
             .env_remove("NO_PROXY")
             .env_remove("no_proxy")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success(), "the proxied child must pass: {status}");
+        assert_child_ran_one_passing_test(&output);
         return;
     }
     tokio::runtime::Builder::new_current_thread()

@@ -2,6 +2,8 @@ use std::fmt::Debug;
 use std::process::Command;
 use std::time::Duration;
 
+mod common;
+
 use conformance_identity::{
     ConformanceError, IdentityHarness, Result, Scenario, SpawnTarget, run_spawn,
 };
@@ -31,14 +33,14 @@ fn run_in_isolated_copy() {
     let copy = deps.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
-    let status = Command::new(&copy)
+    let output = Command::new(&copy)
         .args(["--exact", TEST, "--nocapture"])
         .env(CHILD, "1")
         .env("PATH", &empty)
-        .status()
+        .output()
         .expect("run the isolated copy");
     std::fs::remove_dir_all(&isolated).ok();
-    assert!(status.success(), "the isolated copy must pass: {status}");
+    common::assert_child_ran_one_passing_test(&output);
 }
 
 #[tokio::test(flavor = "current_thread")]
