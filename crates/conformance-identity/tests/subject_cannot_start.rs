@@ -61,3 +61,30 @@ async fn a_subject_that_exits_at_once_is_a_timeout_carrying_its_logs() {
         other => panic!("a subject that never gets ready must be a typed timeout: {other:?}"),
     }
 }
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "real-infra: needs `nats-server` on PATH and the fabric-nats CLI built"]
+async fn a_subject_that_the_os_cannot_start_is_a_typed_input_error() {
+    let (_dir, binary) = stand_in("bad-interpreter", 0o755, b"#!/nonexistent/interpreter\n");
+    let result = run_spawn(
+        &SpawnTarget {
+            binary: binary.clone(),
+        },
+        &[Scenario::CleanDeclarationAccepted],
+        SHORT,
+    )
+    .await;
+    match result {
+        Err(ConformanceError::InvalidInput(detail)) => {
+            assert!(
+                detail.contains("starting the acceptor binary"),
+                "the error must say the start failed: {detail}"
+            );
+            assert!(
+                detail.contains(&binary.display().to_string()),
+                "the error must name the binary: {detail}"
+            );
+        }
+        other => panic!("a subject the OS cannot start must be a typed input error: {other:?}"),
+    }
+}

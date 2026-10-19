@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use br_test_harness::{FabricTestNats, SpawnedNats, wait_until};
 use conformance_identity::{
-    AttachTarget, ConformanceError, IdentityHarness, ReadyzProbe, Subject, SubjectConfig,
-    attach_default, locate_subject, provision, run_attach,
+    AttachTarget, ConfirmationCapture, ConformanceError, IdentityHarness, ReadyzProbe, Subject,
+    SubjectConfig, attach_default, locate_subject, provision, run_attach,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -85,4 +85,26 @@ async fn attach_to_a_provisioned_broker_with_a_live_acceptor_is_conformant() {
     harness.shutdown().await;
     assert!(report.is_conformant(), "{report:?}");
     assert_eq!(report.passed(), 7);
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_confirmation_consumer_that_cannot_bind_is_a_typed_error() {
+    let nats = SpawnedNats::start().await;
+    let attached = FabricTestNats::attach_without_provisioning(&nats.url()).await;
+
+    let result = ConfirmationCapture::start(&attached).await;
+    attached.shutdown().await;
+    nats.shutdown().await;
+
+    match result {
+        Err(ConformanceError::Jetstream(detail)) => assert!(
+            detail.contains("INTEGRATION_EVT"),
+            "the error must name the missing event stream: {detail}"
+        ),
+        Err(other) => {
+            panic!("a consumer that cannot bind must be a typed Jetstream error: {other:?}")
+        }
+        Ok(_) => panic!("a consumer must not bind to a stream that does not exist"),
+    }
 }
