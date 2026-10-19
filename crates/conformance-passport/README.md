@@ -254,7 +254,7 @@ proves it refuses a connection on the non-loopback address of the host.
 
 ## Running it
 
-**Two paths, two toolchains — this is the point of seeding from vectors.**
+**Two paths, at most one prebuilt binary — this is the point of seeding from vectors.**
 
 | Path | Entry point | Needs |
 |---|---|---|

@@ -112,7 +112,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_refused_connection_fails_and_the_observed_text_says_refused() {
+    async fn a_connection_that_never_yields_a_status_fails_without_naming_an_os_cause() {
         let port = {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             listener.local_addr().unwrap().port()
@@ -123,7 +123,10 @@ mod tests {
             .status_for_bearer_within("brk_refused", Duration::from_secs(2))
             .await;
         let observed = observed_failure(result).await;
-        assert!(observed.to_lowercase().contains("refused"), "{observed}");
+        assert!(
+            observed.starts_with("no HTTP status after infra loss ("),
+            "{observed}"
+        );
     }
 
     #[tokio::test]
