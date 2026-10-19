@@ -1,3 +1,5 @@
+#[path = "common/child.rs"]
+mod child;
 mod common;
 
 use std::fmt::Debug;
@@ -36,16 +38,16 @@ fn run_in_isolated_copy() {
     let copy = deps.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
-    let status = Command::new(&copy)
+    let output = Command::new(&copy)
         .args(["--exact", TEST, "--nocapture"])
         .env(ISOLATED, "1")
         .env("PATH", system_path_after(&stubs))
         .env("E2E_PG_ADMIN_URL", UNREACHABLE)
         .env("DATABASE_URL", UNREACHABLE)
-        .status()
+        .output()
         .expect("run the isolated copy");
     std::fs::remove_dir_all(&isolated).ok();
-    assert!(status.success(), "the isolated copy must pass: {status}");
+    child::assert_child_ran_one_passing_test(&output);
 }
 
 fn assert_postgres_error<T: Debug>(battery: &str, result: Result<T>) {

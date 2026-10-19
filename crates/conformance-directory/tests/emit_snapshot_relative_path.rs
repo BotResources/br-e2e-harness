@@ -1,3 +1,6 @@
+#[path = "common/child.rs"]
+mod child;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,17 +33,14 @@ fn emit_marker(marker: &str) -> String {
 }
 
 fn child(cwd: &Path, mode: &str, path: &std::ffi::OsStr) {
-    let status = Command::new(std::env::current_exe().expect("test executable"))
+    let output = Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", TEST, "--nocapture"])
         .current_dir(cwd)
         .env(MODE, mode)
         .env("PATH", path)
-        .status()
+        .output()
         .expect("run the child test");
-    assert!(
-        status.success(),
-        "the child must pass in mode {mode}: {status}"
-    );
+    child::assert_child_ran_one_passing_test(&output);
 }
 
 fn join(entries: &[&Path]) -> std::ffi::OsString {

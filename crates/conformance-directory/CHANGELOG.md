@@ -39,6 +39,7 @@ form to decide whether a version ships.
 ### Changed
 
 - `br-test-harness` is pinned to `br-test-harness/v0.1.2` and `br-util-directory` to `br-util-directory/v0.1.1`; the other `br-rust-common` pins stay at their latest tags (`br-core-directory/v0.1.0`, `br-util-nats-fabric/v0.1.0`).
+- Every re-exec parent test of the crate now reads the child output and fails unless the child passed and ran exactly one test, so a renamed or stale filter can no longer pass with `running 0 tests`.
 - Dependency pin: `{ git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.1", version = "0.1.1" }`.
 
 ## 0.1.0

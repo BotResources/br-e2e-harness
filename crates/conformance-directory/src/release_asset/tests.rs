@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use super::*;
 use crate::binary::{ANCHOR_BINARY, is_executable_file, locate};
 use crate::error::ConformanceError;
-use crate::test_scratch::scratch;
+use crate::test_scratch::{assert_child_ran_one_passing_test, scratch};
 
 const LOCAL: Policy = Policy {
     https_only: false,
@@ -247,7 +247,7 @@ const PROXIED_TEST: &str = "release_asset::tests::a_download_ignores_the_system_
 fn a_download_ignores_the_system_proxy() {
     if std::env::var_os(PROXIED).is_none() {
         let unreachable_proxy = "http://127.0.0.1:9";
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", PROXIED_TEST])
             .env(PROXIED, "1")
             .env("HTTP_PROXY", unreachable_proxy)
@@ -256,9 +256,9 @@ fn a_download_ignores_the_system_proxy() {
             .env("all_proxy", unreachable_proxy)
             .env_remove("NO_PROXY")
             .env_remove("no_proxy")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success(), "the proxied child must pass: {status}");
+        assert_child_ran_one_passing_test(&output);
         return;
     }
     tokio::runtime::Builder::new_current_thread()
@@ -397,20 +397,6 @@ fn tar_is_resolved_on_absolute_path_entries_only() {
 const NO_SH_ARCHIVE: &str = "CONFORMANCE_DIRECTORY_EXTRACT_WITHOUT_SH_ARCHIVE";
 const NO_SH_TEST: &str =
     "release_asset::tests::an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure";
-
-fn assert_child_ran_one_passing_test(output: &std::process::Output) {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "the child must pass: {}\n{stdout}\n{stderr}",
-        output.status
-    );
-    assert!(
-        stdout.contains("1 passed;"),
-        "the child must run exactly the filtered test (a renamed test runs none):\n{stdout}\n{stderr}"
-    );
-}
 
 #[test]
 fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {

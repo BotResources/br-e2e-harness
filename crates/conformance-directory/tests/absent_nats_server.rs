@@ -1,3 +1,5 @@
+#[path = "common/child.rs"]
+mod child;
 mod common;
 
 use std::fmt::Debug;
@@ -29,14 +31,14 @@ async fn every_battery_returns_a_typed_error_when_nats_server_is_not_on_path() {
         let empty = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("no-binaries-{}", uuid::Uuid::now_v7().simple()));
         std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
-        let status = Command::new(std::env::current_exe().expect("test executable"))
+        let output = Command::new(std::env::current_exe().expect("test executable"))
             .args(["--exact", TEST, "--nocapture"])
             .env(CHILD, "1")
             .env("PATH", &empty)
-            .status()
+            .output()
             .expect("run the child test");
         std::fs::remove_dir_all(&empty).ok();
-        assert!(status.success(), "the child must pass: {status}");
+        child::assert_child_ran_one_passing_test(&output);
         return;
     }
 

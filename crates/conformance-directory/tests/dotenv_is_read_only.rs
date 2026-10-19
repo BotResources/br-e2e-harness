@@ -1,3 +1,6 @@
+#[path = "common/child.rs"]
+mod child;
+
 use std::process::Command;
 
 use conformance_directory::{ConformanceError, ConsumerDb};
@@ -18,16 +21,16 @@ fn run_in_directory_holding_a_dotenv_file() {
     )
     .expect("write the .env file");
 
-    let status = Command::new(&exe)
+    let output = Command::new(&exe)
         .args(["--exact", TEST, "--nocapture"])
         .current_dir(&dir)
         .env(ISOLATED, "1")
         .env_remove("E2E_PG_ADMIN_URL")
         .env_remove("DATABASE_URL")
-        .status()
+        .output()
         .expect("run the child test");
     std::fs::remove_dir_all(&dir).ok();
-    assert!(status.success(), "the child test must pass: {status}");
+    child::assert_child_ran_one_passing_test(&output);
 }
 
 #[tokio::test(flavor = "current_thread")]

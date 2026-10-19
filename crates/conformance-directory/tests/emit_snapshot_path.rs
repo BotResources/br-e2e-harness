@@ -1,3 +1,6 @@
+#[path = "common/child.rs"]
+mod child;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -63,15 +66,15 @@ async fn a_relative_anchor_never_searches_the_current_directory_and_an_absolute_
 
     let path = std::env::join_paths([on_path.as_path(), Path::new("/usr/bin"), Path::new("/bin")])
         .expect("join PATH");
-    let status = Command::new(std::env::current_exe().expect("test executable"))
+    let output = Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", TEST, "--nocapture"])
         .current_dir(&cwd)
         .env(CHILD, absolute.as_os_str())
         .env("PATH", path)
-        .status()
+        .output()
         .expect("run the child test");
     for dir in [cwd, on_path, absolute_dir] {
         std::fs::remove_dir_all(dir).ok();
     }
-    assert!(status.success(), "the child must pass: {status}");
+    child::assert_child_ran_one_passing_test(&output);
 }

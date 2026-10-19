@@ -1,3 +1,5 @@
+#[path = "common/child.rs"]
+mod child;
 mod common;
 
 use std::fmt::Debug;
@@ -25,12 +27,12 @@ fn run_in_isolated_copy(test: &str, ignored: bool) {
     if ignored {
         command.arg("--ignored");
     }
-    let status = command
+    let output = command
         .env(ISOLATED, "1")
-        .status()
+        .output()
         .expect("run the isolated copy");
     std::fs::remove_dir_all(&isolated).ok();
-    assert!(status.success(), "the isolated copy must pass: {status}");
+    child::assert_child_ran_one_passing_test(&output);
 }
 
 fn assert_names_the_missing_cli<T: Debug>(what: &str, result: Result<T>) {
