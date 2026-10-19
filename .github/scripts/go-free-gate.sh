@@ -20,6 +20,7 @@ for crate in ${GATE_CRATES-${GO_FREE_CRATES:-}}; do
         -e '\bgo (build|vet|install|run|test)\b' \
         -e 'Command::new\("go"\)' \
         -e 'ensure_go_available' \
+        -e '"(go|make)"' \
         "$dir" || true)"
     hits_temp="$(grep -rnE --include='*.rs' --exclude-dir=target \
         -e 'temp_dir' "$dir/src" "$dir/tests" 2>/dev/null || true)"
