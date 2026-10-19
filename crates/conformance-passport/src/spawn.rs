@@ -136,6 +136,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_spawn_reports_a_missing_binary_as_a_typed_error() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(
+            &target,
+            &[Scenario::NoCredentialIsAnonymous],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a missing binary must be an error");
+        assert!(
+            matches!(
+                &err,
+                ConformanceError::SubjectBinaryUnavailable { binary, .. } if *binary == crate::binary::SUBJECT_BINARY
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_spawn_reports_a_non_executable_file_as_a_typed_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::test_scratch::scratch("not-executable");
+        let file = dir.join("identity-passport");
+        std::fs::write(&file, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let err = run_spawn(
+            &SpawnTarget { binary: file },
+            &[Scenario::NoCredentialIsAnonymous],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a non-executable file must be an error");
+        std::fs::remove_dir_all(dir).ok();
+        assert!(
+            matches!(&err, ConformanceError::SubjectBinaryUnavailable { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn run_spawn_rejects_an_empty_scenario_set_before_touching_infra() {
         let target = SpawnTarget {
             binary: PathBuf::from("/nonexistent/never-spawned"),

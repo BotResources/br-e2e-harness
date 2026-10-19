@@ -184,3 +184,20 @@ async fn the_subject_does_not_answer_on_a_non_loopback_address() {
         "the subject answered on {external}:{port}, it must listen on 127.0.0.1 only; logs:\n{logs}"
     );
 }
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `identity-passport` on PATH"]
+async fn run_spawn_refuses_a_repeated_destructive_scenario_without_touching_the_subject() {
+    use conformance_passport::{ConformanceError, SpawnTarget, locate_subject, run_spawn};
+    let binary = locate_subject()
+        .await
+        .expect("locate the identity-passport binary");
+    let err = run_spawn(
+        &SpawnTarget { binary },
+        &[Scenario::KvErrorFailsLoud, Scenario::KvErrorFailsLoud],
+        SHORT,
+    )
+    .await
+    .expect_err("p8 listed twice must be refused");
+    assert!(matches!(err, ConformanceError::InvalidInput(_)), "{err:?}");
+}
