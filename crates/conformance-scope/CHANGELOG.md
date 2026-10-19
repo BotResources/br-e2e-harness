@@ -28,7 +28,7 @@ form to decide whether a version ships.
 
 ### Removed
 
-- The public items of the `build` module, removed with the module: `build_subject`, `ensure_go_available`, `subject_dir` and `run_dead_grammar_guard`, and the root re-exports of the first three. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
+- The public items of the `build` module, removed with the module: `build_subject`, `subject_dir`, `run_dead_grammar_guard` and the Go-toolchain availability function, and the root re-exports of the first, second and fourth. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
 - `ConformanceError::GoUnavailable` and `ConformanceError::Build`.
 
 ### Added
@@ -36,6 +36,7 @@ form to decide whether a version ships.
 - `ConformanceError::FabricProvisionUnavailable { detail }`: the typed error of a spawn-mode prerequisite (`fabric-nats` binary, provisioning manifest) that is missing.
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
 - `DeclareCapture::try_count`, `DeclareCapture::try_first` and `DeclareCapture::try_correlation_ids`: the non-panicking forms of `count`, `first` and `correlation_ids`.
+- A "Run in CI" section in the README: a service downloads the released `conformance-scope` binary at a pinned version, verifies its SHA-256, boots its own binary against a `nats-server` carrying the two fixed streams and runs the battery in attach mode, the exit code failing the job. The attach half (streams created with the NATS CLI, a service booted on them, the CLI run) was run against a real `nats-server` and the reference subject; the download and checksum half was run against the `conformance-scope/v0.1.0` assets, since the `0.1.1` assets do not exist before the release.
 
 ### Changed
 

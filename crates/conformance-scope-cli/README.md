@@ -41,7 +41,7 @@ The Linux build is a static musl binary (runs on any glibc/musl distro). Each
 asset ships a matching `.sha256`:
 
 ```sh
-version=0.1.0
+version=0.1.1
 target=x86_64-unknown-linux-musl
 asset="conformance-scope-${version}-${target}.tar.gz"
 
@@ -85,6 +85,75 @@ conformance-scope run --spawn ./my-subject \
   --service-key example-service \
   --scopes example:read
 ```
+
+## Run in CI
+
+A service runs the battery in its own CI, against its own booted binary, with
+the released `conformance-scope` binary pinned to a version. Nothing is compiled
+and no Rust toolchain is needed. The CI mode is **attach**: the service is the
+one under test, and the CLI plays the Identity side of the handshake against the
+service's NATS and `/readyz`.
+
+Before the CLI runs, the job must hold: a `nats-server` with JetStream, the two
+fixed streams `INTEGRATION_CMD` (`integration.cmd.>`) and `INTEGRATION_EVT`
+(`integration.evt.>`) already created (attach mode never creates them; a missing
+stream exits `2`), and the service booted on that NATS, awaiting acceptance of
+its declaration. The streams must be fresh: a leftover declare from an earlier
+run makes the battery read a dead correlation id.
+
+```yaml
+- name: scope-declaration conformance
+  env:
+    CONFORMANCE_SCOPE_VERSION: "0.1.1"
+    NATS_SERVER_VERSION: "v2.14.1"
+    NATSCLI_VERSION: "0.3.1"
+  run: |
+    set -euo pipefail
+    tools="$RUNNER_TEMP/conformance-tools"
+    mkdir -p "$tools"
+
+    target=x86_64-unknown-linux-musl
+    asset="conformance-scope-${CONFORMANCE_SCOPE_VERSION}-${target}.tar.gz"
+    base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-scope/v${CONFORMANCE_SCOPE_VERSION}"
+    (cd "$tools" && curl -fsSLO "${base}/${asset}" && curl -fsSLO "${base}/${asset}.sha256" && sha256sum -c "${asset}.sha256" && tar -xzf "${asset}")
+
+    nats_server="nats-server-${NATS_SERVER_VERSION}-linux-amd64"
+    curl -fsSL "https://github.com/nats-io/nats-server/releases/download/${NATS_SERVER_VERSION}/${nats_server}.tar.gz" | tar -xz -C "$tools"
+    natscli="nats-${NATSCLI_VERSION}-linux-amd64"
+    curl -fsSL -o "$tools/natscli.zip" "https://github.com/nats-io/natscli/releases/download/v${NATSCLI_VERSION}/${natscli}.zip"
+    unzip -q -o "$tools/natscli.zip" -d "$tools"
+
+    "$tools/$nats_server/nats-server" -js -a 127.0.0.1 -p 4222 -m 8222 &
+    until curl -fs http://127.0.0.1:8222/healthz >/dev/null; do sleep 0.2; done
+    nats="$tools/$natscli/nats --server nats://127.0.0.1:4222"
+    $nats stream add INTEGRATION_CMD --subjects 'integration.cmd.>' --defaults
+    $nats stream add INTEGRATION_EVT --subjects 'integration.evt.>' --defaults
+
+    NATS_URL=nats://127.0.0.1:4222 HTTP_ADDR=127.0.0.1:8080 ./target/release/my-service &
+    until curl -fs http://127.0.0.1:8080/livez >/dev/null; do sleep 0.2; done
+
+    "$tools/conformance-scope" run \
+      --nats nats://127.0.0.1:4222 \
+      --readyz http://127.0.0.1:8080/readyz \
+      --service-key my-service \
+      --scopes my-service:read,my-service:admin \
+      --platform-only false \
+      --format junit --output conformance-scope.xml
+```
+
+The step fails the job on a non-zero exit code: `1` when the service is not
+conformant (a failed or skipped check, or no check ran), `2` when the run itself
+could not happen (NATS unreachable, a missing stream, a bad argument). The
+service's own environment variables are the service's; the CLI needs only its
+NATS URL and its `/readyz` URL. On macOS use the `aarch64-apple-darwin` asset and
+`shasum -a 256 -c`. Bump `CONFORMANCE_SCOPE_VERSION` deliberately, as for any
+pinned tool; the `.sha256` check ties the download to the published asset. Poll the
+service's `/livez`, never its `/readyz`: `/readyz` stays `503` until the CLI accepts
+the declaration, so waiting on it would deadlock.
+
+`--spawn <service-binary>` is not the CI mode: it stands up its own throwaway
+`nats-server` and needs the `fabric-nats` binary and the provisioning manifest of
+the source tree beside the executable, which the released archive does not hold.
 
 ## Two modes
 

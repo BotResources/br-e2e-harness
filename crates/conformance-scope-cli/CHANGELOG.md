@@ -22,6 +22,11 @@ form to decide whether a version ships.
 - `--spawn` without the `fabric-nats` binary beside the executable (the released archive holds only `conformance-scope`) or without the provisioning manifest exits `2` with an error naming it, no longer a panic (exit `101`); both READMEs name the prerequisite and the exit-code contract lists it.
 - The `observed` field of a failed check holds what was seen, in the human, JSON and JUnit output.
 
+### Added
+
+- `tests/exit_codes.rs`: assert_cmd tests of the exit-code contract against a real `nats-server`: exit `2` for an unreachable broker, a broker without the handshake streams (none is created), a missing `--nats` or `--readyz`, an unknown scenario, a spawn binary that is not a file, a missing `nats-server` on `PATH`, a released layout without `fabric-nats` and an unreadable or malformed manifest; exit `0` with a passing JSON report for an attached conformant service, and the manifest mode writing its aggregate report to `--output`.
+- A "Run in CI" section in the README, with the pinned, checksum-verified download of the released binary and the attach-mode run against the service's own booted binary.
+
 ### Changed
 
 - Version follows `conformance-scope` (0.1.1); the path dependency requires `conformance-scope` 0.1.1.

@@ -99,7 +99,7 @@ jobs:
       - name: scope-declaration conformance battery
         run: cargo test -p conformance-scope --all-targets --locked -- --ignored --test-threads=1
       - name: scope-declaration conformance battery via the CLI binary
-        run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
+        run: cargo test -p conformance-scope-cli --locked -- --ignored
       - name: scope-acceptance conformance battery
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
       - name: nats-fabric anchor checks and build onto PATH
