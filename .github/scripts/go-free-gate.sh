@@ -5,6 +5,17 @@ scripts="$(cd "$(dirname "$0")" && pwd)"
 root="${GATE_ROOT:-$(cd "$scripts/../.." && pwd)}"
 source "$scripts/tracked-libraries.sh"
 
+scan_hits=""
+
+scan() {
+    local rc=0
+    scan_hits="$(grep -rnE --exclude-dir=target "$@")" || rc=$?
+    if [ "$rc" -ge 2 ]; then
+        echo "::error::grep failed with status ${rc}: the gate could not scan, so it refuses to call the crate clean" >&2
+    fi
+    return "$rc"
+}
+
 fail=0
 checked=0
 for crate in ${GATE_CRATES-${GO_FREE_CRATES:-}}; do
@@ -15,18 +26,39 @@ for crate in ${GATE_CRATES-${GO_FREE_CRATES:-}}; do
         continue
     fi
     checked=$((checked + 1))
-    hits="$(grep -rnE --include='*.rs' --include='*.toml' --include='*.sh' --include='*.yml' \
-        --exclude-dir=target \
-        -e '\bgo (build|vet|install|run|test)\b' \
-        -e 'Command::new\("go"\)' \
+
+    hits=""
+    scan_failed=0
+
+    rc=0
+    scan --include='*.rs' --include='*.toml' --include='*.sh' --include='*.yml' \
+        -e '\b(go|make)[[:space:]]+(build|run|install|test|vet|generate|-C)\b' \
         -e 'ensure_go_available' \
-        -e '"(go|make)"' \
-        "$dir" || true)"
-    hits_temp="$(grep -rnE --include='*.rs' --exclude-dir=target \
-        -e 'temp_dir' "$dir/src" "$dir/tests" 2>/dev/null || true)"
-    if [ -n "$hits$hits_temp" ]; then
+        -e '[/"](go|make)"' \
+        "$dir" || rc=$?
+    case "$rc" in
+        0) hits="$scan_hits" ;;
+        1) ;;
+        *) scan_failed=1 ;;
+    esac
+
+    rc=0
+    scan --include='*.rs' \
+        -e 'temp_dir|tempdir|tempfile' \
+        "$dir" || rc=$?
+    case "$rc" in
+        0) hits="$hits"$'\n'"$scan_hits" ;;
+        1) ;;
+        *) scan_failed=1 ;;
+    esac
+
+    if [ "$scan_failed" -ne 0 ]; then
+        fail=1
+        continue
+    fi
+    if [ -n "$hits" ]; then
         echo "::error::${crate} compiles or builds a Go subject inside its own code; the subject binary must come from PATH or a release asset" >&2
-        printf '%s\n' "$hits" "$hits_temp" | sed '/^$/d' >&2
+        printf '%s\n' "$hits" | sed '/^$/d' >&2
         fail=1
         continue
     fi

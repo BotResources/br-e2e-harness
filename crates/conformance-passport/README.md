@@ -248,7 +248,7 @@ naming the binary and what to do: put it on `PATH`, or build it yourself with
 `make -C conformance-subjects/identity-passport build` and put
 `conformance-subjects/identity-passport` on `PATH`. The retired-model guard of the subject
 (`make guard`) and its Go tests run in CI, not in this crate.
-CI also runs `.github/scripts/go-free-gate.sh`, which fails the build if this crate or its CLI contains `go build`, `go vet`, `go install`, `go run`, `go test`, `Command::new("go")`, the literals `"go"` or `"make"`, `ensure_go_available` or, in `src` and `tests`, `temp_dir`.
+CI also runs `.github/scripts/go-free-gate.sh`, which fails the build if this crate or its CLI holds, in a `*.rs`, `*.toml`, `*.sh` or `*.yml` file (not markdown), `go` or `make` followed by `build`, `run`, `install`, `test`, `vet`, `generate` or `-C`, a program literal `"go"` or `"make"` (also ending a path), `ensure_go_available`, or, in a `*.rs` file anywhere in the crate, `temp_dir`, `tempdir` or `tempfile`; a scan that errors fails the gate. Not detected: a program chosen through a variable, and a Rust build through `cargo` or `rustc`.
 
 The subject listens on `127.0.0.1` only; a test (`the_subject_does_not_answer_on_a_non_loopback_address`)
 proves it refuses a connection on the non-loopback address of the host.
