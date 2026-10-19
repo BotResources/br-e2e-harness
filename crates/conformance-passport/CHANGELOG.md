@@ -21,6 +21,8 @@ form to decide whether a version ships.
 - The crate writes nothing to the system temporary directory: the former build output is gone, and the scratch directories of the tests live under the test target directory. The one exception is outside the crate: every `PassportHarness::start*` starts a `br-test-harness` NATS server whose store `br-test-harness` creates in the system temporary directory.
 - `PassportHarness::start_with_binary` and `run_spawn` resolve a bare program name (`identity-passport`) on `PATH`, as spawning it directly did in 0.1.0, and hand the absolute result to the child. A bare name found nowhere is `ConformanceError::BinaryNotOnPath { name }`, which names the caller's binary and not `identity-passport`; only a path with a directory part can be `BinaryNotExecutable`. The bare-name test is `#[ignore]` (real-infra: it starts `nats-server`) and its child run asserts it really ran.
 
+- `run_spawn` reports a subject that never answers `/readyz` as `timed out waiting for the passport subject to report /readyz=200; logs: ...`; the message used to read `timed out waiting for the passport subject never reported /readyz=200`.
+
 ### Removed
 
 - The public items of the `build` module, removed with the module: `build_subject`, `ensure_go_available`, `subject_dir` and `run_retired_model_guard`. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the retired-model guard, the vet and the Go tests of the subject run in CI.

@@ -40,7 +40,7 @@ pub async fn run_spawn(
         subject.shutdown().await;
         harness.shutdown().await;
         return Err(ConformanceError::Timeout(format!(
-            "the passport subject never reported /readyz=200; logs:\n{logs}"
+            "the passport subject to report /readyz=200; logs:\n{logs}"
         )));
     }
 

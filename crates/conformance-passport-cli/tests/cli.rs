@@ -58,14 +58,28 @@ fn a_missing_go_anchor_exits_2_with_the_typed_error() {
 }
 
 #[test]
-fn a_missing_nats_server_aborts_the_run_with_the_harness_panic_exit_101() {
+fn a_missing_nats_server_exits_2_with_one_error_line_and_no_panic_text() {
     let assert = cli()
         .env("PATH", "")
         .args(["run", "--spawn", "/bin/sh"])
         .assert()
-        .code(101);
+        .code(2);
     let stderr = stderr_of(assert);
     assert!(stderr.contains("nats-server not found on PATH"), "{stderr}");
+    assert!(stderr.starts_with("error: "), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(!stderr.contains("RUST_BACKTRACE"), "{stderr}");
+    assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
+}
+
+#[test]
+fn an_overflowing_timeout_exits_2_instead_of_wrapping() {
+    let assert = cli()
+        .args(["run", "--anchor", "--timeout", "307445734561825861m"])
+        .assert()
+        .code(2);
+    let stderr = stderr_of(assert);
+    assert!(stderr.contains("value too large"), "{stderr}");
 }
 
 #[test]
@@ -240,6 +254,38 @@ async fn a_subject_that_cannot_open_the_seal_is_non_conformant_with_exit_1() {
     assert!(stdout.contains("[FAIL] p1"), "{stdout}");
     assert!(stdout.contains("[PASS] p4"), "{stdout}");
     assert!(stdout.contains("NON-CONFORMANT"), "{stdout}");
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn a_subject_that_never_reports_ready_exits_2_with_the_readiness_sentence() {
+    let script = scratch().join("never-ready.sh");
+    std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").expect("write the script");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+
+    let stderr = tokio::task::spawn_blocking(move || {
+        cli()
+            .args([
+                "run",
+                "--spawn",
+                &script.to_string_lossy(),
+                "--timeout",
+                "500ms",
+            ])
+            .assert()
+            .code(2)
+            .get_output()
+            .stderr
+            .clone()
+    })
+    .await
+    .expect("cli task");
+
+    let stderr = String::from_utf8(stderr).expect("utf8 stderr");
+    assert!(
+        stderr.contains("timed out waiting for the passport subject to report /readyz=200"),
+        "{stderr}"
+    );
 }
 
 fn scratch() -> PathBuf {
