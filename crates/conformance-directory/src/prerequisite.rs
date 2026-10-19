@@ -1,26 +1,26 @@
-use std::any::Any;
-use std::future::Future;
-use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use br_test_harness::run_once;
-use futures_util::FutureExt;
 use sqlx::{Connection, PgConnection};
 
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) async fn nats_server() -> Result<()> {
-    match run_once("nats-server", &["--version"], &[], PROBE_TIMEOUT).await {
-        Ok(output) if output.status.success() => Ok(()),
-        Ok(output) => Err(ConformanceError::Jetstream(format!(
+    match contained(run_once("nats-server", &["--version"], &[], PROBE_TIMEOUT)).await {
+        Ok(Ok(output)) if output.status.success() => Ok(()),
+        Ok(Ok(output)) => Err(ConformanceError::Jetstream(format!(
             "nats-server is on PATH but `--version` exited with {}",
             output.status
         ))),
-        Err(e) => Err(ConformanceError::Jetstream(format!(
+        Ok(Err(e)) => Err(ConformanceError::Jetstream(format!(
             "nats-server is unavailable on PATH (install it to run the real-infra batteries): {e}"
+        ))),
+        Err(panic) => Err(ConformanceError::Jetstream(format!(
+            "the nats-server probe could not run (the real-infra batteries need nats-server on PATH and a spawnable `sh`): {panic}"
         ))),
     }
 }
@@ -99,25 +99,6 @@ fn admin_url_from(lookup: impl Fn(&str) -> Option<String>) -> Result<String> {
         })
 }
 
-pub(crate) async fn contained<T>(
-    future: impl Future<Output = T>,
-) -> std::result::Result<T, String> {
-    AssertUnwindSafe(future)
-        .catch_unwind()
-        .await
-        .map_err(panic_message)
-}
-
-fn panic_message(payload: Box<dyn Any + Send>) -> String {
-    match payload.downcast::<String>() {
-        Ok(message) => *message,
-        Err(payload) => match payload.downcast::<&'static str>() {
-            Ok(message) => (*message).to_string(),
-            Err(_) => "the harness panicked with a non-string payload".to_string(),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,18 +152,5 @@ mod tests {
             (name == "DATABASE_URL").then(|| "postgresql://other".to_string())
         });
         assert_eq!(fallback.unwrap(), "postgresql://other");
-    }
-
-    #[tokio::test]
-    async fn a_panic_in_the_harness_is_contained_with_its_message() {
-        let formatted = contained(async { panic!("harness exploded: {}", 7) }).await;
-        assert_eq!(formatted.unwrap_err(), "harness exploded: 7");
-        let literal = contained(async { panic!("plain literal") }).await;
-        assert_eq!(literal.unwrap_err(), "plain literal");
-    }
-
-    #[tokio::test]
-    async fn a_value_passes_through_containment() {
-        assert_eq!(contained(async { 41 + 1 }).await.unwrap(), 42);
     }
 }

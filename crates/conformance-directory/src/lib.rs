@@ -2,6 +2,7 @@ pub mod anchor;
 pub mod binary;
 mod check;
 pub mod consumer;
+mod containment;
 pub mod error;
 pub mod extensions;
 pub mod harness;

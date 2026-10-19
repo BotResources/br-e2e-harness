@@ -1,6 +1,7 @@
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::Fabric;
 
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 use crate::pg::ConsumerDb;
 use crate::prerequisite;
@@ -14,14 +15,14 @@ impl DirectoryHarness {
     pub async fn start() -> Result<Self> {
         prerequisite::nats_server().await?;
         prerequisite::fabric_nats()?;
-        let nats = prerequisite::contained(FabricTestNats::start())
+        let nats = contained(FabricTestNats::start())
             .await
             .map_err(|e| ConformanceError::Jetstream(format!("start the throwaway NATS: {e}")))?;
         if let Err(e) = provision(&nats.url(), "published_language.toml").await {
             nats.shutdown().await;
             return Err(e);
         }
-        match prerequisite::contained(nats.published_language_present()).await {
+        match contained(nats.published_language_present()).await {
             Ok(true) => Ok(Self { nats }),
             Ok(false) => {
                 nats.shutdown().await;

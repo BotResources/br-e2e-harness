@@ -393,3 +393,64 @@ fn tar_is_resolved_on_absolute_path_entries_only() {
     assert!(tar_program(Some(std::ffi::OsStr::new("bin:../tar"))).is_err());
     std::fs::remove_dir_all(dir).ok();
 }
+
+const NO_SH_ARCHIVE: &str = "CONFORMANCE_DIRECTORY_EXTRACT_WITHOUT_SH_ARCHIVE";
+const NO_SH_TEST: &str =
+    "release_asset::tests::an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure";
+
+fn assert_child_ran_one_passing_test(output: &std::process::Output) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "the child must pass: {}\n{stdout}\n{stderr}",
+        output.status
+    );
+    assert!(
+        stdout.contains("1 passed;"),
+        "the child must run exactly the filtered test (a renamed test runs none):\n{stdout}\n{stderr}"
+    );
+}
+
+#[test]
+fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {
+    let Some(archive_path) = std::env::var_os(NO_SH_ARCHIVE) else {
+        let dir = scratch("extract-no-sh");
+        let archive = archive_of(&dir, script);
+        let archive_path = dir.join("served.tar.gz");
+        std::fs::write(&archive_path, archive).unwrap();
+        let tar_only = dir.join("tar-only");
+        std::fs::create_dir_all(&tar_only).unwrap();
+        std::os::unix::fs::symlink(
+            tar_program(std::env::var_os("PATH").as_deref()).unwrap(),
+            tar_only.join("tar"),
+        )
+        .unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", NO_SH_TEST, "--nocapture"])
+            .env(NO_SH_ARCHIVE, &archive_path)
+            .env("PATH", &*tar_only)
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(dir).ok();
+        assert_child_ran_one_passing_test(&output);
+        return;
+    };
+    let archive = std::fs::read(archive_path).unwrap();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let dir = scratch("extract-no-sh-child");
+            let cache = dir.join("cache");
+            tokio::fs::create_dir_all(&cache).await.unwrap();
+            let message = install_archive(ANCHOR_BINARY, &cache, &archive)
+                .await
+                .unwrap_err();
+            assert!(message.contains("tar could not be run"), "{message}");
+            assert!(message.contains("sh"), "{message}");
+            assert!(!cache.join(ANCHOR_BINARY).exists());
+            std::fs::remove_dir_all(dir).ok();
+        });
+}

@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::binary::{
     ANCHOR_BINARY, find_in_path, locate_anchor, path_with_directory_first, unavailable,
 };
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -116,13 +117,18 @@ pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
         None => None,
     };
     let envs: Vec<(&str, &str)> = path.iter().map(|path| ("PATH", path.as_str())).collect();
-    let output = run_once(
+    let output = contained(run_once(
         &program.to_string_lossy(),
         &[],
         &envs,
         Duration::from_secs(60),
-    )
+    ))
     .await
+    .map_err(|panic| {
+        ConformanceError::Run(format!(
+            "the anchor could not be run (a spawnable `sh` is required): {panic}"
+        ))
+    })?
     .map_err(ConformanceError::Run)?;
 
     if !output.status.success() {

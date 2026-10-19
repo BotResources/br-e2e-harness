@@ -9,8 +9,8 @@ use br_test_harness::{FabricKvError, FabricTestNats};
 use br_util_nats_fabric::KvPrefix;
 use uuid::Uuid;
 
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
-use crate::prerequisite::contained;
 
 pub async fn read_users(nats: &FabricTestNats) -> Result<BTreeMap<Uuid, PublishedUser>> {
     guarded(users(nats)).await

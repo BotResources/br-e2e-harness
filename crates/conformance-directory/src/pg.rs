@@ -2,6 +2,7 @@ use br_test_harness::E2eDatabase;
 use br_util_directory::connect_pool;
 use sqlx::PgPool;
 
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 use crate::prerequisite;
 
@@ -13,7 +14,7 @@ pub struct ConsumerDb {
 impl ConsumerDb {
     pub async fn provision() -> Result<Self> {
         prerequisite::postgres().await?;
-        let db = prerequisite::contained(E2eDatabase::create(false, &[]))
+        let db = contained(E2eDatabase::create(false, &[]))
             .await
             .map_err(|e| {
                 ConformanceError::Postgres(format!("provision the throwaway database: {e}"))
