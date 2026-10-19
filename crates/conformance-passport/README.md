@@ -274,6 +274,28 @@ export PATH="$PWD/conformance-subjects/identity-passport:$PATH"
 cargo test -p conformance-passport --all-targets -- --ignored --test-threads=1
 ```
 
+## Run in CI
+
+A service in any language runs the battery without writing Rust, through the
+[`conformance-passport-cli`](../conformance-passport-cli/README.md) binary published on the
+`conformance-passport/v{version}` release (`conformance-passport-<version>-<target>.tar.gz`
+with its `.sha256`). The CLI spawns the service binary itself, so the job needs `nats-server`
+and the service binary, nothing else:
+
+```sh
+version=0.1.1
+asset="conformance-passport-${version}-x86_64-unknown-linux-musl.tar.gz"
+base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-passport/v${version}"
+curl -fsSLO "${base}/${asset}" && curl -fsSLO "${base}/${asset}.sha256"
+sha256sum -c "${asset}.sha256" && tar -xzf "${asset}"
+cargo build --release --locked
+./conformance-passport run --spawn target/release/my-service --format junit --output passport-conformance.xml
+```
+
+Exit code `0` is conformant, `1` non-conformant, `2` the run could not complete. There is no
+attach mode: P8 destroys the `PUBLISHED_LANGUAGE` bucket of the broker the battery owns.
+Rust services use `run_spawn` directly (see "Consuming service integration").
+
 ## Install
 
 A **dev-dependency**, pinned to a release tag. Keep each `br-rust-common` pin

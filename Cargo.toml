@@ -6,6 +6,7 @@ members = [
     "crates/conformance-identity",
     "crates/conformance-nats-fabric",
     "crates/conformance-passport",
+    "crates/conformance-passport-cli",
     "crates/conformance-scope",
     "crates/conformance-scope-cli",
     "crates/oidc-test-idp",

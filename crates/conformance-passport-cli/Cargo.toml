@@ -1,0 +1,24 @@
+[package]
+name = "conformance-passport-cli"
+version = "0.1.1"
+description = "Language-agnostic CLI for the BotResources bearer/PAT to Passport conformance battery"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "conformance-passport"
+path = "src/main.rs"
+
+[dependencies]
+conformance-passport = { path = "../conformance-passport", version = "0.1.1" }
+
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+assert_cmd = "2"

@@ -96,9 +96,12 @@ against *an* identity without depending on any project's private one.
 | Tool | Version | Consumed as | Gives you | Docs | Changelog |
 |---|---|---|---|---|---|
 | `conformance-scope-cli` (bin `conformance-scope`) | 0.1.0, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
+| `conformance-passport-cli` (bin `conformance-passport`) | 0.1.1, always `conformance-passport`'s | GitHub Release binary (asset of the release `conformance-passport/v{version}`) | Run the bearer/PAT to Passport conformance battery against any service binary, in any language, with no Rust to write | [README](crates/conformance-passport-cli/README.md) | [CHANGELOG](crates/conformance-passport-cli/CHANGELOG.md) |
 
 `conformance-scope-cli` is not a library of its own: it is versioned with
 `conformance-scope`, and its binaries ride that crate's release.
+
+`conformance-passport-cli` follows the same rule with `conformance-passport`.
 
 ## Distribution
 
@@ -118,6 +121,9 @@ depends on its kind:
 - **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
   release, the version being the one in that tag.
+- **CLI tool** (`conformance-passport-cli`) ships as **GitHub Release binaries**
+  (static musl-linux + macOS) attached to the `conformance-passport/v{version}`
+  release, next to the Go subject binary below.
 - **Go subject binary** (`conformance-passport`) ships as a **GitHub Release asset**
   `identity-passport-<os>-<arch>.tar.gz` with a sibling `.sha256` (linux and darwin,
   amd64 and arm64), attached to the `conformance-passport/v{version}` release.

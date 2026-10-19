@@ -106,6 +106,8 @@ jobs:
           echo "$RUNNER_TEMP/passport-bin" >> "$GITHUB_PATH"
       - name: passport conformance battery
         run: cargo test -p conformance-passport --all-targets --locked -- --ignored --test-threads=1
+      - name: passport conformance battery via the CLI binary
+        run: cargo test -p conformance-passport-cli --test cli --locked -- --ignored --test-threads=1
       - name: directory conformance battery
         run: cargo test -p conformance-directory --test conformance --locked -- --ignored --test-threads=1
 

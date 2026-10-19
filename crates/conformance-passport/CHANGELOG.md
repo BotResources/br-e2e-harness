@@ -28,6 +28,7 @@ form to decide whether a version ships.
 
 ### Added
 
+- The companion CLI `conformance-passport-cli` (binary `conformance-passport`) runs the battery against a service binary in any language and ships as release binaries of this library's tag; the README has a "Run in CI" section for it.
 - `ConformanceError::BinaryNotOnPath { name }`: a caller-supplied bare program name that is not on `PATH`.
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above, `SubjectBinaryUnavailable` is returned only by `locate_subject()` (`PATH`, cache, download).
 - `ConformanceError::BinaryNotExecutable { path }`: a caller-supplied binary path that is not an executable file.
