@@ -175,9 +175,18 @@ conformance-scope run \
 
 Both fixed-name handshake streams, `INTEGRATION_CMD` and `INTEGRATION_EVT`, must
 already exist. Attach checks them before anything else, never creates them, and
-exits `2` when either is missing. Attach runs `s1, s2` and the `declaration-content` assertion by default —
-the lifecycle-controlling scenarios (s3/s4/s6) cannot run against an
-already-booted service.
+exits `2` when either is missing. Attach runs `s1, s2` and the `declaration-content` assertion by default.
+s3, s4 and s6 depend on how the service was booted, so they are opt-in through
+`--scenarios` and hold only under their prerequisite:
+
+| Scenario | Prerequisite in attach mode |
+|---|---|
+| s3 | the service is still unconfirmed and re-publishes its declare within `--timeout`: raise `--timeout` above the service's own wait timeout |
+| s4 | `--reject`, and the service still awaiting acceptance |
+| s6 | the service was booted with scope declaration disabled |
+
+Without the prerequisite the check fails and its detail names it. A scenario is
+never refused for that reason: the CLI cannot know how the service was booted.
 
 ### Spawn — convenience, needs `nats-server` and `fabric-nats`
 
@@ -303,7 +312,9 @@ naming it; the manifest never ignores a field.
 - `1` — not conformant (a check failed or was skipped, or no check ran).
 - `2` — a usage / connection / I/O / prerequisite error (bad arguments, NATS
   unreachable, missing stream, unwritable output, a missing `nats-server`,
-  `fabric-nats`, an unreadable manifest, or a `--spawn` target that is not a file).
+  `fabric-nats`, an unreadable manifest, a `--spawn` target that is not a file, a
+  subject that exited at boot on each of five attempts, or `--spawn` combined with `--nats` or `--readyz`, which
+  would be ignored: the spawn battery runs against its own throwaway broker).
 
 ## Releasing
 

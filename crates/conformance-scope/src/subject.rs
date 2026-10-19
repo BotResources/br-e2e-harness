@@ -1,13 +1,13 @@
 use std::net::TcpListener;
 use std::path::Path;
+use std::process::ExitStatus;
 use std::time::Duration;
 
-use tokio::time::Instant;
-
-use br_test_harness::SpawnedProcess;
+use br_test_harness::{BootOutcome, SpawnedProcess};
 use reqwest::StatusCode;
 
 use crate::binary::child_path;
+use crate::error::{ConformanceError, Result};
 
 pub struct SubjectConfig {
     pub nats_url: String,
@@ -83,8 +83,7 @@ impl SubjectConfig {
 const BIND_ATTEMPTS: usize = 5;
 const BIND_SETTLE: Duration = Duration::from_millis(250);
 const BIND_LOOKOUT: Duration = Duration::from_secs(1);
-const LISTENING: &str = "http listening";
-const PORT_TAKEN: &str = "address already in use";
+const LOG_TAIL_LINES: usize = 20;
 
 pub struct Subject {
     process: SpawnedProcess,
@@ -93,33 +92,39 @@ pub struct Subject {
 }
 
 impl Subject {
-    pub async fn start(binary: &Path, config: &SubjectConfig) -> Self {
-        let mut subject = Self::spawn(binary, config);
-        for _ in 1..BIND_ATTEMPTS {
-            if !subject.lost_its_port().await {
-                break;
+    pub async fn start(binary: &Path, config: &SubjectConfig) -> Result<Self> {
+        let mut last_exit = None;
+        for _ in 0..BIND_ATTEMPTS {
+            let mut subject = Self::spawn(binary, config);
+            match subject.exited_at_boot().await {
+                None => return Ok(subject),
+                Some(status) => {
+                    let log_tail = tail(&subject.logs(), LOG_TAIL_LINES);
+                    subject.shutdown().await;
+                    last_exit = Some((status, log_tail));
+                }
             }
-            subject = Self::spawn(binary, config);
         }
-        subject
+        let (status, log_tail) = last_exit.expect("at least one attempt was made");
+        Err(ConformanceError::SubjectExitedAtBoot {
+            binary: binary.display().to_string(),
+            attempts: BIND_ATTEMPTS,
+            status: status.to_string(),
+            log_tail,
+        })
     }
 
-    async fn lost_its_port(&self) -> bool {
-        let started = Instant::now();
-        let mut listening_since = None;
-        loop {
-            let logs = self.process.logs();
-            if logs.contains(PORT_TAKEN) {
-                return true;
-            }
-            if logs.contains(LISTENING) {
-                listening_since.get_or_insert_with(Instant::now);
-            }
-            let settled = listening_since.is_some_and(|since| since.elapsed() >= BIND_SETTLE);
-            if settled || started.elapsed() >= BIND_LOOKOUT {
-                return false;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
+    async fn exited_at_boot(&mut self) -> Option<ExitStatus> {
+        let livez = format!("{}/livez", self.base_url);
+        match self.process.await_boot(&livez, BIND_LOOKOUT).await {
+            BootOutcome::Exited(status) => return Some(status),
+            BootOutcome::TimedOut => return None,
+            BootOutcome::Ready => {}
+        }
+        tokio::time::sleep(BIND_SETTLE).await;
+        match self.process.await_boot(&livez, Duration::ZERO).await {
+            BootOutcome::Exited(status) => Some(status),
+            BootOutcome::Ready | BootOutcome::TimedOut => None,
         }
     }
 
@@ -214,4 +219,21 @@ fn free_loopback_addr() -> String {
         .expect("reserved listener has no address")
         .port();
     format!("127.0.0.1:{port}")
+}
+
+fn tail(logs: &str, lines: usize) -> String {
+    let all: Vec<&str> = logs.lines().collect();
+    all[all.len().saturating_sub(lines)..].join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tail;
+
+    #[test]
+    fn the_tail_keeps_the_last_lines_only() {
+        assert_eq!(tail("a\nb\nc\nd", 2), "c\nd");
+        assert_eq!(tail("a\nb", 5), "a\nb");
+        assert_eq!(tail("", 5), "");
+    }
 }

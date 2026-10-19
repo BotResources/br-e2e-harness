@@ -138,6 +138,33 @@ fn spawn_of_a_binary_that_is_not_a_file_exits_2_naming_it() {
 }
 
 #[test]
+fn spawn_next_to_attach_endpoints_exits_2_naming_the_flag() {
+    for (flag, value) in [
+        ("--nats", "nats://127.0.0.1:1"),
+        ("--readyz", "http://127.0.0.1:1/readyz"),
+    ] {
+        let stderr = stderr_of(
+            cli()
+                .args([
+                    "run",
+                    "--spawn",
+                    "/nonexistent/service-binary",
+                    flag,
+                    value,
+                    "--service-key",
+                    SERVICE_KEY,
+                    "--scopes",
+                    SCOPES,
+                ])
+                .assert()
+                .code(2),
+        );
+        assert!(stderr.contains(flag), "{flag}: {stderr}");
+        assert!(stderr.contains("--spawn"), "{flag}: {stderr}");
+    }
+}
+
+#[test]
 fn spawn_without_nats_server_on_path_exits_2_naming_it() {
     let empty_path = scratch("empty-path");
     let stderr = stderr_of(
@@ -291,19 +318,27 @@ struct AttachedService {
 
 impl AttachedService {
     async fn boot() -> Self {
+        Self::boot_with(|config| config).await
+    }
+
+    async fn boot_with(adjust: impl FnOnce(SubjectConfig) -> SubjectConfig) -> Self {
         let harness = ScopeHarness::start().await.expect("harness");
         let nats_url = harness.nats_url();
-        let config = SubjectConfig::new(
-            &nats_url,
-            harness.stream_name(),
-            harness.event_stream_name(),
-            SERVICE_KEY,
-        )
-        .scope_keys(SCOPES)
-        .label_key("label.notifier")
-        .description_key("desc.notifier")
-        .wait_timeout("500ms");
-        let subject = Subject::start(harness.binary(), &config).await;
+        let config = adjust(
+            SubjectConfig::new(
+                &nats_url,
+                harness.stream_name(),
+                harness.event_stream_name(),
+                SERVICE_KEY,
+            )
+            .scope_keys(SCOPES)
+            .label_key("label.notifier")
+            .description_key("desc.notifier")
+            .wait_timeout("500ms"),
+        );
+        let subject = Subject::start(harness.binary(), &config)
+            .await
+            .expect("start the subject");
         let readyz_url = format!("{}/readyz", subject.base_url());
         Self {
             harness,
@@ -649,4 +684,82 @@ async fn a_manifest_listing_a_scope_twice_exits_2_saying_it_is_listed_twice() {
 
     assert!(stderr.contains("my_service:read"), "{stderr}");
     assert!(stderr.contains("listed twice"), "{stderr}");
+}
+
+async fn attach_scenario(
+    service: &AttachedService,
+    scenario: &str,
+    timeout: &str,
+) -> std::process::Output {
+    let args: Vec<String> = [
+        "run",
+        "--nats",
+        &service.nats_url,
+        "--readyz",
+        &service.readyz_url,
+        "--service-key",
+        SERVICE_KEY,
+        "--scopes",
+        SCOPES,
+        "--scenarios",
+        scenario,
+        "--timeout",
+        timeout,
+    ]
+    .iter()
+    .map(|arg| (*arg).to_string())
+    .collect();
+    tokio::task::spawn_blocking(move || {
+        cli()
+            .args(&args)
+            .output()
+            .expect("run the conformance-scope executable")
+    })
+    .await
+    .expect("cli task")
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
+async fn attach_s3_is_conformant_for_a_service_that_republishes_within_the_timeout() {
+    let service = AttachedService::boot().await;
+    let output = attach_scenario(&service, "s3", "10s").await;
+    service.shutdown().await;
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
+async fn attach_s6_is_conformant_for_a_service_booted_with_declaration_disabled() {
+    let service = AttachedService::boot_with(|config| config.enabled(false)).await;
+    let output = attach_scenario(&service, "s6", "10s").await;
+    service.shutdown().await;
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
+async fn attach_s6_against_a_service_booted_with_declaration_enabled_names_the_prerequisite() {
+    let service = AttachedService::boot().await;
+    let output = attach_scenario(&service, "s6", "2s").await;
+    service.shutdown().await;
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[FAIL] s6"), "{stdout}");
+    assert!(
+        stdout.contains("booted with scope declaration disabled"),
+        "{stdout}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
+async fn attach_s3_against_a_service_that_waits_longer_than_the_timeout_names_the_prerequisite() {
+    let service = AttachedService::boot_with(|config| config.wait_timeout("30s")).await;
+    let output = attach_scenario(&service, "s3", "2s").await;
+    service.shutdown().await;
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[FAIL] s3"), "{stdout}");
+    assert!(stdout.contains("--timeout above"), "{stdout}");
 }

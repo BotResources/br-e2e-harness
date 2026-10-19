@@ -149,7 +149,7 @@ async fn start_subject(harness: &ScopeHarness, config: &SubjectConfig) -> Result
                 "starting the subject binary {}: {e}",
                 harness.binary().display()
             ))
-        })
+        })?
 }
 
 async fn run_lifecycle_scenario(

@@ -36,7 +36,8 @@ pub struct RunArgs {
     #[arg(
         long,
         value_name = "PATH",
-        help = "Spawn this subject binary against a throwaway nats-server (needs `nats-server` on PATH)."
+        conflicts_with_all = ["nats", "readyz"],
+        help = "Spawn this subject binary against a throwaway nats-server (needs `nats-server` on PATH). Excludes --nats and --readyz."
     )]
     pub spawn: Option<PathBuf>,
 
@@ -96,7 +97,7 @@ pub struct RunArgs {
     #[arg(
         long,
         value_name = "CSV",
-        help = "Scenarios to run, e.g. s1,s2. Defaults: attach => s1,s2,declaration-content; spawn => s1..s6 + content."
+        help = "Scenarios to run, e.g. s1,s2. Defaults: attach => s1,s2,declaration-content; spawn => s1..s6 + content. Attach s3 needs --timeout above the service's wait timeout and an unconfirmed declare; attach s6 needs a service booted with declaration disabled; attach s4 needs --reject."
     )]
     pub scenarios: Option<String>,
 

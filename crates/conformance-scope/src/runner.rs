@@ -6,7 +6,7 @@ use crate::capture::DeclareCapture;
 use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
-use crate::outcome::ConformanceReport;
+use crate::outcome::{CheckOutcome, CheckStatus, ConformanceReport};
 use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
@@ -77,11 +77,23 @@ pub async fn run_attach(
 
     let mut report = ConformanceReport::default();
     for scenario in scenarios {
-        report.push(run_scenario(*scenario, &ctx).await);
+        let outcome = run_scenario(*scenario, &ctx).await;
+        report.push(name_the_attach_prerequisite(*scenario, outcome));
     }
     capture.stop().await;
     nats.shutdown().await;
     Ok(report)
+}
+
+fn name_the_attach_prerequisite(scenario: Scenario, mut outcome: CheckOutcome) -> CheckOutcome {
+    if outcome.status != CheckStatus::Fail {
+        return outcome;
+    }
+    if let Some(prerequisite) = scenario.attach_prerequisite() {
+        let detail = outcome.detail.take().unwrap_or_default();
+        outcome.detail = Some(format!("{detail}; in attach mode, {prerequisite}"));
+    }
+    outcome
 }
 
 fn missing_streams() -> ConformanceError {

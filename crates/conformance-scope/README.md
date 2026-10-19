@@ -161,8 +161,12 @@ the dependencies are obtained.
   them before anything else, never creates them, and returns a typed
   `Jetstream` error when either is missing. A `readyz_url` that is not an
   `http` or `https` URL with a host is `InvalidInput`. Default scenarios are `s1, s2` + the
-  `declaration-content` assertion (the lifecycle-controlling scenarios
-  s3/s4/s6 cannot run against an already-booted service).
+  `declaration-content` assertion. s3, s4 and s6 run when selected and hold under
+  their prerequisite: s3 needs a service that is still unconfirmed and re-publishes
+  within `timeout` (a `timeout` above the service's own wait timeout), s4 needs
+  `AcceptorBehavior::Reject` and a service still awaiting acceptance, s6 needs a
+  service booted with scope declaration disabled. A failed s3 or s6 names its
+  prerequisite in its `detail`.
 
 `ReadyzProbe::new(url)` is the readyz role decoupled from any spawned process —
 spawn passes the spawned subject's `base_url()`, attach passes the external URL.
@@ -317,7 +321,8 @@ conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", pa
 | S4 reads the `/readyz` **body** before asserting no more declares | "It went quiet" alone is satisfiable by a reject that was never delivered. The subject writes `scope declaration rejected: <code>` into its `/readyz` body, so matching that body (the code is the real `ScopeDeclarationError` Display, not a literal) positively proves the reject was received and processed — only then is the tight `== count_at_reject` (no `+1` slack) sound. |
 | In **spawn** mode s4 always rejects, regardless of the global accept/reject flag | s4 is intrinsically a rejection scenario while s2/s3/s5 are acceptance scenarios, so the full `s1..s6` battery cannot share one global behavior. In spawn mode each lifecycle scenario drives its own fresh subject, so s4 synthesizes a rejection (the global `--reject` reason if given, else a default derived from the first expected scope key) while the others accept. The global flag customizes s4's reason; it never lets s4 silently skip. |
 | s2/s3/s5 accept unconditionally inside the check, ignoring `AcceptorBehavior` | These are acceptance scenarios; only `rejection_stops_readiness` reads `behavior`. The global `--reject` is meaningful for the rejection scenario (and in attach mode when the user selects it against their live service), not for the acceptance ones. |
-| Attach default omits s3/s4/s6 | Those require controlling the subject's config and lifecycle (withholding to force re-publish, rejecting, disabled mode) — impossible against an already-running attached service. Attach proves the observable contract: a well-formed declare, its content, and the acceptance gating. |
+| Attach default omits s3/s4/s6 | Those depend on how the attached service was booted (a wait timeout shorter than `timeout` for s3, a pending declare and a rejection for s4, declaration disabled for s6), which the battery cannot know. Attach proves the observable contract by default: a well-formed declare, its content, and the acceptance gating; the other three run when selected and name their prerequisite when they fail. |
+| `Subject::start` restarts a subject that exits before its `/livez` answers | The signal does not depend on the subject's language or log text. A `/livez` answer is re-checked 250 ms later because a subject that lost its port can be answered by the process that holds it. After five exits it returns `SubjectExitedAtBoot`, a setup error, never a dead subject to judge. |
 | Attach mode assumes a **fresh** handshake stream per run (no leftover `declare`) | The capture replays from the start of the stream (`DeliverPolicy::All`) and takes `capture.first()` as the boot declare / correlation_id oracle; a stale cross-run declare would make the oracle pick a dead correlation_id. |
 
 ## License

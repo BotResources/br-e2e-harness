@@ -20,6 +20,16 @@ pub enum ConformanceError {
          built from; use attach mode against a service that owns its streams otherwise"
     )]
     FabricProvisionUnavailable { detail: String },
+    #[error(
+        "the subject binary {binary} exited before its /livez answered, on each of {attempts} \
+         attempts on a fresh port (last exit status: {status}); tail of its log:\n{log_tail}"
+    )]
+    SubjectExitedAtBoot {
+        binary: String,
+        attempts: usize,
+        status: String,
+        log_tail: String,
+    },
     #[error("deriving a contract subject failed: {0}")]
     Coord(#[from] CoordError),
     #[error("nats jetstream error: {0}")]

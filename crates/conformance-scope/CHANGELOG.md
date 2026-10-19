@@ -30,7 +30,9 @@ form to decide whether a version ships.
 - A `--platform-only` style per-scope entry that names no expected scope was dropped silently and a duplicate key kept the first value, so a typo (`my_service:admn=true`) read as a pass. `ExpectedDeclaration::try_from_parts` returns `InvalidInput` naming the stray or duplicated key. Pinned by `tests/refused_input.rs`.
 - A service key or scope keys that no `ScopeDeclaration` can hold (invalid `ScopeKey`, not owned by the expected service, listed twice) were judged as a `declaration-content` failure of the service. `run_attach` and `run_spawn` now return `InvalidInput` naming the key before any I/O (spawn: before the binary is looked at). Pinned by `tests/refused_input.rs`; its `mixed()` fixture now uses scopes owned by its service.
 
-- The tests and `run_spawn` picked the subject's port by binding and releasing a free port, then the subject bound it itself; another process could take it in between ("address already in use", a 10-second timeout that read as a failed S3/S4). They now start the subject with `Subject::start`, which starts it again on a new port, up to five attempts, when its log shows the port was taken. Pinned by `tests/port_race.rs`.
+- `Subject::start` returns `Result<Subject>`: after the fifth attempt in which the subject exits before its `/livez` answers it returns the new `ConformanceError::SubjectExitedAtBoot { binary, attempts, status, log_tail }` instead of the dead subject, so `run_spawn` fails with a setup error (exit `2` in the CLI) and no longer reports failed S1 or declaration-content checks against a process that never ran.
+- Attach mode: the README and the `--scenarios` help said s3, s4 and s6 "cannot run against an already-booted service", yet `run_attach` runs any selected scenario. The documentation now states the real prerequisites: s3 holds for a service that is still unconfirmed and re-publishes within `--timeout`, s6 for a service booted with declaration disabled, s4 needs `--reject`; a failed s3 or s6 in `run_attach` names its prerequisite in its `detail` (`Scenario::attach_prerequisite`). Pinned by `tests/attach_lifecycle.rs`.
+- The tests and `run_spawn` picked the subject's port by binding and releasing a free port, then the subject bound it itself; another process could take it in between ("address already in use", a 10-second timeout that read as a failed S3/S4). They now start the subject with `Subject::start`, which starts it again on a new port, up to five attempts, when the subject process exits before its `/livez` answers (`br-test-harness` `SpawnedProcess::await_boot`, whatever language the subject is written in and whatever it logs). After a `/livez` answer it waits 250 ms and checks again that the process is alive, because a subject that lost its port can be answered by the process that holds it; a subject whose `/livez` does not answer within one second is taken as started (best effort: a subject that loses its port later than that is not restarted). Pinned by `tests/port_race.rs` (the Go text, the capitalised operating-system text, an exit that says nothing, a silent subject that keeps running) and, through the CLI, by `conformance-scope-cli/tests/port_race.rs`.
 
 ### Removed
 
@@ -39,7 +41,8 @@ form to decide whether a version ships.
 
 ### Added
 
-- `Subject::start`: `Subject::spawn` with a new port when the subject lost its port to another process (`spawn` is unchanged).
+- `Subject::start`: `Subject::spawn` with a new port when the subject process exited before its `/livez` answered, up to five attempts (`spawn` is unchanged).
+- `ConformanceError::SubjectExitedAtBoot { binary, attempts, status, log_tail }` and `Scenario::attach_prerequisite`.
 - `ExpectedDeclaration::try_from_parts` (fallible form of `from_parts`, which is unchanged) and `ExpectedDeclaration::validate`.
 - `ConformanceError::FabricProvisionUnavailable { detail }`: the typed error of a spawn-mode prerequisite (`fabric-nats` binary, provisioning manifest) that is missing.
 - `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary, detail }`: the lookup above.
@@ -49,7 +52,7 @@ form to decide whether a version ships.
 ### Changed
 
 - `Subject::spawn` hands the subject a `PATH` led by the directory of its binary, through the child's environment.
-- Pins `br-test-harness/v0.1.2`; the `br-rust-common` pins stay on their latest tags (`0.1.0`).
+- Pins `br-test-harness/v0.1.2` with its `http-client` feature (for `SpawnedProcess::await_boot`); the `br-rust-common` pins stay on their latest tags (`0.1.0`).
 - New dependencies `futures-util` (default features off, `std`) to contain harness panics and `sha2` to verify the release asset.
 - `conformance-scope-cli` moves with this crate to 0.1.1.
 

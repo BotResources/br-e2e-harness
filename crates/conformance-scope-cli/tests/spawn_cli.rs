@@ -69,7 +69,9 @@ async fn attach_run_flags_wrong_scopes_with_a_diff() {
     .label_key("label.notifier")
     .description_key("desc.notifier")
     .wait_timeout("500ms");
-    let subject = Subject::start(harness.binary(), &config).await;
+    let subject = Subject::start(harness.binary(), &config)
+        .await
+        .expect("start the subject");
     let readyz_url = format!("{}/readyz", subject.base_url());
 
     let output = tokio::task::spawn_blocking(move || {

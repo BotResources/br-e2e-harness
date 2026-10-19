@@ -15,6 +15,7 @@ br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", 
 
 br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2", default-features = false, features = [
     "nats-fabric",
+    "http-client",
 ] }
 
 tokio = { workspace = true }

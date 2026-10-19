@@ -47,6 +47,19 @@ impl Scenario {
         }
     }
 
+    pub fn attach_prerequisite(self) -> Option<&'static str> {
+        match self {
+            Scenario::RepublishesSameCorrelationId => Some(
+                "s3 holds only for a service that is still unconfirmed and re-publishes its declare \
+                 within --timeout: raise --timeout above the service's own wait timeout",
+            ),
+            Scenario::DisabledModeReadyWithoutDeclare => {
+                Some("s6 holds only for a service that was booted with scope declaration disabled")
+            }
+            _ => None,
+        }
+    }
+
     pub fn requires_subject_lifecycle(self) -> bool {
         !matches!(
             self,
