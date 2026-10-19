@@ -97,7 +97,7 @@ pub struct RunArgs {
     #[arg(
         long,
         value_name = "CSV",
-        help = "Scenarios to run, e.g. s1,s2. Defaults: attach => s1,s2,declaration-content; spawn => s1..s6 + content. Attach s3 needs --timeout above the service's wait timeout and an unconfirmed declare; attach s6 needs a service booted with declaration disabled; attach s4 needs --reject."
+        help = "Scenarios to run, e.g. s1,s2. Defaults: attach => s1,s2,declaration-content; spawn => s1..s6 + content. Attach s3 needs --timeout above the service's wait timeout and an unconfirmed declare; attach s6 needs a service booted with declaration disabled; attach s4 needs --reject and a service still awaiting acceptance."
     )]
     pub scenarios: Option<String>,
 

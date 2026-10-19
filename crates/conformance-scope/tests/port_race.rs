@@ -47,16 +47,21 @@ fn attempts(dir: &std::path::Path) -> usize {
 async fn recovers_from_a_lost_port(name: &str, text: &str) {
     let (dir, binary) = stand_in(name, &losing_the_port_twice_then_keeping_it(text));
 
+    let began = std::time::Instant::now();
     let started = Subject::start(&binary, &config()).await;
+    let elapsed = began.elapsed();
     let tries = attempts(&dir);
-    if let Ok(subject) = started {
-        subject.shutdown().await;
-    } else {
-        panic!("the subject must be started again on another port");
-    }
+    let logs = match started {
+        Ok(subject) => {
+            let logs = subject.logs();
+            subject.shutdown().await;
+            logs
+        }
+        Err(error) => panic!("the subject must be started again on another port: {error}"),
+    };
     std::fs::remove_dir_all(&dir).ok();
 
-    assert_eq!(tries, 3);
+    assert_eq!(tries, 3, "after {elapsed:?}; logs:\n{logs}");
 }
 
 #[tokio::test(flavor = "current_thread")]

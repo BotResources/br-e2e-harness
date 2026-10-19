@@ -165,8 +165,8 @@ the dependencies are obtained.
   their prerequisite: s3 needs a service that is still unconfirmed and re-publishes
   within `timeout` (a `timeout` above the service's own wait timeout), s4 needs
   `AcceptorBehavior::Reject` and a service still awaiting acceptance, s6 needs a
-  service booted with scope declaration disabled. A failed s3 or s6 names its
-  prerequisite in its `detail`.
+  service booted with scope declaration disabled. A failed s3, s4 or s6 names its
+  prerequisite in its `detail`; s4 with `AcceptorBehavior::Accept` is `skipped`.
 
 `ReadyzProbe::new(url)` is the readyz role decoupled from any spawned process —
 spawn passes the spawned subject's `base_url()`, attach passes the external URL.

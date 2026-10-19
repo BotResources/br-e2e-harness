@@ -36,19 +36,30 @@ async fn attach(
     scenario: Scenario,
     timeout: Duration,
 ) -> ConformanceReport {
+    attach_as(
+        harness,
+        subject,
+        scenario,
+        timeout,
+        &AcceptorBehavior::Accept,
+    )
+    .await
+}
+
+async fn attach_as(
+    harness: &ScopeHarness,
+    subject: &Subject,
+    scenario: Scenario,
+    timeout: Duration,
+    behavior: &AcceptorBehavior,
+) -> ConformanceReport {
     let target = AttachTarget {
         nats_url: harness.nats_url(),
         readyz_url: format!("{}/readyz", subject.base_url()),
     };
-    run_attach(
-        &target,
-        &expected(),
-        &AcceptorBehavior::Accept,
-        &[scenario],
-        timeout,
-    )
-    .await
-    .expect("attach run")
+    run_attach(&target, &expected(), behavior, &[scenario], timeout)
+        .await
+        .expect("attach run")
 }
 
 async fn booted(
@@ -158,4 +169,40 @@ async fn s6_in_attach_mode_names_its_prerequisite_for_a_service_booted_with_decl
         detail.contains("booted with scope declaration disabled"),
         "{detail}"
     );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server`, `fabric-nats` and the `scope-service` binary on PATH"]
+async fn s4_in_attach_mode_names_its_prerequisite_for_a_service_that_is_already_accepted() {
+    let (harness, subject) = booted(|h| config(h, "500ms")).await;
+    let accepted = attach(
+        &harness,
+        &subject,
+        Scenario::ReadinessGated,
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(
+        only_outcome(&accepted).status,
+        CheckStatus::Pass,
+        "{accepted:?}"
+    );
+    let rejection = AcceptorBehavior::reject(None, "notifier:read").expect("rejection");
+
+    let report = attach_as(
+        &harness,
+        &subject,
+        Scenario::RejectionStopsReadiness,
+        Duration::from_secs(2),
+        &rejection,
+    )
+    .await;
+
+    subject.shutdown().await;
+    harness.shutdown().await;
+    let outcome = only_outcome(&report);
+    assert_eq!(outcome.status, CheckStatus::Fail, "{report:?}");
+    let detail = outcome.detail.clone().unwrap_or_default();
+    assert!(detail.contains("in attach mode"), "{detail}");
+    assert!(detail.contains("still awaiting acceptance"), "{detail}");
 }

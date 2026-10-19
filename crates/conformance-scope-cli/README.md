@@ -185,8 +185,9 @@ s3, s4 and s6 depend on how the service was booted, so they are opt-in through
 | s4 | `--reject`, and the service still awaiting acceptance |
 | s6 | the service was booted with scope declaration disabled |
 
-Without the prerequisite the check fails and its detail names it. A scenario is
-never refused for that reason: the CLI cannot know how the service was booted.
+Without the prerequisite s3, s4 (with `--reject`) and s6 fail and their detail names it;
+s4 without `--reject` is reported `skipped`. A scenario is never refused for that
+reason: the CLI cannot know how the service was booted.
 
 ### Spawn — convenience, needs `nats-server` and `fabric-nats`
 

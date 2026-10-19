@@ -53,6 +53,10 @@ impl Scenario {
                 "s3 holds only for a service that is still unconfirmed and re-publishes its declare \
                  within --timeout: raise --timeout above the service's own wait timeout",
             ),
+            Scenario::RejectionStopsReadiness => Some(
+                "s4 holds only with a rejecting acceptor (--reject) for a service that is still \
+                 awaiting acceptance",
+            ),
             Scenario::DisabledModeReadyWithoutDeclare => {
                 Some("s6 holds only for a service that was booted with scope declaration disabled")
             }
