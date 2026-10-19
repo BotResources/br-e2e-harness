@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag of a conformance library (conformance-directory, conformance-identity or conformance-passport) whose Go binaries to build
+        description: Release tag of a conformance library (conformance-passport) whose Go binaries to build
         required: true
         type: string
 
@@ -42,8 +42,6 @@ jobs:
           set -euo pipefail
           LIBRARY="${RELEASE_TAG%%/*}"
           case "${LIBRARY}" in
-            conformance-directory) BIN=identity-directory ;;
-            conformance-identity) BIN=identity-acceptor ;;
             conformance-passport) BIN=identity-passport ;;
             *)
               echo "::error::${LIBRARY} publishes no Go binary through this workflow"

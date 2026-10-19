@@ -14,7 +14,7 @@ tag="${crate}/v${version}"
 case "$crate" in
     oidc-test-idp) workflow="cd.yml" ;;
     conformance-scope) workflow="release-cli.yml" ;;
-    conformance-directory | conformance-identity | conformance-passport) workflow="release-anchor.yml" ;;
+    conformance-passport) workflow="release-anchor.yml" ;;
     *)
         echo "${crate}: no artifact beyond the tag and the release."
         exit 0

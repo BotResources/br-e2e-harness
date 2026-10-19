@@ -118,13 +118,10 @@ depends on its kind:
 - **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
   release, the version being the one in that tag.
-- **Go anchor and subject binaries** (`conformance-directory`,
-  `conformance-identity`, `conformance-passport`) ship as **GitHub Release assets**
-  `identity-directory-<os>-<arch>.tar.gz`, `identity-acceptor-<os>-<arch>.tar.gz`
-  and `identity-passport-<os>-<arch>.tar.gz`, each with a sibling `.sha256` (linux
-  and darwin, amd64 and arm64), attached to the `conformance-directory/v{version}`,
-  `conformance-identity/v{version}` and `conformance-passport/v{version}` release.
-  The crates never compile: each looks for its binary on `PATH`, then in its
+- **Go subject binary** (`conformance-passport`) ships as a **GitHub Release asset**
+  `identity-passport-<os>-<arch>.tar.gz` with a sibling `.sha256` (linux and darwin,
+  amd64 and arm64), attached to the `conformance-passport/v{version}` release.
+  The crate never compiles: it looks for its binary on `PATH`, then in its
   cache directory, then downloads and verifies the asset of its own release into
   that cache.
 
@@ -151,7 +148,7 @@ only after the siblings it pins have released.
    the GitHub release and records the API listing and dependencies. It then
    starts `cd` (the `oidc-test-idp` image), `release-cli` (the
    `conformance-scope` binaries) or `release-anchor` (the
-   `conformance-directory`, `conformance-identity` and `conformance-passport` Go binaries) with the new tag.
+   `conformance-passport` Go binary) with the new tag.
 
 ## Why
 

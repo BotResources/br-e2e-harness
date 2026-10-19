@@ -183,13 +183,14 @@ and is asserted separately, not via the report.
 
 ## Subject env contract
 
-`run_spawn` (and `Subject::spawn`) wire the subject with exactly:
+`run_spawn` (and `Subject::spawn`) wire the subject with:
 
 | Var | Meaning |
 |---|---|
 | `NATS_URL` | the throwaway broker URL |
 | `PORT` | the loopback port to bind; `base_url = http://127.0.0.1:$PORT` |
 | `BEARER_SEAL_KEY` | `seal_key_b64` read straight out of the vector file |
+| `PATH` | the parent `PATH` led by the directory of the subject binary, when that directory is absolute |
 
 Nothing else is required of the subject — it serves, it never seals.
 
@@ -206,7 +207,7 @@ fails loud if the bucket is missing, so the boot order is fixed:
 2. Provision the `PUBLISHED_LANGUAGE` bucket in-process via
    `with_published_language()` (no external binary, so the gate is a zero-ceremony
    drop-in) **before** the subject.
-3. Spawn the subject with `NATS_URL` / `PORT` / `BEARER_SEAL_KEY`.
+3. Spawn the subject with `NATS_URL` / `PORT` / `BEARER_SEAL_KEY` / `PATH`.
 4. `wait_until` `/readyz` == 200.
 5. Run the scenarios (P8 last), each seeding the committed vector bytes it needs at
    the vector's own KV key, then shut down.
