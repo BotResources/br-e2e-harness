@@ -32,7 +32,7 @@ form to decide whether a version ships.
 
 ### Added
 
-- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary: String, detail: String }`: the lookup above.
+- `locate_subject()` and `SUBJECT_BINARY` (the module `binary`) and `ConformanceError::SubjectBinaryUnavailable { binary: String, detail: String }`: the lookup above. `ConformanceError` is an exhaustive enum, so this new variant, like the two removed ones, breaks an exhaustive `match` in a consumer; `cargo semver-checks` reports the removals and the added variant as breaking, which the owner ordered for this patch and which CI exempts for conformance batteries.
 - `DecodedConfirmation`, `CapturedConfirmation::decode_confirmation`, `ConfirmationCapture::confirmation_decoded_for`, `expected_step_confirmations`, `oracle::confirmation_code`, `oracle::outcome_to_confirmation`: the verdict together with the service the confirmation names.
 - `ConfirmationCapture::try_confirmation_for` and `ConfirmationCapture::try_count`: the non-panicking forms of `confirmation_for` and `count`.
 
