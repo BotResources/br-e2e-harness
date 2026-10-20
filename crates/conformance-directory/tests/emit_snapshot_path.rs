@@ -1,5 +1,7 @@
 #[path = "common/child.rs"]
 mod child;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -9,15 +11,6 @@ use conformance_directory::{ANCHOR_BINARY, emit_snapshot};
 
 const CHILD: &str = "CONFORMANCE_DIRECTORY_EMIT_SNAPSHOT_PATH_CHILD";
 const TEST: &str = "a_relative_anchor_never_searches_the_current_directory_and_an_absolute_one_leads_the_child_path";
-
-fn scratch(label: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "emit-snapshot-{label}-{}",
-        uuid::Uuid::now_v7().simple()
-    ));
-    std::fs::create_dir_all(&dir).expect("create a scratch directory");
-    dir
-}
 
 fn install(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
@@ -53,9 +46,9 @@ async fn a_relative_anchor_never_searches_the_current_directory_and_an_absolute_
         return;
     }
 
-    let cwd = scratch("cwd");
-    let on_path = scratch("on-path");
-    let absolute_dir = scratch("absolute");
+    let cwd = scratch::scratch("emit-snapshot-cwd");
+    let on_path = scratch::scratch("emit-snapshot-on-path");
+    let absolute_dir = scratch::scratch("emit-snapshot-absolute");
 
     install(&cwd, ANCHOR_BINARY, &emit_marker("cwd"));
     install(&on_path, ANCHOR_BINARY, &emit_marker("path"));
@@ -64,17 +57,14 @@ async fn a_relative_anchor_never_searches_the_current_directory_and_an_absolute_
     std::fs::create_dir_all(cwd.join("bin")).expect("create bin");
     install(&cwd.join("bin"), ANCHOR_BINARY, &emit_marker("relative"));
 
-    let path = std::env::join_paths([on_path.as_path(), Path::new("/usr/bin"), Path::new("/bin")])
+    let path = std::env::join_paths([&*on_path, Path::new("/usr/bin"), Path::new("/bin")])
         .expect("join PATH");
     let output = Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", TEST, "--nocapture"])
-        .current_dir(&cwd)
+        .current_dir(&*cwd)
         .env(CHILD, absolute.as_os_str())
         .env("PATH", path)
         .output()
         .expect("run the child test");
-    for dir in [cwd, on_path, absolute_dir] {
-        std::fs::remove_dir_all(dir).ok();
-    }
     child::assert_child_ran_one_passing_test(&output);
 }

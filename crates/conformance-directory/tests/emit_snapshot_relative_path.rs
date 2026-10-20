@@ -1,8 +1,10 @@
 #[path = "common/child.rs"]
 mod child;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use conformance_directory::{ANCHOR_BINARY, ConformanceError, emit_snapshot};
@@ -10,15 +12,6 @@ use conformance_directory::{ANCHOR_BINARY, ConformanceError, emit_snapshot};
 const MODE: &str = "CONFORMANCE_DIRECTORY_RELATIVE_PATH_MODE";
 const TEST: &str = "a_bare_anchor_name_is_resolved_on_absolute_path_entries_only";
 const RAN: &str = "ran-from-cwd";
-
-fn scratch(label: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "relative-path-{label}-{}",
-        uuid::Uuid::now_v7().simple()
-    ));
-    std::fs::create_dir_all(&dir).expect("create a scratch directory");
-    dir
-}
 
 fn install(dir: &Path, name: &str, body: &str) {
     let path = dir.join(name);
@@ -50,8 +43,8 @@ fn join(entries: &[&Path]) -> std::ffi::OsString {
 #[tokio::test(flavor = "current_thread")]
 async fn a_bare_anchor_name_is_resolved_on_absolute_path_entries_only() {
     let Some(mode) = std::env::var_os(MODE) else {
-        let cwd = scratch("cwd");
-        let on_path = scratch("on-path");
+        let cwd = scratch::scratch("relative-path-cwd");
+        let on_path = scratch::scratch("relative-path-on-path");
         install(
             &cwd,
             ANCHOR_BINARY,
@@ -73,9 +66,6 @@ async fn a_bare_anchor_name_is_resolved_on_absolute_path_entries_only() {
             !cwd.join(RAN).exists(),
             "the anchor in the current directory must never run"
         );
-        for dir in [cwd, on_path] {
-            std::fs::remove_dir_all(dir).ok();
-        }
         return;
     };
 

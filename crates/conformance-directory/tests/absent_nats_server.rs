@@ -1,6 +1,8 @@
 #[path = "common/child.rs"]
 mod child;
 mod common;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::fmt::Debug;
 use std::process::Command;
@@ -28,16 +30,13 @@ fn assert_names_the_missing_server<T: Debug>(battery: &str, result: Result<T>) {
 #[tokio::test(flavor = "current_thread")]
 async fn every_battery_returns_a_typed_error_when_nats_server_is_not_on_path() {
     if std::env::var_os(CHILD).is_none() {
-        let empty = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("no-binaries-{}", uuid::Uuid::now_v7().simple()));
-        std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
+        let empty = scratch::scratch("no-binaries");
         let output = Command::new(std::env::current_exe().expect("test executable"))
             .args(["--exact", TEST, "--nocapture"])
             .env(CHILD, "1")
-            .env("PATH", &empty)
+            .env("PATH", &*empty)
             .output()
             .expect("run the child test");
-        std::fs::remove_dir_all(&empty).ok();
         child::assert_child_ran_one_passing_test(&output);
         return;
     }

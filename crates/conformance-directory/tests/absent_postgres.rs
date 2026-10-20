@@ -1,6 +1,8 @@
 #[path = "common/child.rs"]
 mod child;
 mod common;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::fmt::Debug;
 use std::os::unix::fs::PermissionsExt;
@@ -27,8 +29,7 @@ fn system_path_after(stubs: &std::path::Path) -> std::ffi::OsString {
 
 fn run_in_isolated_copy() {
     let exe = std::env::current_exe().expect("test executable");
-    let isolated = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("no-postgres-{}", uuid::Uuid::now_v7().simple()));
+    let isolated = scratch::scratch("no-postgres");
     let deps = isolated.join("deps");
     let stubs = isolated.join("stubs");
     std::fs::create_dir_all(&deps).expect("create the isolated target directory");
@@ -46,7 +47,6 @@ fn run_in_isolated_copy() {
         .env("DATABASE_URL", UNREACHABLE)
         .output()
         .expect("run the isolated copy");
-    std::fs::remove_dir_all(&isolated).ok();
     child::assert_child_ran_one_passing_test(&output);
 }
 

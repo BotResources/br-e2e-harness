@@ -216,7 +216,6 @@ async fn a_verified_archive_installs_an_executable_into_the_cache() {
         [ANCHOR_BINARY],
         "no staging directory is left behind"
     );
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -237,7 +236,6 @@ async fn a_redirect_to_an_allowed_host_is_followed() {
     ]);
     let installed = download_into(&cache, routes).await.unwrap();
     assert!(is_executable_file(&installed));
-    std::fs::remove_dir_all(dir).ok();
 }
 
 const PROXIED: &str = "CONFORMANCE_DIRECTORY_PROXIED_DOWNLOAD";
@@ -273,7 +271,6 @@ fn a_download_ignores_the_system_proxy() {
                 .await
                 .unwrap();
             assert!(is_executable_file(&installed));
-            std::fs::remove_dir_all(dir).ok();
         });
 }
 
@@ -286,7 +283,6 @@ async fn a_digest_mismatch_installs_nothing() {
     let message = detail(download_into(&cache, routes_for(archive, wrong)).await);
     assert!(message.contains("SHA-256 mismatch"), "{message}");
     assert!(!cache.join(ANCHOR_BINARY).exists());
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -304,7 +300,6 @@ async fn a_redirect_to_a_foreign_host_is_refused() {
         "{message}"
     );
     assert!(!cache.join(ANCHOR_BINARY).exists());
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -317,7 +312,6 @@ async fn an_announced_size_over_the_cap_is_refused() {
     )]);
     let message = detail(download_into(&cache, routes).await);
     assert!(message.contains("announces more than"), "{message}");
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -330,7 +324,6 @@ async fn a_streamed_size_over_the_cap_is_refused() {
     )]);
     let message = detail(download_into(&cache, routes).await);
     assert!(message.contains("streams more than"), "{message}");
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -338,7 +331,6 @@ async fn a_missing_asset_is_a_typed_failure() {
     let dir = scratch("install-404");
     let message = detail(download_into(&dir.join("cache"), HashMap::new()).await);
     assert!(message.contains("404"), "{message}");
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -352,7 +344,6 @@ async fn an_archive_whose_entry_is_a_symlink_is_refused() {
         detail(download_into(&cache, routes_for(archive.clone(), checksum(&archive))).await);
     assert!(message.contains("not a regular file"), "{message}");
     assert!(!cache.join(ANCHOR_BINARY).exists());
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[tokio::test]
@@ -376,7 +367,6 @@ async fn an_archive_without_the_binary_is_refused() {
     let message =
         detail(download_into(&cache, routes_for(archive.clone(), checksum(&archive))).await);
     assert!(message.contains("tar could not extract"), "{message}");
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[test]
@@ -391,7 +381,6 @@ fn tar_is_resolved_on_absolute_path_entries_only() {
     assert!(tar_program(None).is_err());
     assert!(tar_program(Some(std::ffi::OsStr::new("."))).is_err());
     assert!(tar_program(Some(std::ffi::OsStr::new("bin:../tar"))).is_err());
-    std::fs::remove_dir_all(dir).ok();
 }
 
 const NO_SH_ARCHIVE: &str = "CONFORMANCE_DIRECTORY_EXTRACT_WITHOUT_SH_ARCHIVE";
@@ -418,7 +407,6 @@ fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {
             .env("PATH", &*tar_only)
             .output()
             .unwrap();
-        std::fs::remove_dir_all(dir).ok();
         assert_child_ran_one_passing_test(&output);
         return;
     };
@@ -437,6 +425,5 @@ fn an_extraction_that_cannot_spawn_its_guard_is_a_typed_failure() {
             assert!(message.contains("tar could not be run"), "{message}");
             assert!(message.contains("sh"), "{message}");
             assert!(!cache.join(ANCHOR_BINARY).exists());
-            std::fs::remove_dir_all(dir).ok();
         });
 }

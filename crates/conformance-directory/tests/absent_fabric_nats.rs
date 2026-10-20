@@ -1,6 +1,8 @@
 #[path = "common/child.rs"]
 mod child;
 mod common;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::fmt::Debug;
 use std::process::Command;
@@ -15,8 +17,7 @@ const REAL_INFRA: &str = "batteries_without_the_fabric_nats_cli_are_a_typed_erro
 
 fn run_in_isolated_copy(test: &str, ignored: bool) {
     let exe = std::env::current_exe().expect("test executable");
-    let isolated = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("no-fabric-nats-{}", uuid::Uuid::now_v7().simple()));
+    let isolated = scratch::scratch("no-fabric-nats");
     let deps = isolated.join("deps");
     std::fs::create_dir_all(&deps).expect("create the isolated target directory");
     let copy = deps.join(exe.file_name().expect("test executable name"));
@@ -31,7 +32,6 @@ fn run_in_isolated_copy(test: &str, ignored: bool) {
         .env(ISOLATED, "1")
         .output()
         .expect("run the isolated copy");
-    std::fs::remove_dir_all(&isolated).ok();
     child::assert_child_ran_one_passing_test(&output);
 }
 

@@ -23,6 +23,7 @@ form to decide whether a version ships.
 - `ConformanceError::NonConformantWire` no longer says the value is "Go-frozen": it is also raised for a read-back of the bucket.
 - The crate's own Postgres admin URL lookup (the probe and the unreachable-Postgres path) reads `E2E_PG_ADMIN_URL`, then `DATABASE_URL`, from the environment and falls back to the nearest `.env` file by reading it only; it never writes the process environment. `br-test-harness` 0.1.2 still loads the nearest `.env` into the process (`dotenvy::dotenv()`) when a battery creates its throwaway database, so a battery that reaches that step is not read-only.
 - `read_users`, `read_groups` and `read_meta` return `ConformanceError::Jetstream` naming `PUBLISHED_LANGUAGE` when the NATS broker is dead or unreachable; they no longer panic (after about 10 s) from the bucket probe, `pl_list`, `pl_get_meta` or `pl_reader` of `br-test-harness`. `DirectoryHarness::start` contains the same bucket probe after provisioning and shuts the throwaway NATS down on failure. The panic guard is `catch_unwind` on the calling task (`futures-util`, `std` feature only), so it can wrap code that borrows the NATS handle.
+- The crate's own tests remove their scratch directories through one drop guard, also when an assertion fails; a failing test no longer leaves `scratch-*` directories under the target directory. The anchor `vet` and Go golden tests now run in CI before the anchor is built.
 
 ### Added
 

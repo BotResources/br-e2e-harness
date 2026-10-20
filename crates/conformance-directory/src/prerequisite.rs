@@ -113,7 +113,6 @@ mod tests {
             Err(ConformanceError::Jetstream(detail)) => assert!(detail.contains("fabric-nats")),
             other => panic!("expected a typed fabric-nats error: {other:?}"),
         }
-        std::fs::remove_dir_all(target).ok();
     }
 
     #[test]
@@ -126,7 +125,6 @@ mod tests {
             fabric_nats_beside(&exe).unwrap(),
             target.join("fabric-nats")
         );
-        std::fs::remove_dir_all(target).ok();
     }
 
     #[test]

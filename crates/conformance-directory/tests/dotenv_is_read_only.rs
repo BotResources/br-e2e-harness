@@ -1,5 +1,7 @@
 #[path = "common/child.rs"]
 mod child;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::process::Command;
 
@@ -12,9 +14,7 @@ const UNREACHABLE: &str = "postgresql://nobody@127.0.0.1:1/postgres";
 
 fn run_in_directory_holding_a_dotenv_file() {
     let exe = std::env::current_exe().expect("test executable");
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("dotenv-{}", uuid::Uuid::now_v7().simple()));
-    std::fs::create_dir_all(&dir).expect("create the directory holding the .env file");
+    let dir = scratch::scratch("dotenv");
     std::fs::write(
         dir.join(".env"),
         format!("E2E_PG_ADMIN_URL={UNREACHABLE}\nDATABASE_URL={UNREACHABLE}\n"),
@@ -23,13 +23,12 @@ fn run_in_directory_holding_a_dotenv_file() {
 
     let output = Command::new(&exe)
         .args(["--exact", TEST, "--nocapture"])
-        .current_dir(&dir)
+        .current_dir(&*dir)
         .env(ISOLATED, "1")
         .env_remove("E2E_PG_ADMIN_URL")
         .env_remove("DATABASE_URL")
         .output()
         .expect("run the child test");
-    std::fs::remove_dir_all(&dir).ok();
     child::assert_child_ran_one_passing_test(&output);
 }
 

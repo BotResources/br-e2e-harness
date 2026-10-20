@@ -1,6 +1,8 @@
 #[path = "common/child.rs"]
 mod child;
 mod common;
+#[path = "common/scratch.rs"]
+mod scratch;
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -22,8 +24,7 @@ fn write_executable(path: &Path, body: &[u8]) {
 
 fn run_without_sh(test: &str) {
     let exe = std::env::current_exe().expect("test executable");
-    let isolated = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("no-sh-{}", uuid::Uuid::now_v7().simple()));
+    let isolated = scratch::scratch("no-sh");
     let deps = isolated.join("deps");
     let stub_bin = isolated.join("stub-bin");
     std::fs::create_dir_all(&deps).expect("create the isolated target directory");
@@ -40,7 +41,6 @@ fn run_without_sh(test: &str) {
         .env("PATH", &stub_bin)
         .output()
         .expect("run the isolated copy");
-    std::fs::remove_dir_all(&isolated).ok();
     child::assert_child_ran_one_passing_test(&output);
 }
 
