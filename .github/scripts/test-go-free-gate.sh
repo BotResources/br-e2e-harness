@@ -75,6 +75,9 @@ plant temp_subject tests/t.rs 'fn d() { let _ = std::env::temp_dir().join("subje
 plant tempdir_subject tests/t.rs 'fn d() { let _ = tempdir(); }'
 plant tempfile_subject src/lib.rs 'fn d() { let _ = tempfile::tempfile(); }'
 plant temp_in_build_script build.rs 'fn main() { let _ = std::env::temp_dir(); }'
+plant temp_in_toml Cargo.toml 'dir = "temp_dir"'
+plant temp_in_sh src/stage.sh 'cp subject "$(mktemp -d)/tempdir"'
+plant temp_in_yml src/ci.yml 'run: cp subject $RUNNER_TEMP/tempfile'
 
 echo "== a crate that is not listed is not judged"
 expect 0 "an unlisted crate with a Go build passes" gate "clean"

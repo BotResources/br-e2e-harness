@@ -5,6 +5,7 @@ members = [
     "crates/conformance-directory",
     "crates/conformance-identity",
     "crates/conformance-nats-fabric",
+    "crates/conformance-nats-fabric-cli",
     "crates/conformance-passport",
     "crates/conformance-passport-cli",
     "crates/conformance-scope",
