@@ -102,7 +102,7 @@ impl ExpectedDeclaration {
             ));
         }
 
-        let observed: Vec<ExpectedScope> = declared
+        let mut observed: Vec<ExpectedScope> = declared
             .scopes()
             .iter()
             .map(|s| ExpectedScope {
@@ -110,11 +110,14 @@ impl ExpectedDeclaration {
                 platform_only: s.platform_only,
             })
             .collect();
+        observed.sort_by(|a, b| a.key.cmp(&b.key));
+        let mut expected = self.scopes.clone();
+        expected.sort_by(|a, b| a.key.cmp(&b.key));
 
-        if observed != self.scopes {
+        if observed != expected {
             return Err(format!(
                 "scope set mismatch:\n  expected: {}\n  observed: {}",
-                render_scopes(&self.scopes),
+                render_scopes(&expected),
                 render_scopes(&observed)
             ));
         }
@@ -208,4 +211,84 @@ fn render_scopes(scopes: &[ExpectedScope]) -> String {
         .map(|s| format!("{}(platform_only={})", s.key, s.platform_only))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use br_core_scope::{ScopeSpec, ServiceManifest};
+
+    use super::*;
+
+    fn declaration(scopes: &[(&str, bool)]) -> ScopeDeclaration {
+        let manifest = ServiceManifest::new(ServiceKey::new("notifier").unwrap(), "label", "desc");
+        let specs = scopes
+            .iter()
+            .map(|(key, platform_only)| {
+                ScopeSpec::new(ScopeKey::new(*key).unwrap(), "l", "d", *platform_only)
+            })
+            .collect();
+        ScopeDeclaration::new(manifest, specs).unwrap()
+    }
+
+    fn expected(scopes: &[(&str, bool)]) -> ExpectedDeclaration {
+        ExpectedDeclaration::new(
+            "notifier",
+            scopes
+                .iter()
+                .map(|(key, platform_only)| ExpectedScope {
+                    key: (*key).to_string(),
+                    platform_only: *platform_only,
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn same_scopes_in_another_order_match() {
+        let declared = declaration(&[("notifier:read", false), ("notifier:admin", true)]);
+        let expected = expected(&[("notifier:admin", true), ("notifier:read", false)]);
+        assert_eq!(expected.assert_matches(&declared), Ok(()));
+    }
+
+    #[test]
+    fn missing_scope_mismatches() {
+        let declared = declaration(&[("notifier:read", false)]);
+        let expected = expected(&[("notifier:admin", false), ("notifier:read", false)]);
+        let error = expected.assert_matches(&declared).unwrap_err();
+        assert!(error.contains("scope set mismatch"), "{error}");
+    }
+
+    #[test]
+    fn extra_scope_mismatches() {
+        let declared = declaration(&[("notifier:admin", false), ("notifier:read", false)]);
+        let expected = expected(&[("notifier:read", false)]);
+        let error = expected.assert_matches(&declared).unwrap_err();
+        assert!(error.contains("scope set mismatch"), "{error}");
+    }
+
+    #[test]
+    fn platform_only_difference_mismatches_in_any_order() {
+        let declared = declaration(&[("notifier:read", false), ("notifier:admin", false)]);
+        let expected = expected(&[("notifier:admin", true), ("notifier:read", false)]);
+        let error = expected.assert_matches(&declared).unwrap_err();
+        assert!(
+            error.contains("notifier:admin(platform_only=true)"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn mismatch_renders_both_lists_sorted() {
+        let declared = declaration(&[("notifier:read", false), ("notifier:admin", false)]);
+        let expected = expected(&[("notifier:write", false), ("notifier:admin", false)]);
+        let error = expected.assert_matches(&declared).unwrap_err();
+        assert!(
+            error.contains("expected: notifier:admin(platform_only=false), notifier:write"),
+            "{error}"
+        );
+        assert!(
+            error.contains("observed: notifier:admin(platform_only=false), notifier:read"),
+            "{error}"
+        );
+    }
 }

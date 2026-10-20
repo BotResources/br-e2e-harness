@@ -14,6 +14,8 @@ form to decide whether a version ships.
 
 ### Fixed
 
+- The order of `--scopes` no longer matters: a service that declares the expected scopes in another order is conformant (`conformance-scope` 0.1.1 compares them as a set). Pinned by `tests/exit_codes.rs`.
+- The Run in CI recipe starts `nats-server` on a fresh store (`-sd "$(mktemp -d)"`); on a reused store a second run read a dead correlation id and reported a conformant service as non-conformant.
 - The aggregate `conformant` verdict of a report is true only when it holds at least one service report and every service report is conformant; with `conformance-scope` 0.1.1 a service report with no outcome or with a skipped check is no longer conformant. A run that selects no scenario is a usage error (`conformance-scope` returns `InvalidInput`).
 - `run --attach` against a broker missing either handshake stream (`INTEGRATION_CMD` or `INTEGRATION_EVT`) or an unreachable broker exits `2` with a typed error and no longer creates the streams; it no longer reports that setup error as a non-conformant service (exit `1`).
 - A malformed `--readyz` URL (no `http`/`https` scheme or no host) exits `2` naming the URL instead of exiting `1` with a failed S2. Pinned by `tests/exit_codes.rs`.

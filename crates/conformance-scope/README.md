@@ -128,8 +128,9 @@ call these — there is no second copy of the protocol logic.
   `platform_only` is modeled **per scope** (faithful to `br-core-scope`'s
   `ScopeSpec.platform_only`); `PlatformOnly::All(bool)` is a convenience that
   expands one bool over every scope, `PlatformOnly::PerScope` carries a
-  `key → bool` map. `assert_matches` renders a wire-faithful expected-vs-observed
-  diff on mismatch. Spawn mode drives the subject with one flag for every scope, so
+  `key → bool` map. `assert_matches` compares the scopes as a set (the order of the
+  expected list and of the declaration does not matter) and renders a wire-faithful
+  expected-vs-observed diff, sorted by scope key, on mismatch. Spawn mode drives the subject with one flag for every scope, so
   `run_spawn` returns `InvalidInput` for an expectation whose scopes carry different flags.
   `ExpectedDeclaration::try_from_parts` refuses a per-scope key that names no listed scope
   or appears twice; `ExpectedDeclaration::validate` (called first by `run_attach` and
@@ -239,7 +240,8 @@ fixed streams `INTEGRATION_CMD` (`integration.cmd.>`) and `INTEGRATION_EVT`
 (`integration.evt.>`) already created (attach mode never creates them; a missing
 stream exits `2`), and the service booted on that NATS, awaiting acceptance of
 its declaration. The streams must be fresh: a leftover declare from an earlier
-run makes the battery read a dead correlation id.
+run makes the battery read a dead correlation id, so the recipe starts
+`nats-server` on a new store directory (`-sd "$(mktemp -d)"`) at every run.
 
 ```yaml
 - name: scope-declaration conformance
@@ -263,7 +265,7 @@ run makes the battery read a dead correlation id.
     curl -fsSL -o "$tools/natscli.zip" "https://github.com/nats-io/natscli/releases/download/v${NATSCLI_VERSION}/${natscli}.zip"
     unzip -q -o "$tools/natscli.zip" -d "$tools"
 
-    "$tools/$nats_server/nats-server" -js -a 127.0.0.1 -p 4222 -m 8222 &
+    "$tools/$nats_server/nats-server" -js -sd "$(mktemp -d)" -a 127.0.0.1 -p 4222 -m 8222 &
     until curl -fs http://127.0.0.1:8222/healthz >/dev/null; do sleep 0.2; done
     nats="$tools/$natscli/nats --server nats://127.0.0.1:4222"
     $nats stream add INTEGRATION_CMD --subjects 'integration.cmd.>' --defaults

@@ -99,7 +99,8 @@ fixed streams `INTEGRATION_CMD` (`integration.cmd.>`) and `INTEGRATION_EVT`
 (`integration.evt.>`) already created (attach mode never creates them; a missing
 stream exits `2`), and the service booted on that NATS, awaiting acceptance of
 its declaration. The streams must be fresh: a leftover declare from an earlier
-run makes the battery read a dead correlation id.
+run makes the battery read a dead correlation id, so the recipe starts
+`nats-server` on a new store directory (`-sd "$(mktemp -d)"`) at every run.
 
 ```yaml
 - name: scope-declaration conformance
@@ -123,7 +124,7 @@ run makes the battery read a dead correlation id.
     curl -fsSL -o "$tools/natscli.zip" "https://github.com/nats-io/natscli/releases/download/v${NATSCLI_VERSION}/${natscli}.zip"
     unzip -q -o "$tools/natscli.zip" -d "$tools"
 
-    "$tools/$nats_server/nats-server" -js -a 127.0.0.1 -p 4222 -m 8222 &
+    "$tools/$nats_server/nats-server" -js -sd "$(mktemp -d)" -a 127.0.0.1 -p 4222 -m 8222 &
     until curl -fs http://127.0.0.1:8222/healthz >/dev/null; do sleep 0.2; done
     nats="$tools/$natscli/nats --server nats://127.0.0.1:4222"
     $nats stream add INTEGRATION_CMD --subjects 'integration.cmd.>' --defaults
@@ -216,6 +217,7 @@ HTTP wiring the CLI sets per scenario.
 ## Expected declaration
 
 The assertion is `--service-key` + `--scopes` (CSV) + `--platform-only`.
+The order of the scopes in `--scopes` does not matter: the declaration is compared as a set.
 `platform_only` is per scope in the domain, so `--platform-only` accepts either a
 single bool applied to every scope, or a per-scope `key=bool` CSV:
 

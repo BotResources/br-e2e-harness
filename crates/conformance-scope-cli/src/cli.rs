@@ -66,7 +66,7 @@ pub struct RunArgs {
         long,
         value_name = "CSV",
         default_value = "",
-        help = "Expected scope keys, comma-separated, e.g. example_service:read,example_service:admin."
+        help = "Expected scope keys, comma-separated, e.g. example_service:read,example_service:admin. The order does not matter."
     )]
     pub scopes: String,
 

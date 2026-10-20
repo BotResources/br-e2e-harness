@@ -404,6 +404,33 @@ async fn attach_run_against_a_conformant_service_exits_0_with_a_passing_json_rep
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
+async fn attach_run_is_conformant_whatever_the_order_of_the_scopes_flag() {
+    let service = AttachedService::boot().await;
+    let (nats_url, readyz_url) = (service.nats_url.clone(), service.readyz_url.clone());
+
+    tokio::task::spawn_blocking(move || {
+        cli()
+            .args([
+                "run",
+                "--nats",
+                &nats_url,
+                "--readyz",
+                &readyz_url,
+                "--service-key",
+                SERVICE_KEY,
+                "--scopes",
+                "notifier:admin,notifier:read",
+            ])
+            .assert()
+            .success();
+    })
+    .await
+    .expect("cli task");
+    service.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + the `scope-service` binary on PATH"]
 async fn manifest_run_aggregates_an_attached_service_into_the_output_file() {
     let service = AttachedService::boot().await;
     let dir = scratch("manifest-attach");
