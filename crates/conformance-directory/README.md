@@ -160,7 +160,7 @@ When none of the three succeeds, the call returns
 `PATH`, or build it yourself with `make -C conformance-subjects/identity-directory build`
 and put `conformance-subjects/identity-directory` on `PATH`.
 
-CI also runs `.github/scripts/go-free-gate.sh`, which fails the build if this crate holds, in a `*.rs`, `*.toml`, `*.sh` or `*.yml` file, `go` or `make` followed by a build verb, a program literal `"go"` or `"make"`, `ensure_go_available`, or, in a `*.rs` file, `temp_dir`, `tempdir` or `tempfile`.
+CI also runs `.github/scripts/go-free-gate.sh`, which fails the build if this crate holds, in a `*.rs`, `*.toml`, `*.sh` or `*.yml` file, `go` or `make` followed by a build verb, a program literal `"go"` or `"make"`, the name of the removed Go-toolchain probe, or, in a `*.rs` file, `temp_dir`, `tempdir` or `tempfile`.
 
 ## Running it
 
