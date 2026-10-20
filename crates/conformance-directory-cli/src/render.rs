@@ -4,7 +4,7 @@ use crate::report::{OutcomeView, SubjectReport};
 
 pub fn human(report: &SubjectReport) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "subject: {}", report.subject);
+    let _ = writeln!(out, "subject: {}", visible(&report.subject));
     for outcome in &report.outcomes {
         human_outcome(&mut out, outcome);
     }
@@ -22,20 +22,33 @@ pub fn human(report: &SubjectReport) -> String {
 }
 
 fn human_outcome(out: &mut String, outcome: &OutcomeView) {
-    let _ = writeln!(out, "  [{}] {}", outcome.glyph, outcome.check);
+    let _ = writeln!(out, "  [{}] {}", outcome.glyph, visible(&outcome.check));
     if outcome.status == "fail" {
-        let _ = writeln!(out, "      expected: {}", outcome.expected);
-        let _ = writeln!(out, "      observed: {}", outcome.observed);
+        let _ = writeln!(out, "      expected: {}", visible(&outcome.expected));
+        let _ = writeln!(out, "      observed: {}", visible(&outcome.observed));
         if let Some(detail) = &outcome.detail {
             for line in detail.lines() {
-                let _ = writeln!(out, "      {line}");
+                let _ = writeln!(out, "      {}", visible(line));
             }
         }
     } else if outcome.status == "skipped"
         && let Some(detail) = &outcome.detail
     {
-        let _ = writeln!(out, "      {detail}");
+        let _ = writeln!(out, "      {}", visible(detail));
     }
+}
+
+fn visible(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_control() && c != '\n' && c != '\t' {
+                char::REPLACEMENT_CHARACTER
+            } else {
+                c
+            }
+        })
+        .collect()
 }
 
 pub fn json(report: &SubjectReport) -> String {
@@ -101,12 +114,26 @@ fn junit_case(out: &mut String, subject: &str, outcome: &OutcomeView) {
 }
 
 fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c if is_xml_char(c) => out.push(c),
+            _ => out.push(char::REPLACEMENT_CHARACTER),
+        }
+    }
+    out
+}
+
+fn is_xml_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+    )
 }
 
 #[cfg(test)]
@@ -150,6 +177,40 @@ mod tests {
             text.contains("<testsuite name=\"my-svc\" tests=\"2\" failures=\"1\""),
             "{text}"
         );
+    }
+
+    fn hostile_report() -> SubjectReport {
+        let mut report = ConformanceReport::default();
+        report.push(CheckOutcome::fail(
+            CheckId::PublisherFloor,
+            "ex\u{1b}pected\u{0}",
+            "obs\u{1b}[31mer\u{0}ved\u{FFFE}",
+            "de\u{1b}tail\u{0}\nsecond\tline",
+        ));
+        SubjectReport::from_report("sub\u{1b}ject", &report)
+    }
+
+    fn forbidden(c: char) -> bool {
+        !is_xml_char(c)
+    }
+
+    #[test]
+    fn junit_holds_no_char_forbidden_by_xml() {
+        let text = junit(&hostile_report());
+        assert!(!text.chars().any(forbidden), "{text:?}");
+        assert!(text.contains('\u{FFFD}'), "{text:?}");
+    }
+
+    #[test]
+    fn human_holds_no_control_char_but_newline_and_tab() {
+        let text = human(&hostile_report());
+        assert!(
+            !text
+                .chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t'),
+            "{text:?}"
+        );
+        assert!(text.contains("second\tline"), "{text:?}");
     }
 
     #[test]

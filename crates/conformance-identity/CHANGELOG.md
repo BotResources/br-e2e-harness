@@ -31,6 +31,7 @@ form to decide whether a version ships.
 
 - The public items of the `build` module, removed with the module: `build_subject`, `ensure_go_available`, `subject_dir` and `run_dead_grammar_guard`, and the root re-exports of the first three. The crate no longer runs the Go toolchain or `make`, and no Go-toolchain check remains in it; the dead-grammar guard, the vet and the Go tests of the subject run in CI.
 - `ConformanceError::GoUnavailable` and `ConformanceError::Build`.
+- The embedded-manifest fallback of `provision` is pinned by tests through `readable_manifest_from`: an absent source tree writes the embedded manifest to the cache directory and returns that path, an absent source tree without a cache directory is a typed `ConformanceError::Jetstream` naming the missing cache directory, and a present source tree wins.
 
 ### Added
 

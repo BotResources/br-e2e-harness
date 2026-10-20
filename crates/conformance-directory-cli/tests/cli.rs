@@ -87,6 +87,10 @@ fn help_states_there_is_no_service_to_spawn_or_attach() {
     let top = cli().arg("--help").assert().success();
     let top = String::from_utf8(top.get_output().stdout.clone()).expect("utf8 help");
     assert!(top.contains("no spawn or attach mode"), "{top}");
+    assert!(
+        top.contains("nearest `.env` found by walking up from the working directory"),
+        "{top}"
+    );
     let run = cli().args(["run", "--help"]).assert().success();
     let run = String::from_utf8(run.get_output().stdout.clone()).expect("utf8 help");
     assert!(run.contains("--anchor-binary"), "{run}");

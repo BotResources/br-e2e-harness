@@ -31,14 +31,25 @@ pub async fn provision(nats_url: &str, manifest: &str) -> Result<()> {
 }
 
 fn readable_manifest(name: &str) -> Result<PathBuf> {
-    let source_tree = manifest_path(name);
+    readable_manifest_from(
+        manifest_path(name),
+        cache_dir_from(|var| std::env::var_os(var)),
+        name,
+    )
+}
+
+fn readable_manifest_from(
+    source_tree: PathBuf,
+    cache: Option<PathBuf>,
+    name: &str,
+) -> Result<PathBuf> {
     if source_tree.is_file() {
         return Ok(source_tree);
     }
     let Some((_, content)) = EMBEDDED_MANIFESTS.iter().find(|(known, _)| *known == name) else {
         return Ok(source_tree);
     };
-    let cache = cache_dir_from(|var| std::env::var_os(var)).ok_or_else(|| {
+    let cache = cache.ok_or_else(|| {
         ConformanceError::Jetstream(
             "no cache directory to hold the provisioning manifest: XDG_CACHE_HOME and HOME are \
              not set to an absolute path"
@@ -131,5 +142,47 @@ mod tests {
             readable_manifest("other.toml").unwrap(),
             manifest_path("other.toml")
         );
+    }
+
+    #[test]
+    fn an_absent_source_tree_writes_the_embedded_manifest_to_the_cache() {
+        let cache = scratch("manifest-fallback");
+        let absent = cache.join("no-source-tree").join("published_language.toml");
+        let path =
+            readable_manifest_from(absent, Some(cache.to_path_buf()), "published_language.toml")
+                .unwrap();
+        assert_eq!(
+            path,
+            cache.join("manifests").join("published_language.toml")
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            EMBEDDED_MANIFESTS[0].1
+        );
+    }
+
+    #[test]
+    fn an_absent_source_tree_without_a_cache_is_a_typed_error() {
+        let absent = scratch("manifest-no-cache").join("published_language.toml");
+        match readable_manifest_from(absent, None, "published_language.toml") {
+            Err(ConformanceError::Jetstream(detail)) => {
+                assert!(detail.contains("no cache directory"), "{detail}");
+            }
+            other => panic!("expected a typed error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_present_source_tree_wins_over_the_cache() {
+        let cache = scratch("manifest-source-wins");
+        let source = manifest_path("published_language.toml");
+        let path = readable_manifest_from(
+            source.clone(),
+            Some(cache.to_path_buf()),
+            "published_language.toml",
+        )
+        .unwrap();
+        assert_eq!(path, source);
+        assert!(!cache.join("manifests").exists());
     }
 }

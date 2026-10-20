@@ -19,3 +19,8 @@ form to decide whether a version ships.
 - There is no spawn or attach mode: the battery drives the `br-util-directory` publisher and consumer kit and the frozen wire, and has no service binary to start. The consumer checks C1..C6 need a Postgres, read from `E2E_PG_ADMIN_URL` or `DATABASE_URL`; W1..W6 need only the anchor.
 - Exit codes: 0 conformant, 1 non-conformant (a check failed or was skipped), 2 for an error that stopped the run (unknown check, bad flag, an anchor that is missing or cannot run, `fabric-nats` not beside the executable, `nats-server` not on `PATH`, no reachable Postgres). A panic inside the run is contained and reported as one `error:` line with exit 2. A report that cannot be written (closed or full stdout, unwritable `--output`) is one `error:` line with exit 2; the panic hook is restored once the run ends.
 - It depends on `conformance-directory` through a workspace path dependency, not a tag pin. The binary holds no protocol logic: the code-to-check mapping and the run order live in the battery crate (`parse_checks`, `run_battery`, `ALL_CHECKS`).
+
+### Fixed
+
+- The JUnit and human reports stay well-formed whatever the text under judgment holds: a character that XML 1.0 forbids (C0 controls other than tab, line feed and carriage return, U+FFFE, U+FFFF) is written as U+FFFD in the JUnit file, and a control character other than newline and tab is written as U+FFFD in the human report. Before, a service answering with an escape character made the JUnit file unparsable, so the report was lost exactly when a non-conformant service was judged.
+- The Postgres admin URL is documented as it behaves: the environment first, then the nearest `.env` found by walking up from the working directory (README and `--help`).

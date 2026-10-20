@@ -13,7 +13,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
         There is no spawn or attach mode: the battery tests the kit and the frozen wire, not a\n\
         service binary. w1..w6 need nothing but the anchor. p1..p2 need `nats-server` on PATH and the\n\
         `fabric-nats` binary beside this executable. c1..c6 also need a Postgres whose admin URL\n\
-        is in E2E_PG_ADMIN_URL or DATABASE_URL.",
+        is in E2E_PG_ADMIN_URL or DATABASE_URL, read from the environment first, then from the\n\
+        nearest `.env` found by walking up from the working directory.",
     version
 )]
 pub struct Cli {
