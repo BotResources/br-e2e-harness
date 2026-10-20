@@ -12,7 +12,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::binary::{
-    ANCHOR_BINARY, find_in_path, locate_anchor, path_with_directory_first, unavailable,
+    ANCHOR_BINARY, find_in_path, is_executable_file, locate_anchor, path_with_directory_first,
+    unavailable,
 };
 use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
@@ -112,6 +113,16 @@ pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
         }
         _ => binary.to_path_buf(),
     };
+    if !is_executable_file(&program) {
+        return Err(unavailable(
+            ANCHOR_BINARY,
+            &format!(
+                "{} is not an executable file; put the binary on PATH, or build it from \
+                 conformance-subjects/identity-directory outside the tests",
+                program.display()
+            ),
+        ));
+    }
     let path = match program.parent().filter(|dir| dir.is_absolute()) {
         Some(directory) => Some(path_with_directory_first(directory, inherited.as_deref())?),
         None => None,

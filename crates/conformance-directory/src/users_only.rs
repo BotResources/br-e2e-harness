@@ -12,6 +12,7 @@ use crate::outcome::{CheckId, CheckOutcome};
 use crate::pg::ConsumerDb;
 use crate::publish_fixture::{publish_added_user, publish_snapshot};
 use crate::source::AnchorSource;
+use crate::watch_task::WatchTask;
 
 pub async fn users_only_narrows_projection(
     snapshot: &DirectorySnapshotWire,
@@ -82,7 +83,7 @@ async fn users_only_inner(
 
     let watcher =
         DirectoryProjector::with_config(harness.fabric().clone(), db.pool().clone(), config);
-    let watch_task = tokio::spawn(async move { watcher.watch().await });
+    let watch_task = WatchTask::spawn(async move { watcher.watch().await });
 
     let live_id = Uuid::now_v7();
     let live_user = PublishedUser::new(
@@ -96,7 +97,7 @@ async fn users_only_inner(
 
     let live_projected = poll_user_row(db, live_id, Duration::from_secs(5)).await?;
 
-    if let Some(joined) = abort_watch(watch_task).await {
+    if let Some(joined) = watch_task.stop().await {
         return Ok(CheckOutcome::fail(
             id,
             expected,
@@ -143,18 +144,6 @@ async fn poll_user_row(db: &ConsumerDb, user_id: Uuid, deadline: Duration) -> Re
             return Ok(false);
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
-
-async fn abort_watch(
-    task: tokio::task::JoinHandle<std::result::Result<(), br_util_directory::DirectoryError>>,
-) -> Option<String> {
-    task.abort();
-    match task.await {
-        Ok(Ok(())) => None,
-        Ok(Err(e)) => Some(e.to_string()),
-        Err(joined) if joined.is_cancelled() => None,
-        Err(joined) => Some(joined.to_string()),
     }
 }
 

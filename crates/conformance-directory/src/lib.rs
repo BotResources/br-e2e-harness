@@ -21,6 +21,7 @@ mod test_scratch;
 #[cfg(test)]
 mod test_snapshot;
 pub mod users_only;
+mod watch_task;
 pub mod wire;
 
 pub use anchor::{DirectorySnapshotWire, KvEntry, emit_snapshot, locate_and_emit};
