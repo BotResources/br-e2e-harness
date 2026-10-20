@@ -3,7 +3,9 @@ resolver = "3"
 members = [
     "crates/br-test-harness",
     "crates/conformance-directory",
+    "crates/conformance-directory-cli",
     "crates/conformance-identity",
+    "crates/conformance-identity-cli",
     "crates/conformance-nats-fabric",
     "crates/conformance-passport",
     "crates/conformance-passport-cli",

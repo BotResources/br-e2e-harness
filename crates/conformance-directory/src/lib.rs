@@ -1,4 +1,5 @@
 pub mod anchor;
+pub mod battery;
 pub mod binary;
 mod check;
 pub mod consumer;
@@ -25,6 +26,7 @@ mod watch_task;
 pub mod wire;
 
 pub use anchor::{DirectorySnapshotWire, KvEntry, emit_snapshot, locate_and_emit};
+pub use battery::{ALL_CHECKS, parse_checks, run_battery};
 pub use binary::{ANCHOR_BINARY, locate_anchor};
 pub use consumer::{consumer_reads_groups, consumer_reads_users};
 pub use error::{ConformanceError, Result};

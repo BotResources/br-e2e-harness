@@ -1,0 +1,25 @@
+[package]
+name = "conformance-identity-cli"
+version = "0.1.1"
+description = "Language-agnostic CLI for the BotResources Identity scope-acceptance conformance battery"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "conformance-identity"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+conformance-identity = { path = "../conformance-identity", version = "0.1.1" }
+
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+assert_cmd = "2"

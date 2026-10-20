@@ -174,6 +174,10 @@ expect 0 'dispatched release-anchor.yml for conformance-directory/v0.1.1 on main
 expect_file_has "$STUB_DIR/gh.log" 'workflow run release-anchor.yml --ref main -f tag=conformance-directory/v0.1.1' "gh receives the directory library tag"
 expect 0 'dispatched release-anchor.yml for conformance-identity/v0.1.1 on main' "the same workflow builds the acceptor of the identity library" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-identity 0.1.1 main
 expect_file_has "$STUB_DIR/gh.log" 'workflow run release-anchor.yml --ref main -f tag=conformance-identity/v0.1.1' "gh receives the identity library tag"
+expect 0 'dispatched release-cli-directory.yml for conformance-directory/v0.1.1 on main' "the directory CLI binaries are built from the same release" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-directory 0.1.1 main
+expect_file_has "$STUB_DIR/gh.log" 'workflow run release-cli-directory.yml --ref main -f tag=conformance-directory/v0.1.1' "gh receives the directory library tag for the CLI workflow"
+expect 0 'dispatched release-cli-identity.yml for conformance-identity/v0.1.1 on main' "the identity CLI binaries are built from the same release" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-identity 0.1.1 main
+expect_file_has "$STUB_DIR/gh.log" 'workflow run release-cli-identity.yml --ref main -f tag=conformance-identity/v0.1.1' "gh receives the identity library tag for the CLI workflow"
 stub_reset
 expect 0 'no artifact beyond the tag' "any other crate: nothing dispatched" in_dev bash .github/scripts/dispatch-artifacts.sh br-test-harness 0.1.0 main
 expect_equal "$(cat "$STUB_DIR/gh.log" 2>/dev/null | wc -l | tr -d ' ')" 0 "gh is not called"

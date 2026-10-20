@@ -102,6 +102,8 @@ jobs:
           echo "$RUNNER_TEMP/acceptor-bin" >> "$GITHUB_PATH"
       - name: scope-acceptance conformance battery
         run: cargo test -p conformance-identity --all-targets --locked -- --ignored --test-threads=1
+      - name: scope-acceptance conformance battery via the CLI binary
+        run: cargo test -p conformance-identity-cli --test cli --locked -- --ignored --test-threads=1
       - name: nats-fabric conformance battery
         run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
       - name: no Go subject is built inside the passport, identity and directory conformance crates
@@ -132,6 +134,8 @@ jobs:
           echo "$RUNNER_TEMP/anchor-bin" >> "$GITHUB_PATH"
       - name: directory conformance battery
         run: cargo test -p conformance-directory --all-targets --locked -- --ignored --test-threads=1
+      - name: directory conformance battery via the CLI binary
+        run: cargo test -p conformance-directory-cli --test cli --locked -- --ignored --test-threads=1
 
   msrv:
     name: MSRV 1.88 build

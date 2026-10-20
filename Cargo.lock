@@ -602,6 +602,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "conformance-directory-cli"
+version = "0.1.1"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "conformance-directory",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "conformance-identity"
 version = "0.1.1"
 dependencies = [
@@ -619,6 +631,18 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "conformance-identity-cli"
+version = "0.1.1"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "conformance-identity",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -228,6 +228,37 @@ in the `infra-e2e` job. A workflow step builds `identity-acceptor` onto `PATH` a
 the Go checks of the subject (the dead-grammar guard, the vet and the Go tests); `nats-server` is
 installed on the runner (shared with G3).
 
+## Run in CI
+
+A service in any language runs this battery with the published `conformance-identity`
+CLI ([`conformance-identity-cli`](../conformance-identity-cli/README.md)), with no Rust to
+write: download the release binary at a pinned version, build the acceptor, run the CLI
+against it. The archive holds `conformance-identity` and `fabric-nats`; keep them together.
+The runner needs `nats-server` and nothing else (no Go).
+
+```yaml
+- name: download the identity conformance CLI
+  run: |
+    set -euo pipefail
+    version=0.1.1
+    asset="conformance-identity-${version}-x86_64-unknown-linux-musl.tar.gz"
+    base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-identity/v${version}"
+    curl -fsSLO "${base}/${asset}"
+    curl -fsSLO "${base}/${asset}.sha256"
+    sha256sum -c "${asset}.sha256"
+    mkdir conformance-bin
+    tar -xzf "${asset}" -C conformance-bin
+
+- name: build the acceptor
+  run: cargo build --release --locked
+
+- name: scope-acceptance conformance battery
+  run: ./conformance-bin/conformance-identity run --spawn target/release/my-identity --format junit --output identity-conformance.xml
+```
+
+`nats-server` must be on `PATH`. A non-zero exit code fails the job; the CLI README lists
+the exit codes, the attach mode and the macOS asset.
+
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no crates.io).
@@ -265,6 +296,7 @@ br-identity-domain = { git = "https://github.com/BotResources/br-rust-common", p
 | Keys are **namespaced per run** with a UUIDv7 | spawn mode is isolated anyway, but the same scenarios drive an attach run against a live, stateful registry; unique keys keep re-runs from colliding with each other or with prior state, and bound the pollution of a real registry. |
 | **attach drives all A1–A7, not a read-only subset like G3** | Unlike G3, whose attach default skips the scenarios that would stall a live service (timeout/re-publish, rejection-blocks-readiness), no G2 scenario durably mutes or blocks the acceptor — every one is a one-shot declare→verdict. With per-run key namespacing bounding the pollution, all seven are safe to drive repeatedly against a live registry, so `attach_default()` is the full set. One limit, new in 0.1.1 through `br-test-harness` 0.1.2: the capture replays the whole stream history and stops, fail-closed with the cause named, at the first non-envelope frame on the two confirmation subjects, so such a frame already in a live stream fails all seven checks in every later run until the stream is purged. Spawn mode is not affected (fresh broker). |
 | The Go subject is a faithful reimpl of `judge_declaration`, not a binding | It is the tautology-break: an independent encoding of the wire + policy. If it merely called the lib, green would prove nothing. Its Go unit tests pin the rejection wire shapes to the frozen `scope-wire-v1` golden JSON. |
+| `provision` embeds its manifest and writes it to the cache directory | `CARGO_MANIFEST_DIR` is the source tree of the machine that compiled the crate; a released CLI binary runs elsewhere, where `tests/fixtures/` does not exist. `fabric-nats provision` reads a file, so the embedded fixture is written once under `$XDG_CACHE_HOME/br-e2e-harness/conformance-identity-{version}/manifests/` (never the system temporary directory) and replaced when its content differs. |
 | The tests never compile and the binary comes from `PATH`, a cache or a verified release asset | Compiling in a test hid the toolchain, wrote a binary to the system temporary directory and made the importer's test run depend on a Go build. A prebuilt binary found by name is the same artifact the release publishes, and a missing one is a typed error that says what to do. |
 | The whole battery is `#[ignore]`-gated | It drives real infra (`nats-server` + the prebuilt `identity-acceptor` binary); the default `cargo test` must stay green on a machine without them, exactly like `br-test-harness`'s own self-tests. |
 

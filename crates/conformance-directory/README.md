@@ -127,6 +127,11 @@ naming the stage and the key, never an `Err`.
   `StagerFault`, `StagedImpact` (the read-back row) and the
   `create_impact_table` / `staged_impacts` / `clear_impacts` helpers, all
   addressing `IMPACT_TABLE`.
+- `ALL_CHECKS`, `parse_checks(raw)` and `run_battery(&snapshot, &checks)` — the whole battery
+  as one call, the entry point of the `conformance-directory` CLI. `ALL_CHECKS` lists the 14
+  checks in battery order (W1..W5, W6, P1, P2, C1..C6); `parse_checks` turns a comma-separated
+  list of codes into a selection (an unknown code or an empty list is `InvalidInput`);
+  `run_battery` runs the selected checks in battery order whatever the order of the selection.
 - `reserved_key_rejected()` — the W6 offline guard; returns a `CheckOutcome` (no
   infra), asserting `PublishedUser::new` fails closed on a reserved-key extension.
 - `AnchorSource` — a `DirectorySource` built **from the anchor snapshot** (its
@@ -192,6 +197,38 @@ ignored tests of `absent_fabric_nats.rs`, `malformed_published_keys.rs`, `unreac
 `identity-directory` binary built by a workflow step onto `PATH`, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
 PR, not just documented.
 
+## Run in CI
+
+A service in any language runs this battery with the published `conformance-directory`
+CLI ([`conformance-directory-cli`](../conformance-directory-cli/README.md)), with no Rust
+to write. The battery has no service binary to start (it checks the kit and the frozen
+wire), so the CLI has no spawn or attach mode. Download the release binary at a pinned
+version and run it; it fetches the Go anchor from the same release when it is not on
+`PATH`. The archive holds `conformance-directory` and `fabric-nats`; keep them together.
+The runner needs `nats-server` and, for the consumer checks, a Postgres.
+
+```yaml
+- name: download the directory conformance CLI
+  run: |
+    set -euo pipefail
+    version=0.1.1
+    asset="conformance-directory-${version}-x86_64-unknown-linux-musl.tar.gz"
+    base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-directory/v${version}"
+    curl -fsSLO "${base}/${asset}"
+    curl -fsSLO "${base}/${asset}.sha256"
+    sha256sum -c "${asset}.sha256"
+    mkdir conformance-bin
+    tar -xzf "${asset}" -C conformance-bin
+
+- name: directory conformance battery
+  env:
+    E2E_PG_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+  run: ./conformance-bin/conformance-directory run --format junit --output directory-conformance.xml
+```
+
+`nats-server` must be on `PATH`. A non-zero exit code fails the job; the CLI README lists
+the checks each prerequisite serves, the exit codes and the macOS asset.
+
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
@@ -230,6 +267,7 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 | Every harness spawn (the `nats-server --version` probe, `provision`, the anchor run, the `tar` extraction of a download), the start of the throwaway NATS and database, the post-provisioning bucket probe and the bodies of `read_users`, `read_groups` and `read_meta` run under a panic guard (`catch_unwind`) | `br-test-harness` panics when its infrastructure cannot start (`nats-server` crashing, `CREATE DATABASE` refused) or cannot answer (a dead or unreachable broker makes the bucket probe, `pl_list`, `pl_get_meta` and `pl_reader` panic after about 10 s). The guard turns that panic into a `ConformanceError` (`Jetstream` naming `PUBLISHED_LANGUAGE` for the readers) instead of aborting the caller's test; the guard is `catch_unwind` on the calling task, not a spawned task, so it can wrap code that borrows the `&FabricTestNats`; the named prerequisites are probed first so the common cases never reach a panic. `run_once` of `br-test-harness` panics when it cannot spawn the `sh` orphan guard of a spawned process (an environment without `sh` on `PATH`); the spawns above return `ConformanceError::Jetstream` (probe, provision) or `ConformanceError::Run` (anchor run) naming the guard, and the extraction fails the download as `AnchorBinaryUnavailable`. |
 | The tests assume a prebuilt anchor and never run `go` | A test that compiles is slow, needs a toolchain on every machine and hides a build failure inside a test verdict. The `release-anchor` workflow builds the four per-platform assets, so a machine without Go still gets the anchor through the verified download. |
 | `harness_start_failures.rs` re-executes the test binary from a scratch `deps/` directory beside stub `fabric-nats` and `nats-server` scripts | The crate finds `fabric-nats` beside the running executable and `nats-server` on `PATH`, so a copy of the executable with stubs reproduces each start failure (a broker that exits at once, a refused provisioning, an unprovisioned bucket, a broker killed before the bucket probe) against the real code, and the child checks that no throwaway `nats-server` is left running. The database case uses a real Postgres and a login role without `CREATEROLE`, dropped afterwards. |
+| `provision` embeds its manifest and writes it to the cache directory | `CARGO_MANIFEST_DIR` is the source tree of the machine that compiled the crate; a released CLI binary runs elsewhere, where `tests/fixtures/` does not exist. `fabric-nats provision` reads a file, so the embedded fixture is written once under `$XDG_CACHE_HOME/br-e2e-harness/conformance-directory-{version}/manifests/` (never the system temporary directory) and replaced when its content differs. |
 | The whole real battery is `#[ignore]`-gated | It drives real infra (the anchor binary + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
 
 ## License

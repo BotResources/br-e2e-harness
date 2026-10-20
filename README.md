@@ -97,6 +97,8 @@ against *an* identity without depending on any project's private one.
 |---|---|---|---|---|---|
 | `conformance-scope-cli` (bin `conformance-scope`) | 0.1.0, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
 | `conformance-passport-cli` (bin `conformance-passport`) | 0.1.1, always `conformance-passport`'s | GitHub Release binary (asset of the release `conformance-passport/v{version}`) | Run the bearer/PAT to Passport conformance battery against any service binary, in any language, with no Rust to write | [README](crates/conformance-passport-cli/README.md) | [CHANGELOG](crates/conformance-passport-cli/CHANGELOG.md) |
+| `conformance-directory-cli` (bin `conformance-directory`) | 0.1.1, always `conformance-directory`'s | GitHub Release binary (asset of the release `conformance-directory/v{version}`, with `fabric-nats` beside it) | Run the identity Published Language (directory) wire, publisher and consumer batteries against the Go anchor, in any language's CI, with no Rust to write | [README](crates/conformance-directory-cli/README.md) | [CHANGELOG](crates/conformance-directory-cli/CHANGELOG.md) |
+| `conformance-identity-cli` (bin `conformance-identity`) | 0.1.1, always `conformance-identity`'s | GitHub Release binary (asset of the release `conformance-identity/v{version}`, with `fabric-nats` beside it) | Run the scope-acceptance conformance battery against any Identity acceptor binary or running acceptor, in any language, with no Rust to write | [README](crates/conformance-identity-cli/README.md) | [CHANGELOG](crates/conformance-identity-cli/CHANGELOG.md) |
 
 `conformance-scope-cli` is not a library of its own: it is versioned with
 `conformance-scope`, and its binaries ride that crate's release.
@@ -104,6 +106,12 @@ against *an* identity without depending on any project's private one.
 `conformance-passport-cli` follows the same rule with `conformance-passport`.
 A `conformance-passport` tag also starts `release-anchor-passport` (the Go binary) and
 `release-cli-passport` (the CLI binaries).
+
+`conformance-directory-cli` and `conformance-identity-cli` follow the same rule with
+`conformance-directory` and `conformance-identity`. A `conformance-directory` or
+`conformance-identity` tag also starts `release-anchor` (the Go binary) and
+`release-cli-directory` or `release-cli-identity` (the CLI binaries, each archive carrying
+`fabric-nats` beside the CLI).
 
 ## Distribution
 
@@ -123,6 +131,11 @@ depends on its kind:
 - **CLI tool** (`conformance-passport-cli`) ships as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-passport/v{version}`
   release, next to the Go subject binary below.
+- **CLI tools** (`conformance-directory-cli`, `conformance-identity-cli`) ship as
+  **GitHub Release binaries** (static musl-linux + macOS) attached to the
+  `conformance-directory/v{version}` and `conformance-identity/v{version}` releases.
+  Each archive holds the CLI and the `fabric-nats` binary it provisions NATS with,
+  which must stay beside it.
 - **Go subject binary** (`conformance-passport`) ships as a **GitHub Release asset**
   `identity-passport-<os>-<arch>.tar.gz` with a sibling `.sha256` (linux and darwin,
   amd64 and arm64), attached to the `conformance-passport/v{version}` release.
@@ -164,7 +177,9 @@ only after the siblings it pins have released.
    the GitHub release and records the API listing and dependencies. It then
    starts `cd` (the `oidc-test-idp` image), `release-cli` (the
    `conformance-scope` binaries) or `release-anchor` (the
-   `conformance-directory` and `conformance-identity` Go binaries) with the new tag.
+   `conformance-directory` and `conformance-identity` Go binaries) with the new tag. A
+   `conformance-directory` or `conformance-identity` tag also starts `release-cli-directory`
+   or `release-cli-identity`.
 
 ## Why
 

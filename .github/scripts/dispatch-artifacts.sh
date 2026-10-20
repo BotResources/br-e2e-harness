@@ -12,6 +12,14 @@ line="$3"
 tag="${crate}/v${version}"
 
 case "$crate" in
+    conformance-directory | conformance-identity)
+        cli_workflow="release-cli-${crate#conformance-}.yml"
+        gh workflow run "$cli_workflow" --ref "$line" -f "tag=${tag}"
+        echo "dispatched ${cli_workflow} for ${tag} on ${line}"
+        ;;
+esac
+
+case "$crate" in
     conformance-passport)
         gh workflow run "release-anchor-passport.yml" --ref "$line" -f "tag=${tag}"
         echo "dispatched release-anchor-passport.yml for ${tag} on ${line}"
