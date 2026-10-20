@@ -2,9 +2,36 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+const EXIT_CODES: &str = "Exit codes:
+  0  conformant: at least one check ran, none failed, none was skipped
+  1  not conformant: a check failed or was skipped
+  2  the run could not happen: bad argument, unreachable NATS, missing stream,
+     missing prerequisite, unreadable or invalid manifest, unwritable output";
+
+const MANIFEST_SCHEMA: &str = "Manifest schema (YAML; an unknown key is refused with exit 2):
+  services:                       required, non-empty list
+    - service_key: <KEY>          required, the declaring service key
+      scopes:                     optional, the expected scopes (order does not matter)
+        - key: <SCOPE_KEY>        required, e.g. example_service:read
+          platform_only: <BOOL>   optional, default false
+      reject: <REASON>            optional, play the acceptor as REJECT with this reason code
+      scenarios: <CSV>            optional, e.g. s1,s2 (defaults as for `run`)
+      timeout: <DUR>              optional, default 10s, greater than 0 and at most 86400s
+      attach:                     exactly one of attach or spawn
+        nats: <URL>               NATS URL of the running service
+        readyz: <URL>             the service's /readyz URL
+      spawn:
+        path: <PATH>              subject binary, launched on a throwaway nats-server
+
+The whole manifest is validated before the first service runs. Two attach entries
+on one broker are refused. The report aggregates every service.
+
+Exit codes: 0 all conformant, 1 not conformant, 2 the run could not happen.";
+
 #[derive(Debug, Parser)]
 #[command(
     name = "conformance-scope",
+    after_long_help = EXIT_CODES,
     about = "Conformance-test a service against the BotResources scope-declaration wire handshake.",
     long_about = "Drive the frozen scope-declaration handshake against a service in any language.\n\
         In ATTACH mode (default) the CLI connects to a running service's NATS and /readyz and\n\
@@ -24,12 +51,15 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
-#[command(about = "Run the conformance battery against a single service.")]
+#[command(
+    about = "Run the conformance battery against a single service.",
+    after_long_help = EXIT_CODES
+)]
 pub struct RunArgs {
     #[arg(
         long,
         conflicts_with = "spawn",
-        help = "Attach to an already-running service (default). Requires --nats and --readyz and a fresh INTEGRATION_CMD stream: with more than one boot or service on the declare stream a failed check names that cause."
+        help = "Attach to an already-running service (default). Requires --nats and --readyz and a fresh INTEGRATION_CMD stream: with more than one boot or service on the declare stream a failed check names the possible causes."
     )]
     pub attach: bool,
 
@@ -115,7 +145,8 @@ pub struct RunArgs {
 
 #[derive(Debug, Args)]
 #[command(
-    about = "Run the battery against many services described in a YAML manifest, and aggregate."
+    about = "Run the battery against many services described in a YAML manifest, and aggregate.",
+    after_long_help = MANIFEST_SCHEMA
 )]
 pub struct ManifestArgs {
     #[arg(
@@ -171,6 +202,51 @@ mod tests {
         let help = run.render_long_help().to_string();
 
         assert!(help.contains(&cap()), "{help}");
+    }
+
+    #[test]
+    fn given_the_root_and_run_help_when_rendered_then_they_state_the_exit_code_contract() {
+        let mut command = Cli::command();
+        let root = command.render_long_help().to_string();
+        let run = command
+            .find_subcommand_mut("run")
+            .expect("run subcommand")
+            .render_long_help()
+            .to_string();
+
+        for help in [root, run] {
+            assert!(help.contains("0  conformant"), "{help}");
+            assert!(help.contains("1  not conformant"), "{help}");
+            assert!(help.contains("2  the run could not happen"), "{help}");
+        }
+    }
+
+    #[test]
+    fn given_the_manifest_help_when_rendered_then_it_states_every_manifest_key() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("manifest")
+            .expect("manifest subcommand")
+            .render_long_help()
+            .to_string();
+
+        for key in [
+            "services",
+            "service_key",
+            "scopes",
+            "platform_only",
+            "reject",
+            "scenarios",
+            "timeout",
+            "attach",
+            "nats",
+            "readyz",
+            "spawn",
+            "path",
+        ] {
+            assert!(help.contains(&format!("{key}:")), "{key}: {help}");
+        }
+        assert!(help.contains("Exit codes"), "{help}");
     }
 
     #[test]

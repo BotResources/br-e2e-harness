@@ -124,14 +124,24 @@ run makes the battery read a dead correlation id, so the recipe starts
     curl -fsSL -o "$tools/natscli.zip" "https://github.com/nats-io/natscli/releases/download/v${NATSCLI_VERSION}/${natscli}.zip"
     unzip -q -o "$tools/natscli.zip" -d "$tools"
 
+    wait_for() {
+      for _ in $(seq 100); do
+        kill -0 "$2" 2>/dev/null || { echo "$3 exited at boot" >&2; exit 1; }
+        curl -fs "$1" >/dev/null && return 0
+        sleep 0.2
+      done
+      echo "$3 not up after 20s: $1" >&2
+      exit 1
+    }
+
     "$tools/$nats_server/nats-server" -js -sd "$(mktemp -d)" -a 127.0.0.1 -p 4222 -m 8222 &
-    until curl -fs http://127.0.0.1:8222/healthz >/dev/null; do sleep 0.2; done
+    wait_for http://127.0.0.1:8222/healthz $! nats-server
     nats="$tools/$natscli/nats --server nats://127.0.0.1:4222"
     $nats stream add INTEGRATION_CMD --subjects 'integration.cmd.>' --defaults
     $nats stream add INTEGRATION_EVT --subjects 'integration.evt.>' --defaults
 
     NATS_URL=nats://127.0.0.1:4222 HTTP_ADDR=127.0.0.1:8080 ./target/release/my-service &
-    until curl -fs http://127.0.0.1:8080/livez >/dev/null; do sleep 0.2; done
+    wait_for http://127.0.0.1:8080/livez $! my-service
 
     "$tools/conformance-scope" run \
       --nats nats://127.0.0.1:4222 \
@@ -151,6 +161,8 @@ NATS URL and its `/readyz` URL. On macOS use the `aarch64-apple-darwin` asset an
 pinned tool; the `.sha256` check ties the download to the published asset. Poll the
 service's `/livez`, never its `/readyz`: `/readyz` stays `503` until the CLI accepts
 the declaration, so waiting on it would deadlock.
+
+A `--spawn` path (or a manifest `spawn.path`) that is a bare file name is the file of the working directory, never a `PATH` lookup; use an absolute or `./` path to be explicit.
 
 `--spawn <service-binary>` is not the CI mode: it stands up its own throwaway
 `nats-server` and needs the `fabric-nats` binary and the provisioning manifest of
@@ -176,7 +188,7 @@ conformance-scope run \
 
 Both fixed-name handshake streams, `INTEGRATION_CMD` and `INTEGRATION_EVT`, must
 already exist. Attach checks them before anything else, never creates them, and
-exits `2` when either is missing. The `INTEGRATION_CMD` stream must be fresh: when it holds the declares of more than one boot or service (an earlier run, a restart or another service on a shared broker), the first declare may be a dead one and a conformant service fails; every failed check then names the cause, "more than one boot or service on the declare stream", and the fix is a fresh stream. Attach runs `s1, s2` and the `declaration-content` assertion by default.
+exits `2` when either is missing. The `INTEGRATION_CMD` stream must be fresh: when it holds the declares of more than one boot or service (an earlier run, a restart or another service on a shared broker), the first declare may be a dead one and a conformant service fails; every failed check then names the possible causes, "more than one boot or service on the declare stream" (the fix is a fresh stream) or a service that minted a new correlation_id on a re-publish. Attach runs `s1, s2` and the `declaration-content` assertion by default.
 s3, s4 and s6 depend on how the service was booted, so they are opt-in through
 `--scenarios` and hold only under their prerequisite:
 

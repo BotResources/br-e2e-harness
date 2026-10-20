@@ -115,9 +115,10 @@ fn name_the_stale_handshake(outcome: &mut CheckOutcome, distinct_declares: usize
     }
     let detail = outcome.detail.take().unwrap_or_default();
     outcome.detail = Some(format!(
-        "{detail}; {distinct_declares} distinct declares were captured: more than one boot or \
-         service on the declare stream (earlier run, restart or another service): use a fresh \
-         INTEGRATION_CMD stream"
+        "{detail}; {distinct_declares} distinct declares were captured, which has two possible \
+         causes: more than one boot or service on the declare stream (earlier run, restart or \
+         another service): use a fresh INTEGRATION_CMD stream; or the service minted a new \
+         correlation_id on a re-publish (s3 checks this)"
     ));
 }
 

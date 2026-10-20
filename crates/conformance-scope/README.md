@@ -164,7 +164,7 @@ the dependencies are obtained.
   Both `INTEGRATION_CMD` and `INTEGRATION_EVT` must already exist: attach checks
   them before anything else, never creates them, and returns a typed
   `Jetstream` error when either is missing. A `readyz_url` that is not an
-  `http` or `https` URL with a host is `InvalidInput`. When the declare stream holds the declares of more than one boot or service and a check fails, the detail of every failed check names it ("more than one boot or service on the declare stream ... use a fresh INTEGRATION_CMD stream"): the first declare may be a dead one. Default scenarios are `s1, s2` + the
+  `http` or `https` URL with a host is `InvalidInput`. When the declare stream holds the declares of more than one boot or service and a check fails, the detail of every failed check names the possible causes ("more than one boot or service on the declare stream ... use a fresh INTEGRATION_CMD stream" or "the service minted a new correlation_id on a re-publish"): the first declare may be a dead one, or the service may be defective. Default scenarios are `s1, s2` + the
   `declaration-content` assertion. s3, s4 and s6 run when selected and hold under
   their prerequisite: s3 needs a service that is still unconfirmed and re-publishes
   within `timeout` (a `timeout` above the service's own wait timeout), s4 needs
@@ -265,14 +265,24 @@ run makes the battery read a dead correlation id, so the recipe starts
     curl -fsSL -o "$tools/natscli.zip" "https://github.com/nats-io/natscli/releases/download/v${NATSCLI_VERSION}/${natscli}.zip"
     unzip -q -o "$tools/natscli.zip" -d "$tools"
 
+    wait_for() {
+      for _ in $(seq 100); do
+        kill -0 "$2" 2>/dev/null || { echo "$3 exited at boot" >&2; exit 1; }
+        curl -fs "$1" >/dev/null && return 0
+        sleep 0.2
+      done
+      echo "$3 not up after 20s: $1" >&2
+      exit 1
+    }
+
     "$tools/$nats_server/nats-server" -js -sd "$(mktemp -d)" -a 127.0.0.1 -p 4222 -m 8222 &
-    until curl -fs http://127.0.0.1:8222/healthz >/dev/null; do sleep 0.2; done
+    wait_for http://127.0.0.1:8222/healthz $! nats-server
     nats="$tools/$natscli/nats --server nats://127.0.0.1:4222"
     $nats stream add INTEGRATION_CMD --subjects 'integration.cmd.>' --defaults
     $nats stream add INTEGRATION_EVT --subjects 'integration.evt.>' --defaults
 
     NATS_URL=nats://127.0.0.1:4222 HTTP_ADDR=127.0.0.1:8080 ./target/release/my-service &
-    until curl -fs http://127.0.0.1:8080/livez >/dev/null; do sleep 0.2; done
+    wait_for http://127.0.0.1:8080/livez $! my-service
 
     "$tools/conformance-scope" run \
       --nats nats://127.0.0.1:4222 \
@@ -292,6 +302,8 @@ NATS URL and its `/readyz` URL. On macOS use the `aarch64-apple-darwin` asset an
 pinned tool; the `.sha256` check ties the download to the published asset. Poll the
 service's `/livez`, never its `/readyz`: `/readyz` stays `503` until the CLI accepts
 the declaration, so waiting on it would deadlock.
+
+A `SpawnTarget` binary that is a bare file name is the file of the working directory, never a `PATH` lookup: `run_spawn`, `ScopeHarness::start_with_binary` and `Subject::spawn` resolve it to an absolute path once.
 
 `--spawn <service-binary>` is not the CI mode: it stands up its own throwaway
 `nats-server` and needs the `fabric-nats` binary and the provisioning manifest of

@@ -23,7 +23,7 @@ impl ScopeHarness {
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
-        prerequisite::subject_binary(&binary)?;
+        let binary = prerequisite::subject_binary(&binary)?;
         let nats = prerequisite::contained(FabricTestNats::start())
             .await
             .map_err(|e| ConformanceError::Jetstream(format!("start the throwaway NATS: {e}")))?;

@@ -8,6 +8,7 @@ use reqwest::StatusCode;
 
 use crate::binary::child_path;
 use crate::error::{ConformanceError, Result};
+use crate::prerequisite::absolute;
 use crate::timeout::MAX_TIMEOUT;
 
 pub struct SubjectConfig {
@@ -164,6 +165,8 @@ impl Subject {
     }
 
     pub fn spawn(binary: &Path, config: &SubjectConfig) -> Self {
+        let binary = absolute(binary);
+        let binary = binary.as_path();
         let addr = free_loopback_addr();
         let base_url = format!("http://{addr}");
         let platform_only = config.platform_only.to_string();

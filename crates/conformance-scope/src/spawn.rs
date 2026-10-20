@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::checks::{CheckContext, run_scenario};
@@ -7,7 +7,7 @@ use crate::expected::{ExpectedDeclaration, SAMPLE_FALLBACK_SCOPE};
 use crate::harness::ScopeHarness;
 use crate::outcome::{CheckOutcome, ConformanceReport};
 use crate::preflight::{check_spawn_input, uniform_platform_only};
-use crate::prerequisite::contained;
+use crate::prerequisite::{contained, subject_binary};
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario};
 use crate::subject::{BootWatch, Subject, SubjectConfig};
@@ -26,6 +26,7 @@ pub async fn run_spawn(
     timeout: Duration,
 ) -> Result<ConformanceReport> {
     check_spawn_input(target, expected, scenarios, timeout)?;
+    let binary = subject_binary(&target.binary)?;
     let service_key = expected.validated_service_key()?;
     let platform_only = uniform_platform_only(expected)?;
     let mut report = ConformanceReport::default();
@@ -36,7 +37,7 @@ pub async fn run_spawn(
         .filter(|s| !s.requires_subject_lifecycle())
         .collect();
     if !observed.is_empty() {
-        let harness = ScopeHarness::start_with_binary(target.binary.clone()).await?;
+        let harness = ScopeHarness::start_with_binary(binary.clone()).await?;
         let outcomes = observe_batch(
             &harness,
             expected,
@@ -60,7 +61,7 @@ pub async fn run_spawn(
     {
         report.push(
             run_lifecycle_scenario(
-                target,
+                &binary,
                 expected,
                 platform_only,
                 behavior,
@@ -138,7 +139,7 @@ async fn start_subject(
 }
 
 async fn run_lifecycle_scenario(
-    target: &SpawnTarget,
+    binary: &Path,
     expected: &ExpectedDeclaration,
     platform_only: bool,
     behavior: &AcceptorBehavior,
@@ -146,7 +147,7 @@ async fn run_lifecycle_scenario(
     scenario: Scenario,
     timeout: Duration,
 ) -> Result<CheckOutcome> {
-    let harness = ScopeHarness::start_with_binary(target.binary.clone()).await?;
+    let harness = ScopeHarness::start_with_binary(binary.to_path_buf()).await?;
     let scenario_behavior = lifecycle_behavior(scenario, behavior, expected);
     let config = match scenario {
         Scenario::DisabledModeReadyWithoutDeclare => {

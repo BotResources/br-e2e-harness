@@ -14,6 +14,10 @@ form to decide whether a version ships.
 
 ### Fixed
 
+- `run --spawn <bare file name>` and a manifest `spawn.path` that is a bare file name no longer pass the preflight and then die with exit 2 and no report: the path is resolved to the file of the working directory once. Pinned by `tests/spawn_bare_name.rs` (a manifest with a good first service then a bare-name second service, and `run --spawn` with a working directory).
+- `--help` states the exit-code contract (0 conformant, 1 not conformant or skipped, 2 the run could not happen) on the root command and on `run`, and `manifest --help` states the manifest schema, so the binary alone is enough to use manifest mode and to read the gate.
+- The Run in CI recipe waits for `nats-server` and the service with a bounded loop (20 seconds) that also checks the process is alive, and fails with a message, instead of spinning until the runner timeout.
+- The test files and the manifest module are split by responsibility (`tests/usage_errors.rs`, `broker_refusals.rs`, `attach_verdicts.rs`, `report_output.rs`, `refused_expectation.rs`, `attach_scenarios.rs`, `src/manifest/{schema,prepare,run}.rs`); no behaviour change.
 - The order of `--scopes` no longer matters: a service that declares the expected scopes in another order is conformant (`conformance-scope` 0.1.1 compares them as a set). Pinned by `tests/exit_codes.rs`.
 - The Run in CI recipe starts `nats-server` on a fresh store (`-sd "$(mktemp -d)"`); on a reused store a second run read a dead correlation id and reported a conformant service as non-conformant.
 - The aggregate `conformant` verdict of a report is true only when it holds at least one service report and every service report is conformant; with `conformance-scope` 0.1.1 a service report with no outcome or with a skipped check is no longer conformant. A run that selects no scenario is a usage error (`conformance-scope` returns `InvalidInput`).
@@ -27,7 +31,7 @@ form to decide whether a version ships.
 - The `spawn_cli` test locates the prebuilt `scope-service` binary (`PATH`, cache directory, release asset) instead of compiling it; the `release-cli` workflow attaches the `scope-service` assets next to the CLI binaries.
 
 - A `--spawn` path (or manifest `spawn.path`) without the execute bit exits `2` before the first service of a manifest runs, with "is not executable"; it was refused only after the services before it had run. Pinned by `tests/manifest_preflight.rs`.
-- `run --attach` on a declare stream that holds more than one boot or service names the cause in every failed check ("more than one boot or service on the declare stream ... use a fresh INTEGRATION_CMD stream") instead of blaming a conformant service; the README Attach section and `--attach` help say so.
+- `run --attach` on a declare stream that holds more than one boot or service names the possible causes in every failed check ("more than one boot or service on the declare stream ... use a fresh INTEGRATION_CMD stream" or a service that minted a new correlation_id on a re-publish) instead of blaming a conformant service; the README Attach section and `--attach` help say so.
 - `--format junit` always writes well-formed XML: characters XML 1.0 forbids (control characters such as the ANSI escape of a coloured `/readyz` body, U+FFFE, U+FFFF) in a failure message or body are replaced by U+FFFD, no longer written raw so that the CI test report was rejected by the XML parser. Pinned by a unit test of the escaping and by `tests/exit_codes.rs` with a `/readyz` stand-in that answers an ANSI-coloured body.
 
 - `--spawn` without the `fabric-nats` binary beside the executable (the released archive holds only `conformance-scope`) or without the provisioning manifest exits `2` with an error naming it, no longer exit `101` (the harness panic text can still appear on stderr before the typed error); both READMEs name the prerequisite and the exit-code contract lists it.

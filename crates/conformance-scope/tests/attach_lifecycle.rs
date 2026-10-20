@@ -238,6 +238,10 @@ async fn s2_in_attach_mode_names_a_second_boot_on_the_declare_stream_instead_of_
         detail.contains("use a fresh INTEGRATION_CMD stream"),
         "{detail}"
     );
+    assert!(
+        detail.contains("minted a new correlation_id on a re-publish"),
+        "{detail}"
+    );
 }
 
 #[tokio::test]

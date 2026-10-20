@@ -1,22 +1,26 @@
 use std::any::Any;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use futures_util::FutureExt;
 
 use crate::binary::is_executable_file;
 use crate::error::{ConformanceError, Result};
 
-pub(crate) fn subject_binary(binary: &Path) -> Result<()> {
+pub(crate) fn subject_binary(binary: &Path) -> Result<PathBuf> {
     if is_executable_file(binary) {
-        Ok(())
+        Ok(absolute(binary))
     } else {
         Err(ConformanceError::InvalidInput(format!(
             "the subject binary {} does not exist, is not a file or is not executable",
             binary.display()
         )))
     }
+}
+
+pub(crate) fn absolute(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 pub(crate) async fn contained<T>(
@@ -53,6 +57,16 @@ mod tests {
             other => panic!("expected a typed input error: {other:?}"),
         }
         assert!(subject_binary(&std::env::current_exe().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn a_relative_subject_binary_resolves_to_an_absolute_path() {
+        let relative = std::env::current_exe().unwrap();
+        let name = relative.file_name().unwrap();
+        let resolved = absolute(Path::new(name));
+        assert!(resolved.is_absolute(), "{resolved:?}");
+        assert_eq!(resolved, std::env::current_dir().unwrap().join(name));
+        assert_eq!(absolute(&relative), relative);
     }
 
     #[cfg(unix)]
