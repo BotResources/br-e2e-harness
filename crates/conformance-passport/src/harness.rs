@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, KvKey, PublishedLanguagePublisher};
 
-use crate::build::build_subject;
+use crate::binary::{locate_subject, resolve_caller_binary};
 use crate::error::{ConformanceError, Result};
 use crate::seal::SealedSeeder;
 
@@ -14,11 +14,12 @@ pub struct PassportHarness {
 
 impl PassportHarness {
     pub async fn start() -> Result<Self> {
-        let binary = build_subject().await?;
+        let binary = locate_subject().await?;
         Self::start_with_binary(binary).await
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
+        let binary = resolve_caller_binary(binary, std::env::var_os("PATH").as_deref())?;
         let nats = FabricTestNats::start().await;
         let nats = nats.with_published_language().await;
         Ok(Self { nats, binary })

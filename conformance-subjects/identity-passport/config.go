@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 )
 
@@ -27,6 +28,10 @@ func loadConfig() (config, error) {
 		port:    port,
 		sealKey: key,
 	}, nil
+}
+
+func listenAddr(port string) string {
+	return net.JoinHostPort("127.0.0.1", port)
 }
 
 func getenv(key, fallback string) string {

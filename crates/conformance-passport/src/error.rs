@@ -1,11 +1,25 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ConformanceError {
-    #[error("go toolchain unavailable: {0}")]
-    GoUnavailable(String),
-    #[error("building the identity-passport subject failed: {0}")]
-    Build(String),
+    #[error(
+        "the `{binary}` binary is not available: {detail}. Put it on PATH (the release asset \
+         `{binary}-<os>-<arch>.tar.gz` of the conformance-passport GitHub release carries it) \
+         or build it from conformance-subjects/identity-passport outside the tests"
+    )]
+    SubjectBinaryUnavailable {
+        binary: &'static str,
+        detail: String,
+    },
+    #[error("the binary `{name}` was not found on PATH: put it on PATH or pass its path")]
+    BinaryNotOnPath { name: String },
+    #[error(
+        "the subject binary `{}` is not an executable file: build it and mark it executable",
+        path.display()
+    )]
+    BinaryNotExecutable { path: PathBuf },
     #[error("sealing/publishing a bearer into the PUBLISHED_LANGUAGE bucket failed: {0}")]
     Seed(String),
     #[error("calling GET /internal/passport failed: {0}")]

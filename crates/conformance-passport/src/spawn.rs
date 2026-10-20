@@ -28,6 +28,8 @@ pub async fn run_spawn(
             "run_spawn requires at least one scenario; pass &ALL".to_string(),
         ));
     }
+    reject_repeated(scenarios)?;
+    reject_unrepresentable_timeout(timeout)?;
     let harness = PassportHarness::start_with_binary(target.binary.clone()).await?;
     let seeder = harness.seeder();
     let config = SubjectConfig::new(&harness.nats_url());
@@ -39,7 +41,7 @@ pub async fn run_spawn(
         subject.shutdown().await;
         harness.shutdown().await;
         return Err(ConformanceError::Timeout(format!(
-            "the passport subject never reported /readyz=200; logs:\n{logs}"
+            "the passport subject to report /readyz=200; logs:\n{logs}"
         )));
     }
 
@@ -58,6 +60,27 @@ pub async fn run_spawn(
     subject.shutdown().await;
     harness.shutdown().await;
     Ok(report)
+}
+
+fn reject_unrepresentable_timeout(timeout: Duration) -> Result<()> {
+    match tokio::time::Instant::now().checked_add(timeout) {
+        Some(_) => Ok(()),
+        None => Err(ConformanceError::InvalidInput(format!(
+            "run_spawn timeout {timeout:?} is too large for this platform's clock"
+        ))),
+    }
+}
+
+fn reject_repeated(scenarios: &[Scenario]) -> Result<()> {
+    for (index, scenario) in scenarios.iter().enumerate() {
+        if scenarios[..index].contains(scenario) {
+            return Err(ConformanceError::InvalidInput(format!(
+                "run_spawn runs each scenario once; {} is listed twice",
+                scenario.code()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn ordered_for_destruction(scenarios: &[Scenario]) -> Vec<Scenario> {
@@ -84,6 +107,103 @@ mod tests {
         let ordered = ordered_for_destruction(&input);
         assert_eq!(*ordered.last().unwrap(), Scenario::KvErrorFailsLoud);
         assert_eq!(ordered.len(), input.len());
+    }
+
+    #[tokio::test]
+    async fn run_spawn_rejects_a_repeated_destructive_scenario_before_touching_infra() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(
+            &target,
+            &[Scenario::KvErrorFailsLoud, Scenario::KvErrorFailsLoud],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a repeated destructive scenario must be rejected up front");
+        assert!(
+            matches!(&err, ConformanceError::InvalidInput(m) if m.contains("p8")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_spawn_rejects_any_repeated_scenario_before_touching_infra() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(
+            &target,
+            &[
+                Scenario::ValidBearerResolvesToPassport,
+                Scenario::ValidBearerResolvesToPassport,
+            ],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a repeated scenario must be rejected up front");
+        assert!(matches!(err, ConformanceError::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn run_spawn_reports_a_missing_binary_as_a_typed_error() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(
+            &target,
+            &[Scenario::NoCredentialIsAnonymous],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a missing binary must be an error");
+        assert!(
+            matches!(
+                &err,
+                ConformanceError::BinaryNotExecutable { path } if path == &PathBuf::from("/nonexistent/never-spawned")
+            ),
+            "{err:?}"
+        );
+        let message = err.to_string();
+        assert!(message.contains("/nonexistent/never-spawned"), "{message}");
+        assert!(!message.contains("identity-passport"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn run_spawn_reports_a_non_executable_file_as_a_typed_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::test_scratch::scratch("not-executable");
+        let file = dir.join("identity-passport");
+        std::fs::write(&file, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let err = run_spawn(
+            &SpawnTarget {
+                binary: file.clone(),
+            },
+            &[Scenario::NoCredentialIsAnonymous],
+            DEFAULT_TIMEOUT,
+        )
+        .await
+        .expect_err("a non-executable file must be an error");
+        std::fs::remove_dir_all(dir).ok();
+        assert!(
+            matches!(&err, ConformanceError::BinaryNotExecutable { path } if path == &file),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_spawn_rejects_an_unrepresentable_timeout_before_touching_infra() {
+        let target = SpawnTarget {
+            binary: PathBuf::from("/nonexistent/never-spawned"),
+        };
+        let err = run_spawn(&target, &[Scenario::NoCredentialIsAnonymous], Duration::MAX)
+            .await
+            .expect_err("a timeout the clock cannot represent must be rejected up front");
+        assert!(
+            matches!(&err, ConformanceError::InvalidInput(m) if m.contains("timeout")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

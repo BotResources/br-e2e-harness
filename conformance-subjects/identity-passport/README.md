@@ -138,7 +138,7 @@ distinct nonces and twins share theirs by construction.
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
 | `NATS_URL` | no | `nats://127.0.0.1:4222` | JetStream-enabled NATS URL |
-| `PORT` | **yes** | — | port to bind (`0.0.0.0:$PORT`) for `/internal/passport` + `/readyz` + `/livez` |
+| `PORT` | **yes** | — | port to bind, on `127.0.0.1:$PORT` only for `/internal/passport` + `/readyz` + `/livez` |
 | `BEARER_SEAL_KEY` | **yes** | — | base64-std of the 32-byte ChaCha20-Poly1305 seal key; must decode to exactly 32 bytes (fail loud otherwise) |
 
 The fixed KV bucket is `PUBLISHED_LANGUAGE` (not an env var — the platform's fixed

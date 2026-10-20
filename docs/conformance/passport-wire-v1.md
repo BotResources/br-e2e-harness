@@ -49,7 +49,7 @@ envelope.
 |---|---|
 | `Authorization: Bearer <raw>` whose `bearer_token_kv_key(<raw>)` exists in `PUBLISHED_LANGUAGE` **and opens** under the seal key | **200** + header `X-Passport` = `base64.Std(JSON(Passport))` |
 | key absent / revoked, no `Authorization`, non-Bearer, empty token, unreadable envelope, **wrong key**, **tampered ciphertext**, or **tampered nonce** | **200 with NO `X-Passport`** (anonymous, fail-closed) |
-| backend (KV) error — bucket/stream lost under a live subject | **fails loud**: a **5xx**, or the resolver becomes **unreachable** (drops its NATS connection / exits) — never a silent 200 |
+| backend (KV) error — bucket/stream lost under a live subject | **fails loud**: a **5xx** within the time limit; a refused connection, a crash or a hang is not a 5xx and fails — never a silent 200 |
 
 The resolved `Passport` is the real `br_core_auth::Passport`
 (`#[serde(tag = "kind", deny_unknown_fields)]`). For a sealed PAT it is the `Human`
@@ -130,7 +130,7 @@ Two anchors keep it honest:
 - **Anti-drift, anti-hand-edit.** `vectors_test.go` regenerates the whole file in
   memory and asserts **byte-equality** with the committed one. A change in the Go
   seal, or a hand edit of the JSON, fails `make check` and the `identity-passport
-  anchor tests` step of the `infra-e2e` CI job. Regenerating is
+  anchor checks` step of the `infra-e2e` CI job. Regenerating is
   `make -C conformance-subjects/identity-passport vectors`.
 - **Anti-nonsense.** `vectors_test.go` also opens every faithful vector and asserts
   it yields its declared identity, and asserts every `resolves: anonymous` vector
@@ -183,8 +183,8 @@ re-couple the foundation's test kit to one of its consumers.
 
 - **Resolve ≠ gate.** Unresolvable / non-openable → **200 anonymous**, **never
   401** (authZ-not-authN). A genuine KV backend loss is the one case that must
-  **fail loud** — a **5xx** or an unreachable resolver — and must **never** become
-  a silent 200.
+  **fail loud** — a **5xx** within the time limit (a refused connection, a crash or a
+  hang is not a 5xx and fails) — and must **never** become a silent 200.
 - **No plaintext token, no email, ever stored.** The KV key is the SHA-256 hash;
   the value is a sealed envelope whose cleartext is `{actor, token_id}`.
 - **The subject never auto-provisions the bucket.** It binds `PUBLISHED_LANGUAGE`

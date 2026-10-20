@@ -1,19 +1,23 @@
-pub mod build;
+pub mod binary;
+mod cause;
 pub mod checks;
 pub mod endpoint;
 pub mod error;
 pub mod harness;
 pub mod outcome;
 pub mod readyz;
+mod release_asset;
 pub mod scenario;
 pub mod scopes;
 pub mod seal;
 pub mod spawn;
 pub mod subject;
+#[cfg(test)]
+mod test_scratch;
 pub mod vectors;
 
+pub use binary::{SUBJECT_BINARY, locate_subject};
 pub use br_test_harness::unknown_bearer;
-pub use build::{build_subject, ensure_go_available, subject_dir};
 pub use checks::{CheckContext, run_scenario};
 pub use endpoint::{PASSPORT_HEADER, PASSPORT_PATH, PassportEndpoint, Resolution};
 pub use error::{ConformanceError, Result};

@@ -40,7 +40,7 @@ impl FrozenWire {
             .find(|candidate| candidate.name == vector.name())
             .unwrap_or_else(|| {
                 panic!(
-                    "the frozen vector file has no entry named {:?}; regenerate it with `make -C conformance-subjects/identity-passport vectors`",
+                    "the frozen vector file has no entry named {:?}; regenerate the vector file from the identity-passport Go subject (its vectors target)",
                     vector.name()
                 )
             })
