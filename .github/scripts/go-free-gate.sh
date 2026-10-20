@@ -43,7 +43,7 @@ for crate in ${GATE_CRATES-${GO_FREE_CRATES:-}}; do
     esac
 
     rc=0
-    scan --include='*.rs' \
+    scan --include='*.rs' --include='*.toml' --include='*.sh' --include='*.yml' \
         -e 'temp_dir|tempdir|tempfile' \
         "$dir" || rc=$?
     case "$rc" in
