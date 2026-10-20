@@ -284,7 +284,7 @@ run makes the battery read a dead correlation id, so the recipe starts
 ```
 
 The step fails the job on a non-zero exit code: `1` when the service is not
-conformant (a failed or skipped check, or no check ran), `2` when the run itself
+conformant (a failed or skipped check), `2` when the run itself
 could not happen (NATS unreachable, a missing stream, a bad argument). The
 service's own environment variables are the service's; the CLI needs only its
 NATS URL and its `/readyz` URL. On macOS use the `aarch64-apple-darwin` asset and

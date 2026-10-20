@@ -1,8 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use conformance_scope::{
     AcceptorBehavior, AttachTarget, ExpectedDeclaration, ExpectedScope, SAMPLE_FALLBACK_SCOPE,
-    SpawnTarget, attach_default, parse_scenarios, run_attach, run_spawn, spawn_default,
+    Scenario, SpawnTarget, attach_default, check_attach_input, check_spawn_input, parse_scenarios,
+    run_attach, run_spawn, spawn_default,
 };
 use serde::Deserialize;
 
@@ -64,55 +67,134 @@ pub fn load(raw: &str) -> Result<Manifest> {
 }
 
 pub async fn run(manifest: &Manifest) -> Result<AggregateReport> {
-    let mut services = Vec::with_capacity(manifest.services.len());
-    for spec in &manifest.services {
-        services.push(run_service(spec).await?);
+    let prepared = prepare(manifest)?;
+    let mut services = Vec::with_capacity(prepared.len());
+    for service in &prepared {
+        services.push(service.run().await?);
     }
     Ok(AggregateReport::from_services(services))
 }
 
-async fn run_service(spec: &ServiceSpec) -> Result<ServiceReport> {
+struct Prepared<'a> {
+    service_key: &'a str,
+    expected: ExpectedDeclaration,
+    behavior: AcceptorBehavior,
+    scenarios: Vec<Scenario>,
+    timeout: Duration,
+    target: Target,
+}
+
+enum Target {
+    Attach(AttachTarget),
+    Spawn(SpawnTarget),
+}
+
+impl Prepared<'_> {
+    async fn run(&self) -> Result<ServiceReport> {
+        let report = match &self.target {
+            Target::Attach(target) => {
+                run_attach(
+                    target,
+                    &self.expected,
+                    &self.behavior,
+                    &self.scenarios,
+                    self.timeout,
+                )
+                .await?
+            }
+            Target::Spawn(target) => {
+                run_spawn(
+                    target,
+                    &self.expected,
+                    &self.behavior,
+                    &self.scenarios,
+                    self.timeout,
+                )
+                .await?
+            }
+        };
+        Ok(ServiceReport::from_report(self.service_key, &report))
+    }
+}
+
+fn prepare(manifest: &Manifest) -> Result<Vec<Prepared<'_>>> {
+    if manifest.services.is_empty() {
+        return Err(CliError::new(
+            "manifest lists no services; there is nothing to check",
+        ));
+    }
+    refuse_shared_brokers(&manifest.services)?;
+    manifest
+        .services
+        .iter()
+        .map(|spec| {
+            prepare_service(spec)
+                .map_err(|e| CliError::new(format!("service {:?}: {e}", spec.service_key)))
+        })
+        .collect()
+}
+
+fn refuse_shared_brokers(services: &[ServiceSpec]) -> Result<()> {
+    let mut owners: HashMap<&str, &str> = HashMap::new();
+    for spec in services {
+        let Some(attach) = &spec.attach else { continue };
+        let broker = attach.nats.trim_end_matches('/');
+        if let Some(first) = owners.insert(broker, &spec.service_key) {
+            return Err(CliError::new(format!(
+                "services {first:?} and {:?} both attach to the broker {:?}; attach assumes a fresh handshake stream, so a broker serves one attach entry",
+                spec.service_key, attach.nats
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn prepare_service(spec: &ServiceSpec) -> Result<Prepared<'_>> {
     let expected = build_expected(spec);
     let timeout = duration::parse(&spec.timeout)?;
     let behavior = build_behavior(spec, &expected)?;
-
-    let report = match (&spec.attach, &spec.spawn) {
+    let (target, scenarios) = match (&spec.attach, &spec.spawn) {
         (Some(_), Some(_)) => {
-            return Err(CliError::new(format!(
-                "service {:?} declares both `attach` and `spawn`; pick one",
-                spec.service_key
-            )));
+            return Err(CliError::new(
+                "declares both `attach` and `spawn`; pick one",
+            ));
         }
         (None, None) => {
-            return Err(CliError::new(format!(
-                "service {:?} declares neither `attach` nor `spawn`",
-                spec.service_key
-            )));
+            return Err(CliError::new("declares neither `attach` nor `spawn`"));
         }
         (Some(attach), None) => {
-            let scenarios = match &spec.scenarios {
-                Some(raw) => parse_scenarios(raw)?,
-                None => attach_default(),
-            };
+            let scenarios = resolve_scenarios(spec, attach_default())?;
             let target = AttachTarget {
                 nats_url: attach.nats.clone(),
                 readyz_url: attach.readyz.clone(),
             };
-            run_attach(&target, &expected, &behavior, &scenarios, timeout).await?
+            check_attach_input(&target, &expected, &scenarios, timeout)?;
+            (Target::Attach(target), scenarios)
         }
         (None, Some(spawn)) => {
-            let scenarios = match &spec.scenarios {
-                Some(raw) => parse_scenarios(raw)?,
-                None => spawn_default(),
-            };
+            let scenarios = resolve_scenarios(spec, spawn_default())?;
             let target = SpawnTarget {
                 binary: spawn.path.clone(),
             };
-            run_spawn(&target, &expected, &behavior, &scenarios, timeout).await?
+            check_spawn_input(&target, &expected, &scenarios, timeout)?;
+            (Target::Spawn(target), scenarios)
         }
     };
+    Ok(Prepared {
+        service_key: &spec.service_key,
+        expected,
+        behavior,
+        scenarios,
+        timeout,
+        target,
+    })
+}
 
-    Ok(ServiceReport::from_report(&spec.service_key, &report))
+fn resolve_scenarios(spec: &ServiceSpec, default: Vec<Scenario>) -> Result<Vec<Scenario>> {
+    match &spec.scenarios {
+        Some(raw) => Ok(parse_scenarios(raw)?),
+        None => Ok(default),
+    }
 }
 
 fn build_expected(spec: &ServiceSpec) -> ExpectedDeclaration {

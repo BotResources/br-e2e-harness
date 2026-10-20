@@ -11,6 +11,10 @@ form to decide whether a version ships.
 
 ## 0.1.1
 
+### Added
+
+- `check_attach_input` and `check_spawn_input`: the validation `run_attach` and `run_spawn` apply to their inputs before any I/O (timeout, scenario selection, service and scope keys, `/readyz` URL or uniform `platform_only` flag and subject binary), public so that a caller driving several services can refuse the whole set before it runs the first. `run_attach` and `run_spawn` call them; their behavior is unchanged. Pinned by `tests/refused_input.rs`.
+
 ### Fixed
 
 - `declaration-content` compared the scope list in declared order, so a conformant service that declared the expected scopes in another order failed with a diff listing the same scopes twice. The check now compares both lists sorted by scope key (the order is not part of the wire) and renders the sorted lists. Pinned by unit tests in `expected.rs`.

@@ -6,11 +6,11 @@ use crate::error::{ConformanceError, Result};
 use crate::expected::{ExpectedDeclaration, SAMPLE_FALLBACK_SCOPE};
 use crate::harness::ScopeHarness;
 use crate::outcome::{CheckOutcome, ConformanceReport};
+use crate::preflight::{check_spawn_input, uniform_platform_only};
 use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
-use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
+use crate::scenario::{AcceptorBehavior, Scenario};
 use crate::subject::{BootWatch, Subject, SubjectConfig};
-use crate::timeout::validated_timeout;
 
 const SPAWN_WAIT_TIMEOUT: &str = "500ms";
 
@@ -25,8 +25,7 @@ pub async fn run_spawn(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
-    let timeout = validated_timeout(timeout)?;
-    require_selection(scenarios)?;
+    check_spawn_input(target, expected, scenarios, timeout)?;
     let service_key = expected.validated_service_key()?;
     let platform_only = uniform_platform_only(expected)?;
     let mut report = ConformanceReport::default();
@@ -74,30 +73,6 @@ pub async fn run_spawn(
     }
 
     Ok(report)
-}
-
-fn uniform_platform_only(expected: &ExpectedDeclaration) -> Result<bool> {
-    let Some(first) = expected.scopes.first() else {
-        return Ok(false);
-    };
-    if expected
-        .scopes
-        .iter()
-        .all(|scope| scope.platform_only == first.platform_only)
-    {
-        return Ok(first.platform_only);
-    }
-    let flags = expected
-        .scopes
-        .iter()
-        .map(|scope| format!("{}={}", scope.key, scope.platform_only))
-        .collect::<Vec<_>>()
-        .join(", ");
-    Err(ConformanceError::InvalidInput(format!(
-        "spawn mode drives the subject with one platform_only flag for every scope, so an \
-         expectation with mixed flags cannot be satisfied by any subject ({flags}); use attach \
-         mode for a mixed declaration"
-    )))
 }
 
 async fn observe_batch(

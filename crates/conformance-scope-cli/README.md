@@ -143,7 +143,7 @@ run makes the battery read a dead correlation id, so the recipe starts
 ```
 
 The step fails the job on a non-zero exit code: `1` when the service is not
-conformant (a failed or skipped check, or no check ran), `2` when the run itself
+conformant (a failed or skipped check), `2` when the run itself
 could not happen (NATS unreachable, a missing stream, a bad argument). The
 service's own environment variables are the service's; the CLI needs only its
 NATS URL and its `/readyz` URL. On macOS use the `aarch64-apple-darwin` asset and
@@ -307,12 +307,18 @@ semantics (e.g. in `attach`, selecting `s4` requires `reject`, else it is
 A key the manifest does not know (a typo such as `platform_onyl`) is refused with exit `2`
 naming it; the manifest never ignores a field.
 
+The whole manifest is validated before the first service runs: an empty `services` list,
+two `attach` entries on one broker (`attach` assumes a fresh handshake stream, so a broker
+serves one attach entry) and any service whose timeout, scope keys, scenarios, `reject`
+code, `/readyz` URL or `spawn` path cannot be run exit `2` naming the service and the
+value, with no service run and no report written.
+
 `--format` / `--output` apply to the aggregate report.
 
 ## Exit codes
 
 - `0` — conformant (at least one check ran, none failed, none skipped).
-- `1` — not conformant (a check failed or was skipped, or no check ran).
+- `1` — not conformant (a check failed or was skipped).
 - `2` — a usage / connection / I/O / prerequisite error (bad arguments, NATS
   unreachable, missing stream, unwritable output, a missing `nats-server`,
   `fabric-nats`, an unreadable manifest, a `--spawn` target that is not a file, a

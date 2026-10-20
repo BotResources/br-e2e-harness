@@ -7,10 +7,10 @@ use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
 use crate::outcome::{CheckOutcome, CheckStatus, ConformanceReport};
+use crate::preflight::check_attach_input;
 use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
-use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
-use crate::timeout::validated_timeout;
+use crate::scenario::{AcceptorBehavior, Scenario};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -26,8 +26,7 @@ pub async fn run_attach(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
-    let timeout = validated_timeout(timeout)?;
-    require_selection(scenarios)?;
+    check_attach_input(target, expected, scenarios, timeout)?;
     let service_key = expected.validated_service_key()?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
     let nats = contained(FabricTestNats::attach_without_provisioning(

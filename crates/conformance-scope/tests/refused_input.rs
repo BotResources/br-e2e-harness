@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use conformance_scope::{
     AcceptorBehavior, AttachTarget, ConformanceError, ExpectedDeclaration, ExpectedScope,
-    MAX_TIMEOUT, PlatformOnly, Scenario, SpawnTarget, run_attach, run_spawn,
+    MAX_TIMEOUT, PlatformOnly, Scenario, SpawnTarget, check_attach_input, check_spawn_input,
+    run_attach, run_spawn,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(1);
@@ -458,4 +459,35 @@ async fn attach_and_spawn_accept_the_cap_itself_as_a_timeout() {
     .await;
     let detail = invalid_input(spawn);
     assert!(detail.contains("/nonexistent/scope-service"), "{detail}");
+}
+
+#[test]
+fn the_attach_input_check_refuses_what_run_attach_refuses_and_accepts_a_runnable_input() {
+    let target = AttachTarget {
+        nats_url: "nats://127.0.0.1:1".to_string(),
+        readyz_url: "http://127.0.0.1:1/readyz".to_string(),
+    };
+    let scenarios = [Scenario::DeclareWellFormed];
+
+    assert!(check_attach_input(&target, &uniform(), &scenarios, TIMEOUT).is_ok());
+    assert!(check_attach_input(&target, &uniform(), &[], TIMEOUT).is_err());
+    assert!(check_attach_input(&target, &uniform(), &scenarios, Duration::ZERO).is_err());
+    let bad_readyz = AttachTarget {
+        nats_url: target.nats_url.clone(),
+        readyz_url: "127.0.0.1:1/readyz".to_string(),
+    };
+    assert!(check_attach_input(&bad_readyz, &uniform(), &scenarios, TIMEOUT).is_err());
+}
+
+#[test]
+fn the_spawn_input_check_refuses_what_run_spawn_refuses_and_accepts_a_runnable_input() {
+    let scenarios = [Scenario::DeclareWellFormed];
+    let present = SpawnTarget {
+        binary: std::env::current_exe().expect("current exe"),
+    };
+
+    assert!(check_spawn_input(&present, &uniform(), &scenarios, TIMEOUT).is_ok());
+    assert!(check_spawn_input(&present, &mixed(), &scenarios, TIMEOUT).is_err());
+    assert!(check_spawn_input(&present, &uniform(), &[], TIMEOUT).is_err());
+    assert!(check_spawn_input(&absent_binary(), &uniform(), &scenarios, TIMEOUT).is_err());
 }
