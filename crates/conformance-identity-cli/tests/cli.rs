@@ -301,12 +301,11 @@ async fn attach_run_against_a_live_acceptor_is_conformant() {
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` and `fabric-nats` built beside the test executable"]
-async fn an_attached_acceptor_that_never_reports_ready_exits_2() {
+async fn an_attached_acceptor_that_never_reports_ready_exits_2_with_the_readiness_sentence() {
     let harness = IdentityHarness::start_with_binary(PathBuf::from("/bin/sh"))
         .await
         .expect("harness");
     let nats_url = harness.nats_url();
-    harness.shutdown().await;
 
     let stderr = tokio::task::spawn_blocking(move || {
         let assert = cli()
@@ -326,7 +325,13 @@ async fn an_attached_acceptor_that_never_reports_ready_exits_2() {
     })
     .await
     .expect("cli task");
-    assert!(stderr.starts_with("error: "), "{stderr}");
+
+    harness.shutdown().await;
+    assert!(
+        stderr.contains("never reported /readyz=200"),
+        "the broker is alive, so the failure must be readiness: {stderr}"
+    );
+    assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
 }
 
 #[tokio::test]

@@ -28,8 +28,12 @@ pub async fn provision(nats_url: &str, manifest: &str) -> Result<()> {
 }
 
 fn readable_manifest(name: &str) -> Result<PathBuf> {
+    let source_tree = manifest_path(name);
+    if source_tree.is_file() {
+        return Ok(source_tree);
+    }
     let Some((_, content)) = EMBEDDED_MANIFESTS.iter().find(|(known, _)| *known == name) else {
-        return Ok(manifest_path(name));
+        return Ok(source_tree);
     };
     let cache = cache_dir_from(|var| std::env::var_os(var)).ok_or_else(|| {
         ConformanceError::Jetstream(
@@ -104,6 +108,14 @@ mod tests {
             }
             other => panic!("expected a typed error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_source_tree_fixture_is_used_when_it_exists_and_nothing_is_written() {
+        assert_eq!(
+            readable_manifest("scope_declaration.toml").unwrap(),
+            manifest_path("scope_declaration.toml")
+        );
     }
 
     #[test]

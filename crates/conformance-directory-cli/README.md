@@ -35,7 +35,7 @@ conformance-directory run --help
 | --- | --- |
 | `w1..w6` | the anchor only |
 | `p1..p2` | `nats-server` on `PATH`, `fabric-nats` beside the executable |
-| `c1..c6` | the same, plus a Postgres whose admin role can create roles and databases, in `E2E_PG_ADMIN_URL` or `DATABASE_URL` |
+| `c1..c6` | the same, plus a Postgres whose admin role can create roles and databases, in `E2E_PG_ADMIN_URL` or `DATABASE_URL` (the environment first, then a `.env` file in the working directory, which a service checkout may already carry) |
 
 **Exit codes:** `0` conformant, `1` non-conformant (a check failed or was skipped), `2`
 the run could not complete (bad flag, unknown check, anchor missing or unable to run,
