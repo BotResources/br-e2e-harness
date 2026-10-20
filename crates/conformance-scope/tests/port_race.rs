@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use conformance_scope::{BootWatch, ConformanceError, Subject, SubjectConfig};
+use conformance_scope::{BootWatch, ConformanceError, MAX_TIMEOUT, Subject, SubjectConfig};
 
 const KEEPS_THE_PORT: &str = "exec sleep 30\n";
 
@@ -206,6 +206,59 @@ async fn a_boot_watch_with_zero_attempts_is_refused_without_starting_the_subject
         "zero attempts must be InvalidInput"
     );
     assert_eq!(tries, 0);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_boot_watch_above_the_cap_is_refused_without_starting_the_subject() {
+    let beyond = MAX_TIMEOUT + Duration::from_nanos(1);
+    let watches = [
+        (
+            "lookout-max",
+            BootWatch {
+                lookout: Duration::MAX,
+                ..BootWatch::default()
+            },
+        ),
+        (
+            "lookout-cap",
+            BootWatch {
+                lookout: beyond,
+                ..BootWatch::default()
+            },
+        ),
+        (
+            "settle-max",
+            BootWatch {
+                settle: Duration::MAX,
+                ..BootWatch::default()
+            },
+        ),
+        (
+            "settle-cap",
+            BootWatch {
+                settle: beyond,
+                ..BootWatch::default()
+            },
+        ),
+    ];
+    for (label, watch) in watches {
+        let (dir, binary) = stand_in(
+            &format!("port-race-above-cap-{label}"),
+            &counting_then_keeping_the_port(),
+        );
+
+        let started = Subject::start_with(&binary, &config(), watch).await;
+        let tries = attempts(&dir);
+        std::fs::remove_dir_all(&dir).ok();
+
+        match started {
+            Err(ConformanceError::InvalidInput(detail)) => {
+                assert!(detail.contains("24 hours"), "{label}: {detail}");
+            }
+            other => panic!("{label}: expected InvalidInput: {:?}", other.err()),
+        }
+        assert_eq!(tries, 0, "{label}: the subject must not be started");
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]

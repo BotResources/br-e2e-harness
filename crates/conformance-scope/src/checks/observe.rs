@@ -100,7 +100,7 @@ pub async fn disabled_mode_ready_without_declare(ctx: &CheckContext<'_>) -> Chec
     let expected =
         "with scope declaration disabled, /readyz is 200 immediately and no declare is published";
 
-    if !wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
+    if !wait_until(ctx.wait(), || async { ctx.readyz.is_ready().await }).await {
         return CheckOutcome::fail(
             id,
             expected,

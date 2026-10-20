@@ -29,7 +29,7 @@ pub struct RunArgs {
     #[arg(
         long,
         conflicts_with = "spawn",
-        help = "Attach to an already-running service (default). Requires --nats and --readyz."
+        help = "Attach to an already-running service (default). Requires --nats and --readyz and a fresh INTEGRATION_CMD stream: with more than one boot or service on the declare stream a failed check names that cause."
     )]
     pub attach: bool,
 

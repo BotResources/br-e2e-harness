@@ -48,7 +48,7 @@ pub async fn readiness_gated(ctx: &CheckContext<'_>) -> CheckOutcome {
             detail.to_string(),
         );
     }
-    if wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
+    if wait_until(ctx.wait(), || async { ctx.readyz.is_ready().await }).await {
         CheckOutcome::pass(id, expected, "503 before, 200 after acceptance")
     } else {
         CheckOutcome::fail(
@@ -100,7 +100,7 @@ pub async fn republishes_same_correlation_id(ctx: &CheckContext<'_>) -> CheckOut
             detail.to_string(),
         );
     }
-    if wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
+    if wait_until(ctx.wait(), || async { ctx.readyz.is_ready().await }).await {
         CheckOutcome::pass(
             id,
             expected,
@@ -150,7 +150,7 @@ pub async fn rejection_stops_readiness(ctx: &CheckContext<'_>) -> CheckOutcome {
             detail.to_string(),
         );
     }
-    let surfaced = wait_until(ctx.timeout, || async {
+    let surfaced = wait_until(ctx.wait(), || async {
         ctx.readyz.body().await.as_deref() == Some(expected_body.as_str())
     })
     .await;
@@ -233,7 +233,7 @@ pub async fn duplicate_confirmations_tolerated(ctx: &CheckContext<'_>) -> CheckO
             detail.to_string(),
         );
     }
-    if !wait_until(ctx.timeout, || async { ctx.readyz.is_ready().await }).await {
+    if !wait_until(ctx.wait(), || async { ctx.readyz.is_ready().await }).await {
         return CheckOutcome::fail(
             id,
             expected,

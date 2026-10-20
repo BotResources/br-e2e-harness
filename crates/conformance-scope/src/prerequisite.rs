@@ -5,14 +5,15 @@ use std::path::Path;
 
 use futures_util::FutureExt;
 
+use crate::binary::is_executable_file;
 use crate::error::{ConformanceError, Result};
 
 pub(crate) fn subject_binary(binary: &Path) -> Result<()> {
-    if binary.is_file() {
+    if is_executable_file(binary) {
         Ok(())
     } else {
         Err(ConformanceError::InvalidInput(format!(
-            "the subject binary {} does not exist or is not a file",
+            "the subject binary {} does not exist, is not a file or is not executable",
             binary.display()
         )))
     }
@@ -52,6 +53,25 @@ mod tests {
             other => panic!("expected a typed input error: {other:?}"),
         }
         assert!(subject_binary(&std::env::current_exe().unwrap()).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_subject_binary_without_the_execute_bit_is_refused_naming_it() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = scratch("non-executable-subject").join("scope-service");
+        std::fs::write(&path, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        match subject_binary(&path) {
+            Err(ConformanceError::InvalidInput(detail)) => {
+                assert!(detail.contains(&path.display().to_string()), "{detail}");
+                assert!(detail.contains("not executable"), "{detail}");
+            }
+            other => panic!("expected a typed input error: {other:?}"),
+        }
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(subject_binary(&path).is_ok());
     }
 
     #[tokio::test]

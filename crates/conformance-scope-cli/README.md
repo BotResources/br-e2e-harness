@@ -176,7 +176,7 @@ conformance-scope run \
 
 Both fixed-name handshake streams, `INTEGRATION_CMD` and `INTEGRATION_EVT`, must
 already exist. Attach checks them before anything else, never creates them, and
-exits `2` when either is missing. Attach runs `s1, s2` and the `declaration-content` assertion by default.
+exits `2` when either is missing. The `INTEGRATION_CMD` stream must be fresh: when it holds the declares of more than one boot or service (an earlier run, a restart or another service on a shared broker), the first declare may be a dead one and a conformant service fails; every failed check then names the cause, "more than one boot or service on the declare stream", and the fix is a fresh stream. Attach runs `s1, s2` and the `declaration-content` assertion by default.
 s3, s4 and s6 depend on how the service was booted, so they are opt-in through
 `--scenarios` and hold only under their prerequisite:
 
@@ -310,7 +310,7 @@ naming it; the manifest never ignores a field.
 The whole manifest is validated before the first service runs: an empty `services` list,
 two `attach` entries on one broker (`attach` assumes a fresh handshake stream, so a broker
 serves one attach entry) and any service whose timeout, scope keys, scenarios, `reject`
-code, `/readyz` URL or `spawn` path cannot be run exit `2` naming the service and the
+code, `/readyz` URL or `spawn` path (a missing file or one without the execute bit) cannot be run exit `2` naming the service and the
 value, with no service run and no report written.
 
 `--format` / `--output` apply to the aggregate report.
@@ -321,7 +321,7 @@ value, with no service run and no report written.
 - `1` — not conformant (a check failed or was skipped).
 - `2` — a usage / connection / I/O / prerequisite error (bad arguments, NATS
   unreachable, missing stream, unwritable output, a missing `nats-server`,
-  `fabric-nats`, an unreadable manifest, a `--spawn` target that is not a file, a
+  `fabric-nats`, an unreadable manifest, a `--spawn` target that is not an executable file, a
   subject that exited at boot on each of five attempts, or `--spawn` combined with `--nats` or `--readyz`, which
   would be ignored: the spawn battery runs against its own throwaway broker).
 

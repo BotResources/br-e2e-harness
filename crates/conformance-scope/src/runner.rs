@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use br_test_harness::FabricTestNats;
@@ -81,7 +82,11 @@ pub async fn run_attach(
         let outcome = run_scenario(*scenario, &ctx).await;
         report.push(name_the_attach_prerequisite(*scenario, outcome));
     }
+    let boots = distinct_declares(&capture);
     capture.stop().await;
+    for outcome in &mut report.outcomes {
+        name_the_stale_handshake(outcome, boots);
+    }
     nats.shutdown().await;
     Ok(report)
 }
@@ -95,6 +100,25 @@ fn name_the_attach_prerequisite(scenario: Scenario, mut outcome: CheckOutcome) -
         outcome.detail = Some(format!("{detail}; in attach mode, {prerequisite}"));
     }
     outcome
+}
+
+fn distinct_declares(capture: &DeclareCapture) -> usize {
+    capture
+        .try_correlation_ids()
+        .map(|ids| ids.into_iter().collect::<HashSet<_>>().len())
+        .unwrap_or(0)
+}
+
+fn name_the_stale_handshake(outcome: &mut CheckOutcome, distinct_declares: usize) {
+    if outcome.status != CheckStatus::Fail || distinct_declares < 2 {
+        return;
+    }
+    let detail = outcome.detail.take().unwrap_or_default();
+    outcome.detail = Some(format!(
+        "{detail}; {distinct_declares} distinct declares were captured: more than one boot or \
+         service on the declare stream (earlier run, restart or another service): use a fresh \
+         INTEGRATION_CMD stream"
+    ));
 }
 
 fn missing_streams() -> ConformanceError {

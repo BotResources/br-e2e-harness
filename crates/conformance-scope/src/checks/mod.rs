@@ -14,6 +14,7 @@ use crate::expected::ExpectedDeclaration;
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario};
+use crate::timeout::MAX_TIMEOUT;
 
 pub use confirmation::{
     duplicate_confirmations_tolerated, readiness_gated, rejection_stops_readiness,
@@ -29,6 +30,12 @@ pub struct CheckContext<'a> {
     pub service_key: &'a ServiceKey,
     pub behavior: &'a AcceptorBehavior,
     pub timeout: Duration,
+}
+
+impl CheckContext<'_> {
+    pub(crate) fn wait(&self) -> Duration {
+        self.timeout.min(MAX_TIMEOUT)
+    }
 }
 
 pub const QUIET_WINDOW: Duration = Duration::from_secs(3);
@@ -54,7 +61,7 @@ pub(crate) async fn await_declares(
     ctx: &CheckContext<'_>,
     at_least: usize,
 ) -> Result<(), DeclareWait> {
-    wait_until(ctx.timeout, || async {
+    wait_until(ctx.wait(), || async {
         ctx.capture
             .try_count()
             .map(|count| count >= at_least)

@@ -8,6 +8,7 @@ use reqwest::StatusCode;
 
 use crate::binary::child_path;
 use crate::error::{ConformanceError, Result};
+use crate::timeout::MAX_TIMEOUT;
 
 pub struct SubjectConfig {
     pub nats_url: String,
@@ -119,6 +120,13 @@ impl Subject {
             return Err(ConformanceError::InvalidInput(
                 "a boot watch with zero attempts never starts the subject".to_string(),
             ));
+        }
+        for (name, value) in [("lookout", watch.lookout), ("settle", watch.settle)] {
+            if value > MAX_TIMEOUT {
+                return Err(ConformanceError::InvalidInput(format!(
+                    "boot watch {name} {value:?} is above the cap of {MAX_TIMEOUT:?} (24 hours)"
+                )));
+            }
         }
         let mut last_exit = None;
         for _ in 0..watch.attempts {

@@ -206,3 +206,57 @@ async fn s4_in_attach_mode_names_its_prerequisite_for_a_service_that_is_already_
     assert!(detail.contains("in attach mode"), "{detail}");
     assert!(detail.contains("still awaiting acceptance"), "{detail}");
 }
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server`, `fabric-nats` and the `scope-service` binary on PATH"]
+async fn s2_in_attach_mode_names_a_second_boot_on_the_declare_stream_instead_of_blaming_the_service()
+ {
+    let (harness, first_boot) = booted(|h| config(h, "30s")).await;
+    first_boot.shutdown().await;
+    let second_boot = Subject::start(harness.binary(), &config(&harness, "30s"))
+        .await
+        .expect("start the second boot");
+
+    let report = attach(
+        &harness,
+        &second_boot,
+        Scenario::ReadinessGated,
+        Duration::from_secs(4),
+    )
+    .await;
+
+    second_boot.shutdown().await;
+    harness.shutdown().await;
+    let outcome = only_outcome(&report);
+    assert_eq!(outcome.status, CheckStatus::Fail, "{report:?}");
+    let detail = outcome.detail.clone().unwrap_or_default();
+    assert!(
+        detail.contains("more than one boot or service on the declare stream"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("use a fresh INTEGRATION_CMD stream"),
+        "{detail}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server`, `fabric-nats` and the `scope-service` binary on PATH"]
+async fn a_single_boot_on_the_declare_stream_passes_s2_in_attach_mode_without_a_stale_stream_hint()
+{
+    let (harness, subject) = booted(|h| config(h, "30s")).await;
+
+    let report = attach(
+        &harness,
+        &subject,
+        Scenario::ReadinessGated,
+        Duration::from_secs(10),
+    )
+    .await;
+
+    subject.shutdown().await;
+    harness.shutdown().await;
+    let outcome = only_outcome(&report);
+    assert_eq!(outcome.status, CheckStatus::Pass, "{report:?}");
+    assert_eq!(outcome.detail, None, "{report:?}");
+}

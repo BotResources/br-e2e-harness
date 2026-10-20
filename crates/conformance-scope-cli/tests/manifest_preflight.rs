@@ -125,3 +125,32 @@ fn a_bad_service_after_a_good_one_is_refused_before_the_good_one_runs() {
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_non_executable_spawn_path_after_a_good_service_is_refused_before_the_good_one_runs() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = scratch("manifest-non-executable");
+    let subject = dir.join("subject");
+    std::fs::write(&subject, "#!/bin/sh\n").expect("write the subject");
+    std::fs::set_permissions(&subject, std::fs::Permissions::from_mode(0o644))
+        .expect("drop the execute bit");
+    let second = format!(
+        "    timeout: 1s\n    scopes:\n      - key: second_service:read\n    spawn:\n      path: {}\n",
+        subject.display()
+    );
+    let manifest =
+        format!("services:\n{UNREACHABLE_FIRST}  - service_key: second_service\n{second}");
+
+    let stderr = refused(&manifest);
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert!(stderr.contains("second_service"), "{stderr}");
+    assert!(stderr.contains("not executable"), "{stderr}");
+    assert!(stderr.contains(&subject.display().to_string()), "{stderr}");
+    assert!(
+        !stderr.contains("nats://127.0.0.1:1"),
+        "the first service must not run before the second is validated: {stderr}"
+    );
+}
