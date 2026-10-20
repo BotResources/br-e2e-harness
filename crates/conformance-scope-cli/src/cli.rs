@@ -21,12 +21,19 @@ const MANIFEST_SCHEMA: &str = "Manifest schema (YAML; an unknown key is refused 
         nats: <URL>               NATS URL of the running service
         readyz: <URL>             the service's /readyz URL
       spawn:
-        path: <PATH>              subject binary, launched on a throwaway nats-server
+        path: <PATH>              subject binary, launched on a throwaway nats-server (prerequisites of `run --spawn`)
 
 The whole manifest is validated before the first service runs. Two attach entries
 on one broker are refused. The report aggregates every service.
 
 Exit codes: 0 all conformant, 1 not conformant, 2 the run could not happen.";
+
+const SPAWN_HELP: &str = "Spawn this subject binary against a throwaway nats-server and run the full battery. Excludes --nats and --readyz.
+Prerequisites (any one missing exits 2 naming it; the released archive holds none of the last two, so --spawn is a source-tree mode, CI uses attach):
+  - `nats-server` on PATH
+  - the `fabric-nats` binary (bin of the br-test-harness package) in the directory of this executable
+  - the provisioning manifest crates/conformance-scope/tests/fixtures/scope_declaration.toml of the source tree this executable was built from
+The subject binary must serve HTTP on $HTTP_ADDR with GET /livez (always 200) and GET /readyz (503 until the declaration is accepted), and read its configuration from these environment variables: NATS_URL, HTTP_ADDR, COMMAND_STREAM_NAME, EVENT_STREAM_NAME, SERVICE_KEY, SCOPE_KEYS, LABEL_KEY, DESCRIPTION_KEY, PLATFORM_ONLY, WAIT_TIMEOUT, SCOPE_DECLARATION_ENABLED.";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -67,7 +74,7 @@ pub struct RunArgs {
         long,
         value_name = "PATH",
         conflicts_with_all = ["nats", "readyz"],
-        help = "Spawn this subject binary against a throwaway nats-server (needs `nats-server` on PATH). Excludes --nats and --readyz."
+        help = SPAWN_HELP
     )]
     pub spawn: Option<PathBuf>,
 
@@ -247,6 +254,38 @@ mod tests {
             assert!(help.contains(&format!("{key}:")), "{key}: {help}");
         }
         assert!(help.contains("Exit codes"), "{help}");
+    }
+
+    #[test]
+    fn given_the_run_help_when_rendered_then_the_spawn_option_states_its_prerequisites_and_the_subject_contract()
+     {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("run")
+            .expect("run subcommand")
+            .render_long_help()
+            .to_string();
+
+        for needle in [
+            "`nats-server` on PATH",
+            "`fabric-nats`",
+            "scope_declaration.toml",
+            "/livez",
+            "/readyz",
+            "$HTTP_ADDR",
+            "NATS_URL",
+            "COMMAND_STREAM_NAME",
+            "EVENT_STREAM_NAME",
+            "SERVICE_KEY",
+            "SCOPE_KEYS",
+            "LABEL_KEY",
+            "DESCRIPTION_KEY",
+            "PLATFORM_ONLY",
+            "WAIT_TIMEOUT",
+            "SCOPE_DECLARATION_ENABLED",
+        ] {
+            assert!(help.contains(needle), "{needle}: {help}");
+        }
     }
 
     #[test]

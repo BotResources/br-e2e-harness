@@ -65,7 +65,7 @@ Each is an `#[ignore]`-gated real-infra test (`tests/conformance.rs`), in the
 
 | Id | Asserts |
 |---|---|
-| **S1** | The subject declares on boot and the declare deserializes into `IntegrationCommand<DeclareServiceScopes>`; the declared scopes validate and are owned by the manifest service. |
+| **S1** | The subject declares on boot and the declare deserializes into `IntegrationCommand<DeclareServiceScopes>`. S1 checks the wire shape only; the declared scopes are validated and compared with the expectation by `declaration-content`. |
 | **S2** | `/readyz` is 503 before, 200 after the acceptor emits `accepted` (echoing the correlation_id). |
 | **S3** | Withheld past `WAIT_TIMEOUT`, the subject re-publishes the **same** correlation_id (≥2 declares); accepting it then drives `/readyz` to 200. |
 | **S4** | On `rejected`, the subject surfaces the rejection reason in its `/readyz` body (`scope declaration rejected: <code>`) — proving it received and processed the reject — then `/readyz` stays 503 and the subject stops re-publishing. |
@@ -81,9 +81,9 @@ binary by reusing the helpers, not just the tests:
   (`locate_subject`: `PATH`, then the cache directory, then the release asset) and
   is the self-test entry point; `start_with_binary(binary)` runs the **same** battery
   against any subject binary, so a consuming service drives it against its own.
-  Either way it spawns a dedicated `SpawnedNats` and creates the handshake
-  JetStream stream up front (the platform never auto-provisions, so the runner
-  must). `capture_declares()` starts a `DeclareCapture`.
+  Either way it starts a throwaway `FabricTestNats` (a `nats-server` with the two
+  fixed handshake streams, `INTEGRATION_CMD` and `INTEGRATION_EVT`, provisioned up
+  front: the platform never auto-provisions, so the runner must). `capture_declares()` starts a `DeclareCapture`.
 - `DeclareCapture` — a **replaying** ephemeral consumer
   (`DeliverPolicy::All`, `AckPolicy::None`) over the declare subject that drains
   every declare on the stream into a shared buffer; `decode()` is the type-oracle

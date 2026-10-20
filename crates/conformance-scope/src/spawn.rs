@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
-use crate::expected::{ExpectedDeclaration, SAMPLE_FALLBACK_SCOPE};
+use crate::expected::ExpectedDeclaration;
 use crate::harness::ScopeHarness;
 use crate::outcome::{CheckOutcome, ConformanceReport};
 use crate::preflight::{check_spawn_input, uniform_platform_only};
@@ -213,14 +213,7 @@ fn lifecycle_behavior(
     expected: &ExpectedDeclaration,
 ) -> AcceptorBehavior {
     match scenario {
-        Scenario::RejectionStopsReadiness => {
-            let sample = expected
-                .scopes
-                .first()
-                .map(|s| s.key.as_str())
-                .unwrap_or(SAMPLE_FALLBACK_SCOPE);
-            global.spawn_rejection(sample)
-        }
+        Scenario::RejectionStopsReadiness => global.spawn_rejection_for(expected),
         _ => AcceptorBehavior::Accept,
     }
 }

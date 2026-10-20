@@ -222,9 +222,13 @@ conformance-scope run \
   --scopes example_service:read,example_service:admin
 ```
 
-The subject binary is configured via environment variables: `SERVICE_KEY`,
-`SCOPE_KEYS` (CSV), `PLATFORM_ONLY`, `SCOPE_DECLARATION_ENABLED`, plus the NATS /
-HTTP wiring the CLI sets per scenario.
+The subject binary must serve HTTP on `$HTTP_ADDR` with `GET /livez` (always `200`) and
+`GET /readyz` (`503` until the declaration is accepted), and read its configuration from
+the environment variables the CLI sets per scenario: `NATS_URL`, `HTTP_ADDR`,
+`COMMAND_STREAM_NAME`, `EVENT_STREAM_NAME`, `SERVICE_KEY`, `SCOPE_KEYS` (CSV),
+`LABEL_KEY`, `DESCRIPTION_KEY`, `PLATFORM_ONLY`, `WAIT_TIMEOUT`,
+`SCOPE_DECLARATION_ENABLED`. `conformance-subjects/scope-service` is the reference
+implementation of this contract. `--help` of `run` states the same prerequisites.
 
 ## Expected declaration
 
@@ -324,6 +328,12 @@ two `attach` entries on one broker (`attach` assumes a fresh handshake stream, s
 serves one attach entry) and any service whose timeout, scope keys, scenarios, `reject`
 code, `/readyz` URL or `spawn` path (a missing file or one without the execute bit) cannot be run exit `2` naming the service and the
 value, with no service run and no report written.
+
+A service that cannot run once the manifest has started (an unreachable broker, a
+missing handshake stream, a subject that exited at boot, a missing `fabric-nats`) stops the
+run: the report of the services that already ran is written (to `--output` or stdout), stderr
+names the failed service and the cause, the services after it do not run, and the exit code
+is `2`.
 
 `--format` / `--output` apply to the aggregate report.
 

@@ -85,6 +85,13 @@ impl ExpectedDeclaration {
         Ok(service_key)
     }
 
+    pub fn sample_scope_key(&self) -> &str {
+        self.scopes
+            .first()
+            .map(|s| s.key.as_str())
+            .unwrap_or(SAMPLE_FALLBACK_SCOPE)
+    }
+
     pub fn scope_keys_csv(&self) -> String {
         self.scopes
             .iter()

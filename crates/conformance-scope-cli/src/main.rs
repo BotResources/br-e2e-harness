@@ -43,8 +43,16 @@ async fn dispatch() -> Result<bool> {
                 CliError::new(format!("reading manifest {}: {e}", args.file.display()))
             })?;
             let manifest = manifest::load(&raw)?;
-            let report = manifest::run(&manifest).await?;
-            emit(report, &args.output)
+            let run = manifest::run(&manifest).await?;
+            match run.failure {
+                None => emit(run.report, &args.output),
+                Some(failure) => {
+                    if !run.report.services.is_empty() {
+                        emit(run.report, &args.output)?;
+                    }
+                    Err(failure)
+                }
+            }
         }
     }
 }

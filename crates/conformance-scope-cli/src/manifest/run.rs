@@ -1,18 +1,36 @@
 use conformance_scope::{run_attach, run_spawn};
 
-use crate::error::Result;
+use crate::error::{CliError, Result};
 use crate::report::{AggregateReport, ServiceReport};
 
 use super::prepare::{Prepared, Target, prepare};
 use super::schema::Manifest;
 
-pub async fn run(manifest: &Manifest) -> Result<AggregateReport> {
+pub struct ManifestRun {
+    pub report: AggregateReport,
+    pub failure: Option<CliError>,
+}
+
+pub async fn run(manifest: &Manifest) -> Result<ManifestRun> {
     let prepared = prepare(manifest)?;
     let mut services = Vec::with_capacity(prepared.len());
+    let mut failure = None;
     for service in &prepared {
-        services.push(service.run().await?);
+        match service.run().await {
+            Ok(report) => services.push(report),
+            Err(e) => {
+                failure = Some(CliError::new(format!(
+                    "service {:?}: {e}; the run stopped here: the services before it are in the report, the services after it did not run",
+                    service.service_key
+                )));
+                break;
+            }
+        }
     }
-    Ok(AggregateReport::from_services(services))
+    Ok(ManifestRun {
+        report: AggregateReport::from_services(services),
+        failure,
+    })
 }
 
 impl Prepared<'_> {

@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use conformance_scope::{
-    AcceptorBehavior, AttachTarget, ExpectedDeclaration, ExpectedScope, SAMPLE_FALLBACK_SCOPE,
-    Scenario, SpawnTarget, attach_default, check_attach_input, check_spawn_input, parse_scenarios,
-    spawn_default,
+    AcceptorBehavior, AttachTarget, ExpectedDeclaration, ExpectedScope, Scenario, SpawnTarget,
+    attach_default, check_attach_input, check_spawn_input, parse_scenarios, spawn_default,
 };
 
 use crate::duration;
@@ -121,14 +120,7 @@ fn build_expected(spec: &ServiceSpec) -> ExpectedDeclaration {
 
 fn build_behavior(spec: &ServiceSpec, expected: &ExpectedDeclaration) -> Result<AcceptorBehavior> {
     match &spec.reject {
-        Some(reason_code) => {
-            let sample = expected
-                .scopes
-                .first()
-                .map(|s| s.key.as_str())
-                .unwrap_or(SAMPLE_FALLBACK_SCOPE);
-            Ok(AcceptorBehavior::reject(Some(reason_code), sample)?)
-        }
+        Some(reason_code) => Ok(AcceptorBehavior::reject_for(expected, Some(reason_code))?),
         None => Ok(AcceptorBehavior::Accept),
     }
 }
