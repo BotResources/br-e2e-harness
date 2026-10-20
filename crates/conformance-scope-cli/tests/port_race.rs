@@ -107,3 +107,33 @@ async fn a_subject_that_never_keeps_its_port_exits_2_as_a_setup_error() {
     );
     assert_eq!(tries, 5);
 }
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` + `fabric-nats` beside the CLI on PATH"]
+async fn a_subject_that_exits_late_after_the_old_one_second_lookout_still_exits_2() {
+    let (dir, binary) = stand_in(
+        "cli-port-race-late-exit",
+        &format!(
+            "echo x >> \"$(dirname \"$0\")/attempts\"\nsleep 1.5\necho \"{OS_TEXT}\" >&2\nexit 98\n"
+        ),
+    );
+
+    let (stdout, stderr) = tokio::task::spawn_blocking(move || {
+        let assert = spawn_run(binary, "s1,declaration-content").code(2);
+        let output = assert.get_output();
+        (output.stdout.clone(), output.stderr.clone())
+    })
+    .await
+    .expect("cli task");
+    let tries = attempts(&dir);
+    std::fs::remove_dir_all(&dir).ok();
+
+    let stderr = String::from_utf8(stderr).expect("utf8 stderr");
+    assert!(stderr.contains("5 attempts"), "{stderr}");
+    assert!(
+        !String::from_utf8_lossy(&stdout).contains("NON-CONFORMANT"),
+        "{}",
+        String::from_utf8_lossy(&stdout)
+    );
+    assert_eq!(tries, 5);
+}

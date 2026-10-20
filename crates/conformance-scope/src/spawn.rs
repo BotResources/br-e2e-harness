@@ -9,7 +9,7 @@ use crate::outcome::{CheckOutcome, ConformanceReport};
 use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario, require_selection};
-use crate::subject::{Subject, SubjectConfig};
+use crate::subject::{BootWatch, Subject, SubjectConfig};
 use crate::timeout::validated_timeout;
 
 const SPAWN_WAIT_TIMEOUT: &str = "500ms";
@@ -112,7 +112,7 @@ async fn observe_batch(
     crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
     let capture = harness.capture_declares().await?;
     let config = enabled_config(harness, expected, platform_only);
-    let subject = match start_subject(harness, &config).await {
+    let subject = match start_subject(harness, &config, timeout).await {
         Ok(subject) => subject,
         Err(e) => {
             capture.stop().await;
@@ -143,8 +143,16 @@ async fn observe_batch(
     outcomes
 }
 
-async fn start_subject(harness: &ScopeHarness, config: &SubjectConfig) -> Result<Subject> {
-    contained(Subject::start(harness.binary(), config))
+async fn start_subject(
+    harness: &ScopeHarness,
+    config: &SubjectConfig,
+    timeout: Duration,
+) -> Result<Subject> {
+    let watch = BootWatch {
+        lookout: timeout,
+        ..BootWatch::default()
+    };
+    contained(Subject::start_with(harness.binary(), config, watch))
         .await
         .map_err(|e| {
             ConformanceError::InvalidInput(format!(
@@ -196,7 +204,7 @@ async fn observe_lifecycle(
 ) -> Result<CheckOutcome> {
     crate::provision::provision(&harness.nats_url(), "scope_declaration.toml").await?;
     let capture = harness.capture_declares().await?;
-    let subject = match start_subject(harness, config).await {
+    let subject = match start_subject(harness, config, timeout).await {
         Ok(subject) => subject,
         Err(e) => {
             capture.stop().await;

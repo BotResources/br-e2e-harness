@@ -116,12 +116,26 @@ fn junit_case(out: &mut String, service_key: &str, outcome: &OutcomeView) {
 }
 
 fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c if is_xml_char(c) => out.push(c),
+            _ => out.push('\u{FFFD}'),
+        }
+    }
+    out
+}
+
+fn is_xml_char(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+    )
 }
 
 #[cfg(test)]
@@ -202,6 +216,30 @@ mod tests {
             xml.contains(&format!("classname=\"{HOSTILE_ESCAPED}\"")),
             "{xml}"
         );
+    }
+
+    #[test]
+    fn junit_replaces_the_characters_xml_forbids_in_every_attribute_and_text() {
+        let hostile = "a\u{0}b\u{1b}[31mred\u{1b}[0m\u{FFFE}c\u{FFFF}d\u{b}e\tf\ng\rh";
+        let outcome = CheckOutcome::fail(CheckId::DeclarationContent, hostile, hostile, hostile);
+        let report = AggregateReport::single(ServiceReport::from_report(
+            hostile,
+            &ConformanceReport {
+                outcomes: vec![outcome],
+            },
+        ));
+        let xml = junit(&report);
+        assert!(xml.chars().all(is_xml_char), "{xml:?}");
+        assert!(
+            xml.contains("a\u{FFFD}b\u{FFFD}[31mred\u{FFFD}[0m\u{FFFD}c\u{FFFD}d\u{FFFD}e"),
+            "{xml:?}"
+        );
+        assert!(xml.contains("e\tf\ng\rh"), "{xml:?}");
+    }
+
+    #[test]
+    fn xml_escape_keeps_astral_and_non_ascii_characters() {
+        assert_eq!(xml_escape("é€😀\u{10FFFF}"), "é€😀\u{10FFFF}");
     }
 
     #[test]

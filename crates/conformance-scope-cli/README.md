@@ -242,7 +242,7 @@ service: example_service
       observed: service_key="example_service", scopes=[example_service:read,example_service:admin]
       scope set mismatch:
         expected: example_service:read(platform_only=false)
-        observed: example_service:read(platform_only=false), example_service:admin(platform_only=false)
+        observed: example_service:admin(platform_only=false), example_service:read(platform_only=false)
 
 NON-CONFORMANT: 2 passed, 1 failed, 0 skipped
 ```
