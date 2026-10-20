@@ -72,7 +72,7 @@ oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", packag
 | `br-test-harness` | 0.1.2 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
 | `conformance-scope` | 0.1.0 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
 | `conformance-identity` | 0.1.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
-| `conformance-passport` | 0.1.0 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
+| `conformance-passport` | 0.1.1 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
 | `conformance-directory` | 0.1.0 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
 | `conformance-nats-fabric` | 0.1.0 | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](crates/conformance-nats-fabric/CHANGELOG.md) |
 
@@ -82,7 +82,7 @@ Install pins (dev-dependencies):
 br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
 conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.0", version = "0.1.0" }
 conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.0", version = "0.1.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
 conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.0", version = "0.1.0" }
 conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.0", version = "0.1.0" }
 ```
@@ -96,9 +96,14 @@ against *an* identity without depending on any project's private one.
 | Tool | Version | Consumed as | Gives you | Docs | Changelog |
 |---|---|---|---|---|---|
 | `conformance-scope-cli` (bin `conformance-scope`) | 0.1.0, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
+| `conformance-passport-cli` (bin `conformance-passport`) | 0.1.1, always `conformance-passport`'s | GitHub Release binary (asset of the release `conformance-passport/v{version}`) | Run the bearer/PAT to Passport conformance battery against any service binary, in any language, with no Rust to write | [README](crates/conformance-passport-cli/README.md) | [CHANGELOG](crates/conformance-passport-cli/CHANGELOG.md) |
 
 `conformance-scope-cli` is not a library of its own: it is versioned with
 `conformance-scope`, and its binaries ride that crate's release.
+
+`conformance-passport-cli` follows the same rule with `conformance-passport`.
+A `conformance-passport` tag also starts `release-anchor-passport` (the Go binary) and
+`release-cli-passport` (the CLI binaries).
 
 ## Distribution
 
@@ -115,6 +120,15 @@ depends on its kind:
 - **Service fixtures** ship as a **container image** built from the crate's tag:
   `ghcr.io/botresources/br-<crate>:<version>` (multi-arch, amd64 + arm64), the
   version being the one in the `oidc-test-idp/v{version}` tag.
+- **CLI tool** (`conformance-passport-cli`) ships as **GitHub Release binaries**
+  (static musl-linux + macOS) attached to the `conformance-passport/v{version}`
+  release, next to the Go subject binary below.
+- **Go subject binary** (`conformance-passport`) ships as a **GitHub Release asset**
+  `identity-passport-<os>-<arch>.tar.gz` with a sibling `.sha256` (linux and darwin,
+  amd64 and arm64), attached to the `conformance-passport/v{version}` release.
+  The crate never compiles: it looks for its binary on `PATH`, then in its
+  cache directory, then downloads and verifies the asset of its own release into
+  that cache.
 - **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
   release, the version being the one in that tag.

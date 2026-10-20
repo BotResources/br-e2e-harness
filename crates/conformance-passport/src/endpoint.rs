@@ -3,6 +3,7 @@ use std::time::Duration;
 use br_core_auth::{Passport, PassportHeader};
 use reqwest::StatusCode;
 
+use crate::cause::describe;
 use crate::error::{ConformanceError, Result};
 
 pub const PASSPORT_PATH: &str = "/internal/passport";
@@ -79,15 +80,37 @@ impl PassportEndpoint {
         Ok(response.status())
     }
 
+    pub(crate) async fn status_for_bearer_within(
+        &self,
+        raw_token: &str,
+        timeout: Duration,
+    ) -> Result<StatusCode> {
+        let response = self
+            .send_within(Some(&format!("Bearer {raw_token}")), Some(timeout))
+            .await?;
+        Ok(response.status())
+    }
+
     async fn send(&self, authorization: Option<&str>) -> Result<reqwest::Response> {
+        self.send_within(authorization, None).await
+    }
+
+    async fn send_within(
+        &self,
+        authorization: Option<&str>,
+        timeout: Option<Duration>,
+    ) -> Result<reqwest::Response> {
         let url = format!("{}{PASSPORT_PATH}", self.base_url);
         let mut request = self.client.get(&url);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
         if let Some(authorization) = authorization {
             request = request.header("Authorization", authorization);
         }
         request
             .send()
             .await
-            .map_err(|e| ConformanceError::Request(format!("GET {url}: {e}")))
+            .map_err(|e| ConformanceError::Request(format!("GET {url}: {}", describe(&e))))
     }
 }

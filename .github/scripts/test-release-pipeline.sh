@@ -162,6 +162,10 @@ expect 1 "br-comp/v0.2.0 has no" "and fails when its own library is released" in
 
 echo "== artifact workflows are dispatched from the release"
 stub_reset
+expect 0 'dispatched release-anchor-passport.yml for conformance-passport/v0.1.1 on main' "the anchor workflow builds the passport subject" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-passport 0.1.1 main
+expect_file_has "$STUB_DIR/gh.log" 'workflow run release-anchor-passport.yml --ref main -f tag=conformance-passport/v0.1.1' "gh receives the passport library tag"
+expect 0 'dispatched release-cli-passport.yml for conformance-passport/v0.1.1 on main' "the passport CLI binaries are built from the same release" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-passport 0.1.1 main
+expect_file_has "$STUB_DIR/gh.log" 'workflow run release-cli-passport.yml --ref main -f tag=conformance-passport/v0.1.1' "gh receives the passport library tag for the CLI workflow"
 expect 0 'dispatched cd.yml for oidc-test-idp/v0.7.0 on main' "the image workflow for the image crate" in_dev bash .github/scripts/dispatch-artifacts.sh oidc-test-idp 0.7.0 main
 expect_file_has "$STUB_DIR/gh.log" 'workflow run cd.yml --ref main -f tag=oidc-test-idp/v0.7.0' "gh receives the crate tag, not a workspace version"
 expect 0 'dispatched release-cli.yml for conformance-scope/v0.3.1 on release/conformance-scope-0.3' "the binaries workflow for the CLI's library, from a release line" in_dev bash .github/scripts/dispatch-artifacts.sh conformance-scope 0.3.1 release/conformance-scope-0.3

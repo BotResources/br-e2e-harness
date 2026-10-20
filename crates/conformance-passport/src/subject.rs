@@ -3,6 +3,7 @@ use std::path::Path;
 
 use br_test_harness::SpawnedProcess;
 
+use crate::binary::child_path;
 use crate::vectors::seal_key_b64;
 
 pub struct SubjectConfig {
@@ -29,11 +30,15 @@ impl Subject {
         let port = free_loopback_port();
         let base_url = format!("http://127.0.0.1:{port}");
         let port = port.to_string();
-        let envs = [
+        let path = child_path(binary, std::env::var_os("PATH").as_deref());
+        let mut envs = vec![
             ("NATS_URL", config.nats_url.as_str()),
             ("PORT", port.as_str()),
             ("BEARER_SEAL_KEY", config.seal_key_b64.as_str()),
         ];
+        if let Some(path) = path.as_deref() {
+            envs.push(("PATH", path));
+        }
 
         let process = SpawnedProcess::spawn(&binary.to_string_lossy(), &[], &envs);
 

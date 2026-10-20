@@ -60,7 +60,7 @@ func run() error {
 	ready := newReadiness("binding the PUBLISHED_LANGUAGE bucket")
 	res := newResolver(aead)
 
-	addr := "0.0.0.0:" + cfg.port
+	addr := listenAddr(cfg.port)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/internal/passport", res.handle)
 	mux.HandleFunc("/readyz", ready.readyzHandler)

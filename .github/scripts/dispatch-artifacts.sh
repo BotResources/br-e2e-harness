@@ -12,6 +12,11 @@ line="$3"
 tag="${crate}/v${version}"
 
 case "$crate" in
+    conformance-passport)
+        gh workflow run "release-anchor-passport.yml" --ref "$line" -f "tag=${tag}"
+        echo "dispatched release-anchor-passport.yml for ${tag} on ${line}"
+        workflow="release-cli-passport.yml"
+        ;;
     oidc-test-idp) workflow="cd.yml" ;;
     conformance-scope) workflow="release-cli.yml" ;;
     *)
