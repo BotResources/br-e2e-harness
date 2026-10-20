@@ -59,7 +59,7 @@ async fn attach_run_writes_a_junit_file_with_the_counts_and_the_failure_element(
     std::fs::remove_dir_all(&dir).ok();
     assert!(xml.starts_with("<?xml"), "{xml}");
     assert!(
-        xml.contains("<testsuites tests=\"1\" failures=\"1\" skipped=\"0\">"),
+        xml.contains("<testsuites tests=\"1\" failures=\"1\" errors=\"0\" skipped=\"0\">"),
         "{xml}"
     );
     assert!(

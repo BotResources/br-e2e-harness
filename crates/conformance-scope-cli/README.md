@@ -333,8 +333,8 @@ A service that cannot run once the manifest has started (an unreachable broker, 
 missing handshake stream, a subject that exited at boot, a missing `fabric-nats`) stops the
 run: the report of the services that already ran is written (to `--output` or stdout), stderr
 names the failed service and the cause, the services after it do not run, and the exit code
-is `2`.
-
+is `2`. The partial report is never green: `conformant` is `false` and it names the failed service
+(`incomplete` in JSON, an `INCOMPLETE:` line in the human format, an `<error>` testcase in JUnit).
 `--format` / `--output` apply to the aggregate report.
 
 ## Exit codes

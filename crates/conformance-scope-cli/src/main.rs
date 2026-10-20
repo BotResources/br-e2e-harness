@@ -47,9 +47,7 @@ async fn dispatch() -> Result<bool> {
             match run.failure {
                 None => emit(run.report, &args.output),
                 Some(failure) => {
-                    if !run.report.services.is_empty() {
-                        emit(run.report, &args.output)?;
-                    }
+                    emit(run.report, &args.output)?;
                     Err(failure)
                 }
             }

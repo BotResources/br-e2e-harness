@@ -26,8 +26,16 @@ pub struct OutcomeView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct IncompleteService {
+    pub service_key: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AggregateReport {
     pub services: Vec<ServiceReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incomplete: Option<IncompleteService>,
     pub passed: usize,
     pub failed: usize,
     pub skipped: usize,
@@ -71,6 +79,15 @@ impl AggregateReport {
             failed,
             skipped,
             services,
+            incomplete: None,
+        }
+    }
+
+    pub fn interrupted(services: Vec<ServiceReport>, incomplete: IncompleteService) -> Self {
+        Self {
+            conformant: false,
+            incomplete: Some(incomplete),
+            ..Self::from_services(services)
         }
     }
 
@@ -130,6 +147,17 @@ mod tests {
             AggregateReport::from_services(vec![service(vec![pass()]), service(vec![skipped()])]);
         assert!(!aggregate.conformant);
         assert_eq!((aggregate.passed, aggregate.skipped), (1, 1));
+    }
+
+    #[test]
+    fn an_interrupted_aggregate_is_never_conformant_whatever_the_finished_services_say() {
+        let incomplete = IncompleteService {
+            service_key: "second".to_string(),
+            error: "broker unreachable".to_string(),
+        };
+        let aggregate = AggregateReport::interrupted(vec![service(vec![pass()])], incomplete);
+        assert!(!aggregate.conformant);
+        assert_eq!(aggregate.passed, 1);
     }
 
     #[test]

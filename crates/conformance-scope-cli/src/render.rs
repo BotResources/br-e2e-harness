@@ -1,11 +1,18 @@
 use std::fmt::Write as _;
 
-use crate::report::{AggregateReport, OutcomeView, ServiceReport};
+use crate::report::{AggregateReport, IncompleteService, OutcomeView, ServiceReport};
 
 pub fn human(report: &AggregateReport) -> String {
     let mut out = String::new();
     for service in &report.services {
         human_service(&mut out, service);
+    }
+    if let Some(incomplete) = &report.incomplete {
+        let _ = writeln!(
+            out,
+            "INCOMPLETE: service {:?} could not run: {}; the services after it did not run",
+            incomplete.service_key, incomplete.error
+        );
     }
     let verdict = if report.conformant {
         "CONFORMANT"
@@ -54,23 +61,44 @@ pub fn junit(report: &AggregateReport) -> String {
     let _ = writeln!(out, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     let _ = writeln!(
         out,
-        "<testsuites tests=\"{}\" failures=\"{}\" skipped=\"{}\">",
-        report.passed + report.failed + report.skipped,
+        "<testsuites tests=\"{}\" failures=\"{}\" errors=\"{}\" skipped=\"{}\">",
+        report.passed + report.failed + report.skipped + usize::from(report.incomplete.is_some()),
         report.failed,
+        usize::from(report.incomplete.is_some()),
         report.skipped
     );
     for service in &report.services {
         junit_service(&mut out, service);
     }
+    if let Some(incomplete) = &report.incomplete {
+        junit_incomplete(&mut out, incomplete);
+    }
     let _ = writeln!(out, "</testsuites>");
     out
+}
+
+fn junit_incomplete(out: &mut String, incomplete: &IncompleteService) {
+    let name = xml_escape(&incomplete.service_key);
+    let _ = writeln!(
+        out,
+        "  <testsuite name=\"{name}\" tests=\"1\" failures=\"0\" errors=\"1\" skipped=\"0\">"
+    );
+    let _ = writeln!(out, "    <testcase classname=\"{name}\" name=\"run\">");
+    let _ = writeln!(
+        out,
+        "      <error message=\"{}\">{}</error>",
+        xml_escape("the service could not run"),
+        xml_escape(&incomplete.error)
+    );
+    let _ = writeln!(out, "    </testcase>");
+    let _ = writeln!(out, "  </testsuite>");
 }
 
 fn junit_service(out: &mut String, service: &ServiceReport) {
     let total = service.passed + service.failed + service.skipped;
     let _ = writeln!(
         out,
-        "  <testsuite name=\"{}\" tests=\"{total}\" failures=\"{}\" skipped=\"{}\">",
+        "  <testsuite name=\"{}\" tests=\"{total}\" failures=\"{}\" errors=\"0\" skipped=\"{}\">",
         xml_escape(&service.service_key),
         service.failed,
         service.skipped
@@ -166,15 +194,68 @@ mod tests {
         CheckOutcome::skipped(CheckId::RejectionStopsReadiness, "needs a lifecycle")
     }
 
+    fn interrupted() -> AggregateReport {
+        AggregateReport::interrupted(
+            vec![ServiceReport::from_report(
+                "first",
+                &ConformanceReport {
+                    outcomes: vec![pass()],
+                },
+            )],
+            IncompleteService {
+                service_key: "second".to_string(),
+                error: HOSTILE.to_string(),
+            },
+        )
+    }
+
+    #[test]
+    fn an_interrupted_report_names_the_failed_service_in_every_format_and_is_not_conformant() {
+        let report = interrupted();
+
+        let human = human(&report);
+        assert!(human.contains("INCOMPLETE: service \"second\""), "{human}");
+        assert!(human.contains("NON-CONFORMANT"), "{human}");
+
+        let json: serde_json::Value = serde_json::from_str(&json(&report)).expect("json");
+        assert_eq!(json["conformant"], serde_json::json!(false), "{json}");
+        assert_eq!(
+            json["incomplete"]["service_key"],
+            serde_json::json!("second"),
+            "{json}"
+        );
+
+        let xml = junit(&report);
+        assert!(xml.contains("errors=\"1\""), "{xml}");
+        assert!(
+            xml.contains(&format!(
+                "<error message=\"the service could not run\">{HOSTILE_ESCAPED}</error>"
+            )),
+            "{xml}"
+        );
+        assert!(xml.contains("<testsuite name=\"second\""), "{xml}");
+    }
+
+    #[test]
+    fn a_complete_report_carries_no_incomplete_marker() {
+        let report = aggregate(vec![pass()]);
+
+        assert!(!json(&report).contains("incomplete"));
+        assert!(!human(&report).contains("INCOMPLETE"));
+        assert!(junit(&report).contains("errors=\"0\""));
+    }
+
     #[test]
     fn junit_counts_a_pass_a_fail_and_a_skip_and_marks_each_case() {
         let xml = junit(&aggregate(vec![pass(), fail(), skipped()]));
         assert!(
-            xml.contains("<testsuites tests=\"3\" failures=\"1\" skipped=\"1\">"),
+            xml.contains("<testsuites tests=\"3\" failures=\"1\" errors=\"0\" skipped=\"1\">"),
             "{xml}"
         );
         assert!(
-            xml.contains("<testsuite name=\"svc\" tests=\"3\" failures=\"1\" skipped=\"1\">"),
+            xml.contains(
+                "<testsuite name=\"svc\" tests=\"3\" failures=\"1\" errors=\"0\" skipped=\"1\">"
+            ),
             "{xml}"
         );
         assert!(
