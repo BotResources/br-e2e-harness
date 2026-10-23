@@ -66,6 +66,7 @@ form to decide whether a version ships.
 
 ### Changed
 
+- Repository gate: `conformance-scope` and `conformance-scope-cli` are listed in `GO_FREE_CRATES`, so CI fails on a Go build, `make`, a `"go"` program literal or a temp-directory use in either crate. The lockfile moves `tokio` to 1.54.1, `rustls-webpki` to 0.103.16 and `webpki-roots` to 1.0.11 (RUSTSEC-2026-0386, -0382, -0381), which sit under the release download.
 - `Subject::spawn` hands the subject a `PATH` led by the directory of its binary, through the child's environment.
 - Pins `br-test-harness/v0.1.2` with its `http-client` feature (for `SpawnedProcess::await_boot`); the `br-rust-common` pins stay on their latest tags (`0.1.0`).
 - New dependencies `futures-util` (default features off, `std`) to contain harness panics and `sha2` to verify the release asset.

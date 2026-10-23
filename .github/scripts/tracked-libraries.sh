@@ -6,3 +6,4 @@ export COMPANION_CRATES="${COMPANION_CRATES} conformance-nats-fabric-cli:conform
 export COMPANION_CRATES="${COMPANION_CRATES} conformance-passport-cli:conformance-passport"
 export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-passport conformance-passport-cli"
 export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-nats-fabric conformance-nats-fabric-cli"
+export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-scope conformance-scope-cli"
