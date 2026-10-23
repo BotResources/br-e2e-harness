@@ -177,11 +177,14 @@ real batteries are `#[ignore]`-gated:
 make -C conformance-subjects/identity-directory build
 export PATH="$PWD/conformance-subjects/identity-directory:$PATH"
 
+# the fabric-nats CLI of br-test-harness, once, in the same target directory
+cargo build -p br-test-harness --bin fabric-nats --features nats-fabric
+
 # wire gate (needs the identity-directory binary)
 cargo test -p conformance-directory --test conformance \
   -- --ignored wire_battery
 
-# the full Px + Cx + wire suite (needs the binary, `nats-server`, and a Postgres)
+# the full Px + Cx + wire suite (needs the binary, the `fabric-nats` CLI built above, `nats-server`, and a Postgres)
 E2E_PG_ADMIN_URL=postgresql://postgres@localhost:5432/postgres \
 cargo test -p conformance-directory --test conformance -- --ignored --test-threads=1
 ```
@@ -194,7 +197,7 @@ CI runs `cargo test -p conformance-directory --all-targets -- --ignored --test-t
 in the `infra-e2e` job, so every ignored test of the crate runs there (the battery, the
 absent-bucket test, the ignored unit tests of `extensions.rs` and `publisher.rs`, and the
 ignored tests of `absent_fabric_nats.rs`, `malformed_published_keys.rs`, `unreachable_nats.rs` and `harness_start_failures.rs`), which provides the Postgres service container, `nats-server` on `PATH`, the
-`identity-directory` binary built by a workflow step onto `PATH`, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
+`identity-directory` binary built by a workflow step onto `PATH`, the `fabric-nats` CLI built by an earlier step of the job (`cargo test -p br-test-harness --all-targets`) into the shared target directory, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
 PR, not just documented.
 
 ## Run in CI
