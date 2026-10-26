@@ -51,6 +51,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The job runs as root inside br-arc-runner but the checkout is owned by
+      # the host's runner user: without this every git command below dies with
+      # "detected dubious ownership" (see svc-auth#44).
+      - name: trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
