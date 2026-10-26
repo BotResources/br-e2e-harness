@@ -27,6 +27,16 @@ jobs:
     name: publish oidc-test-idp image
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # GitHub-hosted (free for public repos — self-hosted ARC runners refuse
+    # public repos by design), but inside the org runner image so the job
+    # gets the same baked toolchain as arc-ubuntu, Zig included.
+    container:
+      image: ghcr.io/botresources/br-arc-runner:latest
+      # root: the image's `runner` user is in docker gid 123, the hosted VM's
+      # /var/run/docker.sock is gid 118 — as `runner`, every docker call is
+      # "permission denied". The VM is discarded after the job, so running
+      # the throwaway container as root costs nothing.
+      options: --user root
     env:
       CRATE: oidc-test-idp
       IMAGE: ghcr.io/botresources/br-oidc-test-idp
@@ -70,12 +80,10 @@ jobs:
           toolchain: stable
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
 
-      - name: setup zig
-        if: steps.ver.outputs.skip == 'false'
-        uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7 # v1.2.2
-        with:
-          version: 0.13.0
-
+      # Zig (cargo-zigbuild's linker) comes from the job container image rather
+      # than mlugg/setup-zig: that action's community-mirror download has no
+      # timeout and once held a publish job for 2h. See
+      # BotResources/infra.botresources.ai#241.
       - name: install cargo-zigbuild
         if: steps.ver.outputs.skip == 'false'
         uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
