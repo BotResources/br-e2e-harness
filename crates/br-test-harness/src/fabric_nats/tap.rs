@@ -21,6 +21,7 @@ pub struct TappedDelivery {
 
 pub struct DurableTap {
     messages: PullStream,
+    client: async_nats::Client,
     stream: FixedStream,
     durable: String,
 }
@@ -42,6 +43,7 @@ impl FabricTestNats {
             .unwrap_or_else(|e| panic!("open the pull stream of durable {durable} on {name}: {e}"));
         DurableTap {
             messages,
+            client: self.client.clone(),
             stream,
             durable: durable.to_string(),
         }
@@ -51,7 +53,10 @@ impl FabricTestNats {
 impl DurableTap {
     pub async fn next_within(&mut self, within: Duration) -> TapOutcome {
         match tokio::time::timeout(within, self.messages.next()).await {
-            Err(_) => TapOutcome::Timeout,
+            Err(_) => {
+                crate::nats::assert_connected(&self.client);
+                TapOutcome::Timeout
+            }
             Ok(None) => TapOutcome::Closed,
             Ok(Some(Err(e))) => match e.kind() {
                 MessagesErrorKind::ConsumerDeleted | MessagesErrorKind::PushBasedConsumer => {

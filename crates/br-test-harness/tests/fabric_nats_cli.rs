@@ -4,8 +4,13 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::time::Duration;
 
+#[path = "nats_support/restricted_server.rs"]
+mod restricted_server;
+
 use br_test_harness::fabric_nats::BareFabricNats;
 use br_test_harness::{FabricTestNats, run_once, workspace_bin};
+
+use restricted_server::RestrictedServer;
 
 const DECLARE_MANIFEST: &str = r#"
 [[command_durable]]
@@ -45,6 +50,104 @@ aggregate = "service_scope"
 verb = "revoke"
 version = 1
 "#;
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn provision_names_the_provisioning_failure_not_a_connect_failure() {
+    let server = RestrictedServer::start("$JS.API.STREAM.CREATE.>").await;
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+
+    let out = cli("provision", &server.url_as("restricted"), &manifest).await;
+
+    assert_eq!(out.status.code(), Some(3), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        !err.contains("failed to connect"),
+        "the connection worked, the provisioning failed: {}",
+        rendered(&out)
+    );
+    assert!(
+        err.contains("INTEGRATION_CMD") || err.contains("INTEGRATION_EVT"),
+        "the failure must name the stream whose provisioning failed: {}",
+        rendered(&out)
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn provision_names_the_durable_whose_creation_the_broker_refused() {
+    let server = RestrictedServer::start("$JS.API.CONSUMER.CREATE.>").await;
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+
+    let out = cli("provision", &server.url_as("restricted"), &manifest).await;
+
+    assert_eq!(out.status.code(), Some(3), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("verify_probe_cmd") && !err.contains("panicked at"),
+        "the failure must name the durable and carry no raw panic: {}",
+        rendered(&out)
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn verify_names_the_dead_broker_instead_of_panicking() {
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+    let closed_port = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a free port");
+        listener.local_addr().expect("local addr").port()
+    };
+
+    let out = cli(
+        "verify",
+        &format!("nats://127.0.0.1:{closed_port}"),
+        &manifest,
+    )
+    .await;
+
+    assert_eq!(out.status.code(), Some(3), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains(&format!("127.0.0.1:{closed_port}")) && !err.contains("panicked at"),
+        "the failure must name the broker and carry no raw panic: {}",
+        rendered(&out)
+    );
+}
+
+#[tokio::test]
+#[ignore = "real-infra: needs `nats-server` on PATH"]
+async fn verify_names_a_broker_error_on_the_durable_probe_instead_of_reading_it_as_absent() {
+    let server = RestrictedServer::start("$JS.API.CONSUMER.INFO.>").await;
+    let dir = tempfile::tempdir().expect("manifest dir");
+    let manifest = write_manifest(dir.path(), DECLARE_MANIFEST);
+    let provisioned = cli("provision", &server.url_as("admin"), &manifest).await;
+    assert!(provisioned.status.success(), "{}", rendered(&provisioned));
+
+    let out = cli("verify", &server.url_as("restricted"), &manifest).await;
+
+    assert_eq!(out.status.code(), Some(4), "{}", rendered(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("verify_probe_cmd") && err.contains("the broker did not answer"),
+        "the failure must carry the broker error: {}",
+        rendered(&out)
+    );
+    assert!(
+        !err.contains("is absent from"),
+        "a broker error is not an absent durable: {}",
+        rendered(&out)
+    );
+
+    server.shutdown().await;
+}
 
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]

@@ -11,7 +11,7 @@ use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 
 use crate::spawned_process::SpawnedProcess;
-use parse::{event_field, parse_block, take_block};
+use parse::{FrameBuffer, event_field, parse_block};
 
 pub use outcome::{DrainStop, SseOutcome};
 
@@ -19,7 +19,7 @@ const LOG_TAIL_LINES: usize = 80;
 
 pub struct SseSubscription {
     stream: Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>,
-    buffer: String,
+    buffer: FrameBuffer,
     closed: bool,
     logs: Option<Arc<Mutex<String>>>,
 }
@@ -46,7 +46,7 @@ impl SseSubscription {
         );
         Self {
             stream: Box::pin(resp.bytes_stream()),
-            buffer: String::new(),
+            buffer: FrameBuffer::default(),
             closed: false,
             logs: None,
         }
@@ -61,7 +61,7 @@ impl SseSubscription {
     pub async fn next_outcome(&mut self, timeout: Duration) -> SseOutcome {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            if let Some(block) = take_block(&mut self.buffer) {
+            if let Some(block) = self.buffer.take_block() {
                 if let Some(data) = parse_block(&block) {
                     return SseOutcome::Event(data);
                 }
@@ -69,9 +69,9 @@ impl SseSubscription {
             }
             if self.closed {
                 assert!(
-                    self.buffer.trim().is_empty(),
+                    self.buffer.is_blank(),
                     "subscription stream closed with an unterminated block: {:?}{}",
-                    self.buffer,
+                    self.buffer.unterminated(),
                     self.log_tail()
                 );
                 return SseOutcome::Closed;
@@ -83,7 +83,7 @@ impl SseSubscription {
             }
             match tokio::time::timeout(remaining, self.stream.next()).await {
                 Ok(Some(Ok(bytes))) => {
-                    self.buffer.push_str(&String::from_utf8_lossy(&bytes));
+                    self.buffer.push(&bytes);
                 }
                 Ok(Some(Err(e))) => panic!("subscription stream errored: {e}"),
                 Ok(None) => self.closed = true,

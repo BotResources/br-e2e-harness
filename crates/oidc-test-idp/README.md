@@ -1,7 +1,9 @@
 # oidc-test-idp
 
 A **pilotable OIDC identity provider for end-to-end tests**, published as
-`ghcr.io/botresources/br-oidc-test-idp`.
+`ghcr.io/botresources/br-oidc-test-idp`. The first registry release is `0.7.0`
+(image `:0.7.0`); earlier tags of the package are images of earlier releases of
+the harness line.
 
 > ⚠️ **TEST FIXTURE ONLY.** It signs any requested token, and its `/admin/*`
 > surface has no authentication — by design. Never deploy it outside an

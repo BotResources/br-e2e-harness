@@ -4,13 +4,18 @@ use async_nats::jetstream::{self, consumer, kv, stream};
 use futures_util::StreamExt as _;
 use serde_json::Value;
 
+use crate::broker_answer::{bucket_not_found, delete_stream_not_found};
+
 pub async fn await_integration_event(
     js: &jetstream::Context,
     stream: &str,
     subject: &str,
     deadline: Duration,
 ) -> Option<Value> {
-    let stream = js.get_stream(stream).await.ok()?;
+    let stream = js
+        .get_stream(stream)
+        .await
+        .unwrap_or_else(|e| panic!("await_integration_event: get stream {stream}: {e}"));
     let consumer = stream
         .create_consumer(consumer::pull::Config {
             durable_name: None,
@@ -21,14 +26,27 @@ pub async fn await_integration_event(
             ..Default::default()
         })
         .await
-        .ok()?;
-    let mut messages = consumer.messages().await.ok()?;
+        .unwrap_or_else(|e| panic!("await_integration_event: create consumer on {subject}: {e}"));
+    let mut messages = consumer.messages().await.unwrap_or_else(|e| {
+        panic!("await_integration_event: open the pull stream on {subject}: {e}")
+    });
 
-    let next = tokio::time::timeout(deadline, messages.next())
-        .await
-        .ok()??;
-    let msg = next.ok()?;
-    serde_json::from_slice::<Value>(&msg.payload).ok()
+    let message = match tokio::time::timeout(deadline, messages.next()).await {
+        Err(_) => {
+            crate::nats::assert_connected(&js.client());
+            return None;
+        }
+        Ok(None) => panic!("await_integration_event: the pull stream on {subject} ended"),
+        Ok(Some(Err(e))) => {
+            panic!("await_integration_event: the pull stream on {subject} errored: {e}")
+        }
+        Ok(Some(Ok(message))) => message,
+    };
+    Some(
+        serde_json::from_slice::<Value>(&message.payload).unwrap_or_else(|e| {
+            panic!("await_integration_event: the payload on {subject} is not JSON: {e}")
+        }),
+    )
 }
 
 pub async fn recreate_stream(
@@ -42,13 +60,18 @@ pub async fn recreate_stream(
         ..Default::default()
     };
     for attempt in 0..6 {
-        let _ = js.delete_stream(name).await;
+        match js.delete_stream(name).await {
+            Ok(_) => {}
+            Err(e) if delete_stream_not_found(&e) => {}
+            Err(_) if attempt < 5 => {
+                tokio::time::sleep(backoff(attempt)).await;
+                continue;
+            }
+            Err(e) => panic!("delete stream {name}: the broker did not answer \"not found\": {e}"),
+        }
         match js.create_stream(config.clone()).await {
             Ok(stream) => return stream,
-            Err(e) if attempt < 5 => {
-                tokio::time::sleep(backoff(attempt)).await;
-                let _ = e;
-            }
+            Err(_) if attempt < 5 => tokio::time::sleep(backoff(attempt)).await,
             Err(e) => panic!("create stream {name}: {e}"),
         }
     }
@@ -62,13 +85,20 @@ pub async fn recreate_kv(js: &jetstream::Context, bucket: &str) -> kv::Store {
         ..Default::default()
     };
     for attempt in 0..6 {
-        let _ = js.delete_key_value(bucket).await;
+        match js.delete_key_value(bucket).await {
+            Ok(_) => {}
+            Err(e) if bucket_not_found(&e) => {}
+            Err(_) if attempt < 5 => {
+                tokio::time::sleep(backoff(attempt)).await;
+                continue;
+            }
+            Err(e) => {
+                panic!("delete kv bucket {bucket}: the broker did not answer \"not found\": {e}")
+            }
+        }
         match js.create_key_value(config.clone()).await {
             Ok(store) => return store,
-            Err(e) if attempt < 5 => {
-                tokio::time::sleep(backoff(attempt)).await;
-                let _ = e;
-            }
+            Err(_) if attempt < 5 => tokio::time::sleep(backoff(attempt)).await,
             Err(e) => panic!("create kv bucket {bucket}: {e}"),
         }
     }

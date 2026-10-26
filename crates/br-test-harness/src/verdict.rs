@@ -1,7 +1,9 @@
 use serde_json::Value;
 
 pub fn is_ack(response: &Value) -> bool {
-    !has_top_level_errors(response) && mutation_error_code(response).is_none()
+    carries_data(response)
+        && !has_top_level_errors(response)
+        && mutation_error_code(response).is_none()
 }
 
 pub fn expect_ack(response: &Value, what: &str) {
@@ -13,7 +15,7 @@ pub fn expect_ack(response: &Value, what: &str) {
 
 pub fn expect_rejected(response: &Value) -> String {
     mutation_error_code(response)
-        .unwrap_or_else(|| panic!("expected a rejection with a stable code, got ack: {response}"))
+        .unwrap_or_else(|| panic!("expected a rejection with a stable code, got none: {response}"))
 }
 
 pub fn expect_code_shaped(response: &Value, what: &str) -> String {
@@ -54,12 +56,19 @@ pub fn mutation_error_code(response: &Value) -> Option<String> {
     response.get("data").and_then(find_error_code)
 }
 
-fn has_top_level_errors(response: &Value) -> bool {
+fn carries_data(response: &Value) -> bool {
     response
-        .get("errors")
-        .and_then(Value::as_array)
-        .map(|e| !e.is_empty())
-        .unwrap_or(false)
+        .get("data")
+        .and_then(Value::as_object)
+        .is_some_and(|data| !data.is_empty())
+}
+
+fn has_top_level_errors(response: &Value) -> bool {
+    match response.get("errors") {
+        None | Some(Value::Null) => false,
+        Some(Value::Array(errors)) => !errors.is_empty(),
+        Some(_) => true,
+    }
 }
 
 fn find_error_code(value: &Value) -> Option<String> {
@@ -99,6 +108,37 @@ mod tests {
         assert!(is_ack(&response));
         assert!(mutation_error_code(&response).is_none());
         expect_ack(&response, "createThing");
+    }
+
+    #[test]
+    fn a_malformed_errors_member_is_never_an_ack() {
+        for errors in [json!("boom"), json!({ "message": "boom" }), json!(1)] {
+            let response = json!({ "data": { "createThing": { "id": "abc" } }, "errors": errors });
+            assert!(!is_ack(&response), "must not ack: {response}");
+        }
+        let null_errors = json!({ "data": { "createThing": { "id": "abc" } }, "errors": null });
+        assert!(is_ack(&null_errors));
+    }
+
+    #[test]
+    fn a_response_without_mutation_data_is_never_an_ack() {
+        for response in [
+            json!({}),
+            json!({ "data": null }),
+            json!({ "data": {} }),
+            json!({ "data": "not an object" }),
+            json!("<html>502 Bad Gateway</html>"),
+            json!(null),
+            json!([]),
+        ] {
+            assert!(!is_ack(&response), "must not ack: {response}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "expected to ack")]
+    fn expect_ack_panics_on_a_response_without_data() {
+        expect_ack(&json!({}), "createThing");
     }
 
     #[test]

@@ -1,3 +1,5 @@
+#![cfg(feature = "http-client")]
+
 use std::time::Duration;
 
 use br_test_harness::{BootOutcome, SpawnedProcess};

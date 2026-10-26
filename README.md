@@ -43,6 +43,10 @@ shared by every repo that needs them.
 
 ## Catalog
 
+Every crate is its own library: it carries its own version, its own
+`CHANGELOG.md`, and releases under its own git tag `{crate}/v{version}`. The
+workspace tag `v1.2.1` is the legacy line, no longer a way to consume a crate.
+
 The repo holds two kinds of fixture. **Service fixtures** are deployable
 controllable equivalents of a real dependency, consumed as a container image.
 **Library fixtures** are dev-dependency crates of reusable test plumbing,
@@ -50,68 +54,108 @@ consumed as a `git` + `tag` Cargo dependency (not an image).
 
 ### Service fixtures (container images)
 
-| Fixture | Image | Replaces | Docs | Changelog |
-|---|---|---|---|---|
-| `oidc-test-idp` | `ghcr.io/botresources/br-oidc-test-idp` | A real OIDC identity provider (Entra, Google, …) | [README](crates/oidc-test-idp/README.md) | [CHANGELOG](CHANGELOG.md) |
+| Fixture | Version | Image | Replaces | Docs | Changelog |
+|---|---|---|---|---|---|
+| `oidc-test-idp` | 0.7.0 | `ghcr.io/botresources/br-oidc-test-idp:0.7.0` | A real OIDC identity provider (Entra, Google, ...) | [README](crates/oidc-test-idp/README.md) | [CHANGELOG](crates/oidc-test-idp/CHANGELOG.md) |
+
+`oidc-test-idp` is also a library (`br-test-harness` re-exports it in-process).
+Install pin:
+
+```toml
+oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", package = "oidc-test-idp", tag = "oidc-test-idp/v0.7.0", version = "0.7.0" }
+```
 
 ### Library fixtures (dev-dependency crates)
 
-| Fixture | Consumed as | Gives you | Docs | Changelog |
+| Fixture | Version | Gives you | Docs | Changelog |
 |---|---|---|---|---|
-| `br-test-harness` | `[dev-dependencies]` git + tag | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](CHANGELOG.md) |
-| `conformance-scope` | `[dev-dependencies]` git + tag | Black-box S1–S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](CHANGELOG.md) |
-| `conformance-identity` | `[dev-dependencies]` git + tag | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](CHANGELOG.md) |
-| `conformance-passport` | `[dev-dependencies]` git + tag | Black-box G1 battery: sealed bearer → `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](CHANGELOG.md) |
-| `conformance-directory` | `[dev-dependencies]` git + tag | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](CHANGELOG.md) |
-| `conformance-nats-fabric` | `[dev-dependencies]` git + tag | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](CHANGELOG.md) |
+| `br-test-harness` | 0.1.2 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
+| `conformance-scope` | 0.1.0 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
+| `conformance-identity` | 0.1.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
+| `conformance-passport` | 0.1.1 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
+| `conformance-directory` | 0.1.0 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
+| `conformance-nats-fabric` | 0.1.0 | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](crates/conformance-nats-fabric/CHANGELOG.md) |
 
-Planned: `identity-test` — a minimal, contract-conformant identity service
+Install pins (dev-dependencies):
+
+```toml
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.0", version = "0.1.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.0", version = "0.1.0" }
+conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.0", version = "0.1.0" }
+```
+
+Planned: `identity-test` - a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested
 against *an* identity without depending on any project's private one.
 
 ### CLI tools (release binaries)
 
-| Tool | Consumed as | Gives you | Docs | Changelog |
-|---|---|---|---|---|
-| `conformance-scope-cli` (bin `conformance-scope`) | GitHub Release binary (asset of release `v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](CHANGELOG.md) |
+| Tool | Version | Consumed as | Gives you | Docs | Changelog |
+|---|---|---|---|---|---|
+| `conformance-scope-cli` (bin `conformance-scope`) | 0.1.0, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
+| `conformance-passport-cli` (bin `conformance-passport`) | 0.1.1, always `conformance-passport`'s | GitHub Release binary (asset of the release `conformance-passport/v{version}`) | Run the bearer/PAT to Passport conformance battery against any service binary, in any language, with no Rust to write | [README](crates/conformance-passport-cli/README.md) | [CHANGELOG](crates/conformance-passport-cli/CHANGELOG.md) |
+
+`conformance-scope-cli` is not a library of its own: it is versioned with
+`conformance-scope`, and its binaries ride that crate's release.
+
+`conformance-passport-cli` follows the same rule with `conformance-passport`.
+A `conformance-passport` tag also starts `release-anchor-passport` (the Go binary) and
+`release-cli-passport` (the CLI binaries).
 
 ## Distribution
 
-Every fixture is a workspace crate sharing **one workspace version**; the whole
-repository releases as a single git tag `v{version}`. How a fixture is *consumed*
+Seven crates are registered libraries, named like the crate: `oidc-test-idp`,
+`br-test-harness`, `conformance-directory`, `conformance-identity`,
+`conformance-nats-fabric`, `conformance-passport`, `conformance-scope`. Each
+releases under its own tag `{crate}/v{version}`. How a fixture is *consumed*
 depends on its kind:
 
-- **Service fixtures** ship as a **container image**: on merge to `main`, CD
-  publishes `ghcr.io/botresources/br-<crate>:<version>` (multi-arch, amd64 +
-  arm64) when that version's image does not exist yet.
-- **Library fixtures** (`br-test-harness`, `conformance-scope`) are consumed as a
-  `git` + `tag` **dev-dependency** pinned to `v{version}` — there is no image.
-  The tag is the release.
+- **Library fixtures** are consumed as a `git` + `tag` **dev-dependency** pinned
+  per crate - `{ git = "https://github.com/BotResources/br-e2e-harness", package = "<crate>", tag = "<crate>/v{version}", version = "{version}" }`.
+  The `version` beside the tag is required (`cargo-deny` rejects a tag-only git
+  dependency as a wildcard). The tag is the release.
+- **Service fixtures** ship as a **container image** built from the crate's tag:
+  `ghcr.io/botresources/br-<crate>:<version>` (multi-arch, amd64 + arm64), the
+  version being the one in the `oidc-test-idp/v{version}` tag.
+- **CLI tool** (`conformance-passport-cli`) ships as **GitHub Release binaries**
+  (static musl-linux + macOS) attached to the `conformance-passport/v{version}`
+  release, next to the Go subject binary below.
+- **Go subject binary** (`conformance-passport`) ships as a **GitHub Release asset**
+  `identity-passport-<os>-<arch>.tar.gz` with a sibling `.sha256` (linux and darwin,
+  amd64 and arm64), attached to the `conformance-passport/v{version}` release.
+  The crate never compiles: it looks for its binary on `PATH`, then in its
+  cache directory, then downloads and verifies the asset of its own release into
+  that cache.
 - **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
-  (static musl-linux + macOS) uploaded to the unified `v{version}` release — no
-  image; downloaded and run directly.
+  (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
+  release, the version being the one in that tag.
+
+A crate that names a sibling's types in its public API pins that sibling by the
+same git url and the same tag string, and the workspace root maps the url to the
+local paths with `[patch]` once such a pin exists; two different tags give two copies of the type.
+Crates that depend on a sibling therefore move together, and a crate releases
+only after the siblings it pins have released.
+
+`v1.2.1` is the legacy workspace tag.
 
 ## Release process
 
-1. In your PR, bump the workspace `version` in the root `Cargo.toml`, add a
-   matching `## X.Y.Z - YYYY-MM-DD` section to the root `CHANGELOG.md` — plain
-   heading, ASCII hyphen, no brackets: `check-changelog.sh` and `release-tags`
-   both accept `## {version}` followed by a space or the end of the line — and
-   move every README pin of this repo to
-   `tag = "v{version}"`.
-2. CI gates the PR (fmt, clippy, tests, deny, machete, semver-checks, changelog
-   entry, README pins).
-3. On merge to `main`, three idempotent, order-independent workflows ship the
-   one version: `release-tags` creates the single `v{version}` tag and GitHub
-   Release (notes from the root `CHANGELOG.md`); `cd` builds and publishes any
-   missing service-fixture image; `release-cli` builds the
-   `conformance-scope-cli` binaries (static musl-linux + macOS) and uploads them
-   to the `v{version}` release. A library fixture's tag is itself the release.
-
-All three trigger on `push: main` and self-gate on whether their artifact for
-`v{version}` already exists, because a tag pushed with the default `GITHUB_TOKEN`
-does not trigger a second workflow — so the CLI binaries cannot be driven off the
-tag event and ride the merge event instead.
+1. In your PR, bump `version` in the crate's own `Cargo.toml`, add a plain
+   `## X.Y.Z` section to that crate's `CHANGELOG.md` (no brackets: the release
+   pipeline greps that exact heading), and move the crate's install pin in this
+   README to the new tag. `conformance-scope-cli` moves with `conformance-scope`.
+2. CI gates the PR: fmt, clippy, tests, deny, machete, semver-checks (the
+   `oidc-test-idp` and `br-test-harness` libraries; the conformance batteries are
+   executable specs and are exempt), changelog entry, README pins, sibling pins,
+   and the registry gate (the version must be sealed and not yet implemented).
+3. On merge to `main`, `release-tags` detects each tracked crate whose version
+   has no `{crate}/v{version}` tag, applies the release-line law, tags, creates
+   the GitHub release and records the API listing and dependencies. It then
+   starts `cd` (the `oidc-test-idp` image) or `release-cli` (the
+   `conformance-scope` binaries) with the new tag.
 
 ## Why
 

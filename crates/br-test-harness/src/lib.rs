@@ -1,6 +1,9 @@
+mod orphan_guard;
 pub mod spawned_process;
 pub mod wait;
 
+#[cfg(feature = "nats")]
+mod broker_answer;
 #[cfg(feature = "nats-fabric")]
 pub mod fabric_nats;
 #[cfg(feature = "nats")]

@@ -1,27 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')
-if [ -z "$version" ]; then
-  echo "::error file=Cargo.toml::could not extract the workspace version" >&2
+crate="${1:?usage: check-readme-pins.sh <crate>}"
+repo_url="https://github.com/BotResources/br-e2e-harness"
+root_readme="README.md"
+version=$(bash "$(dirname "$0")/crate-version.sh" "$crate")
+
+if [ "$version" = "0.0.0" ]; then
+  echo "✓ ${crate} 0.0.0 scaffold — no tag has shipped, no self-pin to check"
+  exit 0
+fi
+
+if [ ! -f "$root_readme" ]; then
+  echo "::error::${root_readme} is missing" >&2
+  exit 1
+fi
+
+expected_tag="${crate}/v${version}"
+expected_pin="git = \"${repo_url}\", package = \"${crate}\", tag = \"${expected_tag}\", version = \"${version}\""
+short_pin="package = \"${crate}\", tag = \"${expected_tag}\", version = \"${version}\""
+
+if ! grep -qF "${expected_pin}" "$root_readme"; then
+  echo "::error file=${root_readme}::the ${crate} install pin must read { ${expected_pin} } (a tag-only git dep is a wildcard and cargo-deny denies it)" >&2
   exit 1
 fi
 
 fail=0
-while IFS= read -r readme; do
-  while IFS= read -r hit; do
-    line=${hit#*:}
-    number=${hit%%:*}
-    tag=$(printf '%s\n' "$line" | sed -E 's/.*tag = "([^"]+)".*/\1/')
-    if [ "$tag" != "v${version}" ]; then
-      echo "::error file=${readme},line=${number}::pins br-e2e-harness at ${tag}, workspace version is ${version}; expected tag = \"v${version}\"" >&2
+for readme in "$root_readme" "crates/${crate}/README.md"; do
+  [ -f "$readme" ] || continue
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ! grep -qF "${short_pin}" <<<"$line"; then
+      echo "::error file=${readme}::${crate} self-pin is stale: ${line}" >&2
       fail=1
     fi
-  done < <(grep -n 'br-e2e-harness.*tag = "v' "$readme" || true)
-done < <(find . -name README.md -not -path './target/*')
+  done < <(grep -F "package = \"${crate}\"" "$readme" | grep -F "tag = \"" || true)
+done
 
-if [ "$fail" -ne 0 ]; then
-  exit 1
+if [ "$fail" -eq 0 ]; then
+  echo "✓ ${crate} self-pins on ${expected_tag} / ${version}"
 fi
 
-echo "✓ every README br-e2e-harness pin is v${version}"
+exit $fail

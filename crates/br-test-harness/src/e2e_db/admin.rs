@@ -28,9 +28,14 @@ pub(super) async fn drop_db_and_owner(
     }
 
     for role in granted_roles {
-        let _ = admin
+        if let Err(e) = admin
             .execute(format!("REVOKE {} FROM {owner}", quote_ident(role)).as_str())
-            .await;
+            .await
+        {
+            eprintln!(
+                "warning: failed to revoke role '{role}' from e2e owner role '{owner_role}': {e}"
+            );
+        }
     }
 
     if let Err(e) = admin

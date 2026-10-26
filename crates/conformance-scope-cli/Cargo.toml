@@ -1,6 +1,6 @@
 [package]
 name = "conformance-scope-cli"
-version.workspace = true
+version = "0.1.0"
 description = "Language-agnostic CLI for the BotResources scope-declaration conformance battery"
 edition.workspace = true
 rust-version.workspace = true
@@ -12,13 +12,13 @@ name = "conformance-scope"
 path = "src/main.rs"
 
 [dependencies]
-conformance-scope = { path = "../conformance-scope", version = "1.0.0" }
+conformance-scope = { path = "../conformance-scope", version = "0.1.0" }
 
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml_ng = "0.10"
+serde-saphyr = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

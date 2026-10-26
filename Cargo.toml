@@ -6,13 +6,13 @@ members = [
     "crates/conformance-identity",
     "crates/conformance-nats-fabric",
     "crates/conformance-passport",
+    "crates/conformance-passport-cli",
     "crates/conformance-scope",
     "crates/conformance-scope-cli",
     "crates/oidc-test-idp",
 ]
 
 [workspace.package]
-version = "1.2.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -33,6 +33,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+
+[patch."https://github.com/BotResources/br-e2e-harness"]
+oidc-test-idp = { path = "crates/oidc-test-idp" }
+br-test-harness = { path = "crates/br-test-harness" }
+conformance-directory = { path = "crates/conformance-directory" }
+conformance-identity = { path = "crates/conformance-identity" }
+conformance-nats-fabric = { path = "crates/conformance-nats-fabric" }
+conformance-passport = { path = "crates/conformance-passport" }
+conformance-scope = { path = "crates/conformance-scope" }
 
 [profile.dev.package.rsa]
 opt-level = 3

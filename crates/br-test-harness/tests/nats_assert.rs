@@ -1,5 +1,9 @@
 #![cfg(feature = "nats")]
 
+#[cfg(feature = "spawned-nats")]
+#[path = "nats_support/restricted_server.rs"]
+mod restricted_server;
+
 use br_test_harness::nats_assert::{await_integration_event, recreate_kv, recreate_stream};
 
 #[test]
@@ -16,8 +20,47 @@ mod real_infra {
     use br_test_harness::nats_assert::{await_integration_event, recreate_kv, recreate_stream};
     use br_test_harness::{SpawnedNats, TestNats};
 
+    use super::restricted_server::RestrictedServer;
+
     const STREAM: &str = "CHARTER";
     const SUBJECT: &str = "charter.evt.thing.created.v1";
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn await_panics_at_its_deadline_when_the_broker_dies() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+        recreate_stream(nats.jetstream(), STREAM, &["charter.>"]).await;
+        let js = nats.jetstream().clone();
+
+        let killer = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            server.shutdown().await;
+        });
+        let started = std::time::Instant::now();
+        let waiting = tokio::spawn(async move {
+            await_integration_event(&js, STREAM, SUBJECT, Duration::from_millis(1500)).await
+        })
+        .await;
+        killer.await.expect("the broker stops");
+
+        let error = waiting.expect_err("a dead broker must not read as no event arrived");
+        assert!(error.is_panic(), "{error}");
+        let message = error
+            .into_panic()
+            .downcast_ref::<String>()
+            .cloned()
+            .expect("a formatted message");
+        assert!(
+            message.starts_with("fabric capture drain failed: the NATS connection is "),
+            "{message}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
 
     #[tokio::test]
     #[ignore = "real-infra: needs `nats-server` on PATH"]
@@ -115,5 +158,110 @@ mod real_infra {
 
         nats.cleanup().await;
         server.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "await_integration_event: get stream")]
+    async fn await_panics_when_the_stream_does_not_exist() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+
+        await_integration_event(
+            nats.jetstream(),
+            "NO_SUCH_STREAM",
+            SUBJECT,
+            Duration::from_millis(300),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "is not JSON")]
+    async fn await_panics_when_the_payload_is_not_json() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+        recreate_stream(nats.jetstream(), STREAM, &["charter.>"]).await;
+        nats.publish_raw(SUBJECT, b"not json".to_vec()).await;
+
+        await_integration_event(nats.jetstream(), STREAM, SUBJECT, Duration::from_secs(5)).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "await_integration_event")]
+    async fn await_panics_when_the_connection_ends_while_waiting() {
+        let server = SpawnedNats::start().await;
+        let nats = TestNats::setup_on(&server.url()).await;
+        let client = nats.client().clone();
+        recreate_stream(nats.jetstream(), STREAM, &["charter.>"]).await;
+
+        let wait =
+            await_integration_event(nats.jetstream(), STREAM, SUBJECT, Duration::from_secs(20));
+        let end = async {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            client.drain().await.expect("drain the client");
+        };
+        tokio::join!(wait, end);
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    async fn recreate_stream_drops_prior_messages_when_the_broker_allows_the_delete() {
+        let server = RestrictedServer::start("$JS.API.CONSUMER.DELETE.>").await;
+        let restricted = server.jetstream_as("restricted").await;
+        recreate_stream(&restricted, STREAM, &["charter.>"]).await;
+        for _ in 0..3 {
+            restricted
+                .publish(SUBJECT, "x".into())
+                .await
+                .expect("publish")
+                .await
+                .expect("ack");
+        }
+
+        let recreated = recreate_stream(&restricted, STREAM, &["charter.>"]).await;
+
+        assert_eq!(
+            recreated.cached_info().state.messages,
+            0,
+            "control run: with the delete allowed the stream is emptied"
+        );
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "delete stream CHARTER")]
+    async fn recreate_stream_panics_when_the_broker_refuses_the_delete() {
+        let server = RestrictedServer::start("$JS.API.STREAM.DELETE.>").await;
+        let admin = server.jetstream_as("admin").await;
+        recreate_stream(&admin, STREAM, &["charter.>"]).await;
+        admin
+            .publish(SUBJECT, "x".into())
+            .await
+            .expect("publish")
+            .await
+            .expect("ack");
+        let restricted = server.jetstream_as("restricted").await;
+
+        recreate_stream(&restricted, STREAM, &["charter.>"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH"]
+    #[should_panic(expected = "delete kv bucket charter")]
+    async fn recreate_kv_panics_when_the_broker_refuses_the_delete() {
+        let server = RestrictedServer::start("$JS.API.STREAM.DELETE.>").await;
+        let admin = server.jetstream_as("admin").await;
+        let store = recreate_kv(&admin, "charter").await;
+        store
+            .put("k", b"v".to_vec().into())
+            .await
+            .expect("put on the bucket");
+        let restricted = server.jetstream_as("restricted").await;
+
+        recreate_kv(&restricted, "charter").await;
     }
 }

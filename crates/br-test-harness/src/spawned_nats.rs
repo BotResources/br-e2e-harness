@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::process::{Child, Command};
 
+const LOOPBACK: &str = "127.0.0.1";
+
 pub struct SpawnedNats {
     child: Child,
     port: u16,
@@ -27,6 +29,8 @@ impl SpawnedNats {
 
         let mut child = Command::new("nats-server")
             .arg("-js")
+            .arg("-a")
+            .arg(LOOPBACK)
             .arg("-p")
             .arg("-1")
             .arg("-sd")
@@ -40,6 +44,7 @@ impl SpawnedNats {
             .expect("failed to spawn nats-server");
 
         let pid = child.id().expect("spawned nats-server has no pid");
+        crate::orphan_guard::spawn(pid, Some(store_dir.path()));
         let ports_file = store_dir.path().join(format!("nats-server_{pid}.ports"));
 
         let port = await_port(&mut child, &ports_file).await;
@@ -53,7 +58,7 @@ impl SpawnedNats {
     }
 
     pub fn url(&self) -> String {
-        format!("nats://127.0.0.1:{}", self.port)
+        format!("nats://{LOOPBACK}:{}", self.port)
     }
 
     pub fn port(&self) -> u16 {
@@ -92,7 +97,7 @@ async fn await_port(child: &mut Child, ports_file: &std::path::Path) -> u16 {
 }
 
 async fn await_accept(child: &mut Child, port: u16) {
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format!("{LOOPBACK}:{port}");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if tokio::net::TcpStream::connect(&addr).await.is_ok() {
@@ -120,18 +125,71 @@ fn parse_client_port(ports_file: &str) -> Option<u16> {
 }
 
 async fn drain_stderr(child: &mut Child) -> String {
-    use tokio::io::AsyncReadExt;
-    let Some(mut stderr) = child.stderr.take() else {
+    let Some(stderr) = child.stderr.take() else {
         return String::from("<stderr unavailable>");
     };
+    read_diagnostic(stderr, Duration::from_millis(500)).await
+}
+
+async fn read_diagnostic<R>(mut reader: R, window: Duration) -> String
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncReadExt;
     let mut buf = Vec::new();
-    let _ = tokio::time::timeout(Duration::from_millis(500), stderr.read_to_end(&mut buf)).await;
-    String::from_utf8_lossy(&buf).into_owned()
+    let outcome = tokio::time::timeout(window, reader.read_to_end(&mut buf)).await;
+    let mut text = String::from_utf8_lossy(&buf).into_owned();
+    if let Ok(Err(e)) = outcome {
+        text.push_str(&format!("\n<stderr read failed: {e}>"));
+    }
+    text
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_client_port;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+
+    use tokio::io::{AsyncRead, ReadBuf};
+
+    use super::{parse_client_port, read_diagnostic};
+
+    struct BrokenPipe;
+
+    impl AsyncRead for BrokenPipe {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::Error::other("pipe broke")))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_stderr_read_is_named_in_the_diagnostic() {
+        let text = read_diagnostic(BrokenPipe, Duration::from_millis(500)).await;
+
+        assert!(text.contains("<stderr read failed: pipe broke>"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_complete_stderr_read_is_returned_as_is() {
+        let text = read_diagnostic(&b"boom"[..], Duration::from_millis(500)).await;
+
+        assert_eq!(text, "boom");
+    }
+
+    #[tokio::test]
+    async fn a_silent_stderr_stays_quiet_at_the_window() {
+        let (_writer, reader) = tokio::io::duplex(64);
+
+        let text = read_diagnostic(reader, Duration::from_millis(50)).await;
+
+        assert_eq!(text, "");
+    }
 
     #[test]
     fn reads_the_bound_port_the_server_reports() {

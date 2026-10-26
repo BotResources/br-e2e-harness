@@ -149,12 +149,12 @@ runner (shared with G3).
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no crates.io).
-Keep its `br-rust-common` tag identical to `br-test-harness`'s (`v1.3.0`) so Cargo
-resolves a single source and never duplicates `br-core-*`:
+Keep each `br-rust-common` crate tag identical to `br-test-harness`'s (per-crate
+`<crate>/v0.1.0`) so Cargo resolves a single source and never duplicates `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", tag = "v1.2.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
 ```
 
 ## Why — the non-obvious bits
