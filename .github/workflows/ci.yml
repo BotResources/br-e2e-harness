@@ -93,9 +93,20 @@ jobs:
         run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
       - name: scope-acceptance conformance battery
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
+      - name: nats-fabric anchor checks and build onto PATH
+        run: |
+          set -euo pipefail
+          make -C conformance-subjects/nats-fabric guard
+          go -C conformance-subjects/nats-fabric vet ./...
+          go -C conformance-subjects/nats-fabric test -count=1 ./...
+          mkdir -p "$RUNNER_TEMP/nats-fabric-bin"
+          CGO_ENABLED=0 go build -C conformance-subjects/nats-fabric -o "$RUNNER_TEMP/nats-fabric-bin/nats-fabric" .
+          echo "$RUNNER_TEMP/nats-fabric-bin" >> "$GITHUB_PATH"
       - name: nats-fabric conformance battery
-        run: cargo test -p conformance-nats-fabric --test conformance --locked -- --ignored
-      - name: no Go subject is built inside the passport conformance crates
+        run: cargo test -p conformance-nats-fabric --all-targets --locked -- --ignored --test-threads=1
+      - name: nats-fabric conformance battery via the CLI binary
+        run: cargo test -p conformance-nats-fabric-cli --all-targets --locked -- --include-ignored --test-threads=1
+      - name: no Go subject is built inside the passport and nats-fabric conformance crates
         run: |
           set -euo pipefail
           bash .github/scripts/test-go-free-gate.sh

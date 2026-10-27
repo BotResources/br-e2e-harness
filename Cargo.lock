@@ -601,18 +601,33 @@ dependencies = [
 
 [[package]]
 name = "conformance-nats-fabric"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "br-core-directory",
  "br-core-integration",
  "br-test-harness",
  "br-util-nats-fabric",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "conformance-nats-fabric-cli"
+version = "0.1.1"
+dependencies = [
+ "assert_cmd",
+ "br-test-harness",
+ "clap",
+ "conformance-nats-fabric",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
