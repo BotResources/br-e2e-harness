@@ -102,6 +102,18 @@ jobs:
           tar -C out -czf "${asset}" "${BIN}"
           sha256sum "${asset}" > "${asset}.sha256"
 
+      - name: assert static (no PT_INTERP)
+        if: matrix.goos == 'linux'
+        env:
+          BIN: ${{ needs.gate.outputs.bin }}
+        run: |
+          set -euo pipefail
+          if readelf -l "out/${BIN}" | grep -q "INTERP"; then
+            echo "::error::out/${BIN} has a PT_INTERP segment - it is NOT static"
+            exit 1
+          fi
+          echo "ok: out/${BIN} is static"
+
       - name: upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -88,11 +88,14 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
-      - name: setup zig
+      - name: zig (from br-arc-runner)
         if: matrix.builder == 'zigbuild'
-        uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7 # v1.2.2
-        with:
-          version: 0.13.0
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${RUNNER_TEMP}:/out" ghcr.io/botresources/br-arc-runner:latest \
+            sh -c 'cp -a "$(dirname "$(readlink -f "$(command -v zig)")")" /out/zig'
+          echo "${RUNNER_TEMP}/zig" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/zig/zig" version
 
       - name: install cargo-zigbuild
         if: matrix.builder == 'zigbuild'
