@@ -1,13 +1,15 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
-use br_core_scope::ServiceKey;
 use br_test_harness::FabricTestNats;
 
 use crate::capture::DeclareCapture;
 use crate::checks::{CheckContext, run_scenario};
 use crate::error::{ConformanceError, Result};
 use crate::expected::ExpectedDeclaration;
-use crate::outcome::ConformanceReport;
+use crate::outcome::{CheckOutcome, CheckStatus, ConformanceReport};
+use crate::preflight::check_attach_input;
+use crate::prerequisite::contained;
 use crate::readyz::ReadyzProbe;
 use crate::scenario::{AcceptorBehavior, Scenario};
 
@@ -25,16 +27,45 @@ pub async fn run_attach(
     scenarios: &[Scenario],
     timeout: Duration,
 ) -> Result<ConformanceReport> {
-    let service_key = service_key(expected)?;
-    let nats = FabricTestNats::connect(&target.nats_url).await;
-    let fabric = nats.fabric_owned();
+    check_attach_input(target, expected, scenarios, timeout)?;
+    let service_key = expected.validated_service_key()?;
     let readyz = ReadyzProbe::new(&target.readyz_url)?;
-    let capture = DeclareCapture::start(&nats).await.map_err(|e| {
+    let nats = contained(FabricTestNats::attach_without_provisioning(
+        &target.nats_url,
+    ))
+    .await
+    .map_err(|e| {
         ConformanceError::Jetstream(format!(
-            "binding the declare consumer to the fixed handshake stream failed — in attach mode \
-             the service owns the fixed handshake stream and it must already exist: {e}"
+            "connecting the harness to NATS at {}: {e}",
+            target.nats_url
         ))
     })?;
+    match contained(nats.fixed_streams_present()).await {
+        Ok(true) => {}
+        Ok(false) => {
+            nats.shutdown().await;
+            return Err(missing_streams());
+        }
+        Err(panic) => {
+            nats.shutdown().await;
+            return Err(ConformanceError::Jetstream(format!(
+                "checking the fixed streams INTEGRATION_CMD and INTEGRATION_EVT on {}: {panic}",
+                target.nats_url
+            )));
+        }
+    }
+    let fabric = nats.fabric_owned();
+    let capture = match contained(DeclareCapture::start(&nats)).await {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(e)) => {
+            nats.shutdown().await;
+            return Err(binding_failure(e));
+        }
+        Err(panic) => {
+            nats.shutdown().await;
+            return Err(binding_failure(panic));
+        }
+    };
 
     let ctx = CheckContext {
         fabric: &fabric,
@@ -48,18 +79,60 @@ pub async fn run_attach(
 
     let mut report = ConformanceReport::default();
     for scenario in scenarios {
-        report.push(run_scenario(*scenario, &ctx).await);
+        let outcome = run_scenario(*scenario, &ctx).await;
+        report.push(name_the_attach_prerequisite(*scenario, outcome));
     }
+    let boots = distinct_declares(&capture);
     capture.stop().await;
+    for outcome in &mut report.outcomes {
+        name_the_stale_handshake(outcome, boots);
+    }
     nats.shutdown().await;
     Ok(report)
 }
 
-pub(crate) fn service_key(expected: &ExpectedDeclaration) -> Result<ServiceKey> {
-    ServiceKey::new(expected.service_key.clone()).map_err(|e| {
-        ConformanceError::InvalidInput(format!(
-            "service key {:?} is not a valid ServiceKey: {e}",
-            expected.service_key
-        ))
-    })
+fn name_the_attach_prerequisite(scenario: Scenario, mut outcome: CheckOutcome) -> CheckOutcome {
+    if outcome.status != CheckStatus::Fail {
+        return outcome;
+    }
+    if let Some(prerequisite) = scenario.attach_prerequisite() {
+        let detail = outcome.detail.take().unwrap_or_default();
+        outcome.detail = Some(format!("{detail}; in attach mode, {prerequisite}"));
+    }
+    outcome
+}
+
+fn distinct_declares(capture: &DeclareCapture) -> usize {
+    capture
+        .try_correlation_ids()
+        .map(|ids| ids.into_iter().collect::<HashSet<_>>().len())
+        .unwrap_or(0)
+}
+
+fn name_the_stale_handshake(outcome: &mut CheckOutcome, distinct_declares: usize) {
+    if outcome.status != CheckStatus::Fail || distinct_declares < 2 {
+        return;
+    }
+    let detail = outcome.detail.take().unwrap_or_default();
+    outcome.detail = Some(format!(
+        "{detail}; {distinct_declares} distinct declares were captured, which has two possible \
+         causes: more than one boot or service on the declare stream (earlier run, restart or \
+         another service): use a fresh INTEGRATION_CMD stream; or the service minted a new \
+         correlation_id on a re-publish (s3 checks this)"
+    ));
+}
+
+fn missing_streams() -> ConformanceError {
+    ConformanceError::Jetstream(
+        "the fixed streams INTEGRATION_CMD and INTEGRATION_EVT must already exist in \
+         attach mode; the battery never provisions infra"
+            .to_string(),
+    )
+}
+
+fn binding_failure(cause: impl std::fmt::Display) -> ConformanceError {
+    ConformanceError::Jetstream(format!(
+        "binding the declare consumer to the fixed handshake stream failed — in attach mode \
+         the service owns the fixed handshake stream and it must already exist: {cause}"
+    ))
 }

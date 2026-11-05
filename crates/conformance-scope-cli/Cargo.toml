@@ -1,6 +1,6 @@
 [package]
 name = "conformance-scope-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Language-agnostic CLI for the BotResources scope-declaration conformance battery"
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ name = "conformance-scope"
 path = "src/main.rs"
 
 [dependencies]
-conformance-scope = { path = "../conformance-scope", version = "0.1.0" }
+conformance-scope = { path = "../conformance-scope", version = "0.1.1" }
 
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }
@@ -23,3 +23,7 @@ serde-saphyr = "1"
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 assert_cmd = "2"
+uuid = { version = "1", features = ["v7"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2", default-features = false, features = [
+    "nats-fabric",
+] }

@@ -1,8 +1,15 @@
 use std::net::TcpListener;
 use std::path::Path;
+use std::process::ExitStatus;
+use std::time::Duration;
 
-use br_test_harness::SpawnedProcess;
+use br_test_harness::{BootOutcome, SpawnedProcess};
 use reqwest::StatusCode;
+
+use crate::binary::child_path;
+use crate::error::{ConformanceError, Result};
+use crate::prerequisite::absolute;
+use crate::timeout::MAX_TIMEOUT;
 
 pub struct SubjectConfig {
     pub nats_url: String,
@@ -75,6 +82,25 @@ impl SubjectConfig {
     }
 }
 
+const LOG_TAIL_LINES: usize = 20;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BootWatch {
+    pub attempts: usize,
+    pub lookout: Duration,
+    pub settle: Duration,
+}
+
+impl Default for BootWatch {
+    fn default() -> Self {
+        Self {
+            attempts: 5,
+            lookout: Duration::from_secs(1),
+            settle: Duration::from_millis(250),
+        }
+    }
+}
+
 pub struct Subject {
     process: SpawnedProcess,
     base_url: String,
@@ -82,12 +108,71 @@ pub struct Subject {
 }
 
 impl Subject {
+    pub async fn start(binary: &Path, config: &SubjectConfig) -> Result<Self> {
+        Self::start_with(binary, config, BootWatch::default()).await
+    }
+
+    pub async fn start_with(
+        binary: &Path,
+        config: &SubjectConfig,
+        watch: BootWatch,
+    ) -> Result<Self> {
+        if watch.attempts == 0 {
+            return Err(ConformanceError::InvalidInput(
+                "a boot watch with zero attempts never starts the subject".to_string(),
+            ));
+        }
+        for (name, value) in [("lookout", watch.lookout), ("settle", watch.settle)] {
+            if value > MAX_TIMEOUT {
+                return Err(ConformanceError::InvalidInput(format!(
+                    "boot watch {name} {value:?} is above the cap of {MAX_TIMEOUT:?} (24 hours)"
+                )));
+            }
+        }
+        let mut last_exit = None;
+        for _ in 0..watch.attempts {
+            let mut subject = Self::spawn(binary, config);
+            match subject.exited_at_boot(&watch).await {
+                None => return Ok(subject),
+                Some(status) => {
+                    let log_tail = tail(&subject.logs(), LOG_TAIL_LINES);
+                    subject.shutdown().await;
+                    last_exit = Some((status, log_tail));
+                }
+            }
+        }
+        let (status, log_tail) = last_exit.expect("at least one attempt was made");
+        Err(ConformanceError::SubjectExitedAtBoot {
+            binary: binary.display().to_string(),
+            attempts: watch.attempts,
+            status: status.to_string(),
+            log_tail,
+        })
+    }
+
+    async fn exited_at_boot(&mut self, watch: &BootWatch) -> Option<ExitStatus> {
+        let livez = format!("{}/livez", self.base_url);
+        match self.process.await_boot(&livez, watch.lookout).await {
+            BootOutcome::Exited(status) => return Some(status),
+            BootOutcome::TimedOut => return None,
+            BootOutcome::Ready => {}
+        }
+        tokio::time::sleep(watch.settle).await;
+        match self.process.await_boot(&livez, Duration::ZERO).await {
+            BootOutcome::Exited(status) => Some(status),
+            BootOutcome::Ready | BootOutcome::TimedOut => None,
+        }
+    }
+
     pub fn spawn(binary: &Path, config: &SubjectConfig) -> Self {
+        let binary = absolute(binary);
+        let binary = binary.as_path();
         let addr = free_loopback_addr();
         let base_url = format!("http://{addr}");
         let platform_only = config.platform_only.to_string();
         let enabled = config.enabled.to_string();
-        let envs = [
+        let path = child_path(binary, std::env::var_os("PATH").as_deref());
+        let mut envs = vec![
             ("NATS_URL", config.nats_url.as_str()),
             ("HTTP_ADDR", addr.as_str()),
             ("COMMAND_STREAM_NAME", config.command_stream.as_str()),
@@ -100,6 +185,9 @@ impl Subject {
             ("WAIT_TIMEOUT", config.wait_timeout.as_str()),
             ("SCOPE_DECLARATION_ENABLED", enabled.as_str()),
         ];
+        if let Some(path) = path.as_deref() {
+            envs.push(("PATH", path));
+        }
 
         let process = SpawnedProcess::spawn(&binary.to_string_lossy(), &[], &envs);
         let client = reqwest::Client::builder()
@@ -169,4 +257,21 @@ fn free_loopback_addr() -> String {
         .expect("reserved listener has no address")
         .port();
     format!("127.0.0.1:{port}")
+}
+
+fn tail(logs: &str, lines: usize) -> String {
+    let all: Vec<&str> = logs.lines().collect();
+    all[all.len().saturating_sub(lines)..].join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tail;
+
+    #[test]
+    fn the_tail_keeps_the_last_lines_only() {
+        assert_eq!(tail("a\nb\nc\nd", 2), "c\nd");
+        assert_eq!(tail("a\nb", 5), "a\nb");
+        assert_eq!(tail("", 5), "");
+    }
 }

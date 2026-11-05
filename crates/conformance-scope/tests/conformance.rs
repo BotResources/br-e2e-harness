@@ -59,12 +59,14 @@ fn service_key() -> ServiceKey {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn s1_declare_on_boot_is_well_formed() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -92,12 +94,14 @@ async fn s1_declare_on_boot_is_well_formed() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn declaration_content_matches_expected() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -125,12 +129,14 @@ async fn declaration_content_matches_expected() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn declaration_content_flags_wrong_scopes() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let wrong = ExpectedDeclaration::new(
         SERVICE_KEY,
@@ -168,12 +174,14 @@ async fn declaration_content_flags_wrong_scopes() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn s2_readiness_is_gated_on_acceptance() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -201,12 +209,14 @@ async fn s2_readiness_is_gated_on_acceptance() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn s3_republishes_same_correlation_id_until_answered() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -234,12 +244,14 @@ async fn s3_republishes_same_correlation_id_until_answered() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn s4_rejection_keeps_subject_unready_and_stops_republishing() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -269,12 +281,14 @@ async fn s4_rejection_keeps_subject_unready_and_stops_republishing() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn s5_duplicate_confirmations_are_tolerated() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness));
+    let subject = Subject::start(harness.binary(), &config(&harness))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -306,12 +320,14 @@ async fn s5_duplicate_confirmations_are_tolerated() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn s6_disabled_mode_publishes_nothing_and_is_ready_immediately() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
     let capture = harness.capture_declares().await.expect("capture");
-    let subject = Subject::spawn(harness.binary(), &config(&harness).enabled(false));
+    let subject = Subject::start(harness.binary(), &config(&harness).enabled(false))
+        .await
+        .expect("start the subject");
     let readyz = ReadyzProbe::new(format!("{}/readyz", subject.base_url())).expect("readyz");
     let expected = expected();
     let key = service_key();
@@ -339,11 +355,13 @@ async fn s6_disabled_mode_publishes_nothing_and_is_ready_immediately() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` + `go` on PATH"]
+#[ignore = "real-infra: needs `nats-server` and the `scope-service` binary on PATH"]
 async fn attach_capture_replays_the_boot_declare_published_before_it() {
     let harness = ScopeHarness::start().await.expect("harness");
     provision_handshake(&harness).await;
-    let subject = Subject::spawn(harness.binary(), &config_with_long_wait_timeout(&harness));
+    let subject = Subject::start(harness.binary(), &config_with_long_wait_timeout(&harness))
+        .await
+        .expect("start the subject");
 
     let landed = harness.capture_declares().await.expect("landed capture");
     let boot_declare_on_stream =

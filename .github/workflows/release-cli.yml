@@ -22,6 +22,7 @@ env:
   CRATE: conformance-scope-cli
   LIBRARY: conformance-scope
   BIN: conformance-scope
+  SUBJECT_BIN: scope-service
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
@@ -49,11 +50,12 @@ jobs:
           bash .github/scripts/check-companions.sh "refs/tags/${RELEASE_TAG}" "${LIBRARY}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-          marker="${BIN}-${version}-x86_64-unknown-linux-musl.tar.gz"
-          if gh release view "${RELEASE_TAG}" --json assets \
-               --jq '.assets[].name' 2>/dev/null | grep -qx "${marker}"; then
+          cli_marker="${BIN}-${version}-x86_64-unknown-linux-musl.tar.gz"
+          subject_marker="${SUBJECT_BIN}-linux-amd64.tar.gz"
+          assets="$(gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+          if grep -qx "${cli_marker}" <<<"${assets}" && grep -qx "${subject_marker}" <<<"${assets}"; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::${RELEASE_TAG} already carries ${marker} — nothing to build"
+            echo "::notice::${RELEASE_TAG} already carries ${cli_marker} and ${subject_marker} — nothing to build"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -158,9 +160,59 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  subject:
+    name: build scope-service ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: gate
+    if: needs.gate.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.26"
+
+      - name: build and package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          asset="${SUBJECT_BIN}-${GOOS}-${GOARCH}.tar.gz"
+          mkdir -p out
+          go build -C "conformance-subjects/${SUBJECT_BIN}" -trimpath -o "${PWD}/out/${SUBJECT_BIN}" .
+          chmod +x "out/${SUBJECT_BIN}"
+          tar -C out -czf "${asset}" "${SUBJECT_BIN}"
+          sha256sum "${asset}" > "${asset}.sha256"
+
+      - name: upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.SUBJECT_BIN }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            ${{ env.SUBJECT_BIN }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            ${{ env.SUBJECT_BIN }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: attach the binaries to the library release
-    needs: [gate, build]
+    needs: [gate, build, subject]
     if: needs.gate.outputs.skip == 'false'
     runs-on: ubuntu-latest
     permissions:
@@ -183,8 +235,16 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           assets=(dist/*.tar.gz dist/*.sha256)
-          if [ ${#assets[@]} -eq 0 ]; then
+          if [ ${#assets[@]} -lt 2 ]; then
             echo "::error::no built assets found under dist/"
             exit 1
           fi
+          for expected in "${SUBJECT_BIN}-linux-amd64" "${SUBJECT_BIN}-linux-arm64" "${SUBJECT_BIN}-darwin-amd64" "${SUBJECT_BIN}-darwin-arm64"; do
+            for suffix in .tar.gz .tar.gz.sha256; do
+              if [ ! -f "dist/${expected}${suffix}" ]; then
+                echo "::error::dist/${expected}${suffix} is missing"
+                exit 1
+              fi
+            done
+          done
           gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber

@@ -1,6 +1,6 @@
 [package]
 name = "conformance-scope"
-version = "0.1.0"
+version = "0.1.1"
 description = "Black-box conformance runner for the BotResources scope-declaration wire handshake — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,14 +13,17 @@ br-core-scope = { git = "https://github.com/BotResources/br-rust-common", packag
 br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "br-scope-declaration-contract/v0.1.0", version = "0.1.0" }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "br-util-nats-fabric/v0.1.0", version = "0.1.0" }
 
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.0", version = "0.1.0", default-features = false, features = [
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2", default-features = false, features = [
     "nats-fabric",
+    "http-client",
 ] }
 
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+sha2 = "0.10"
 uuid = { version = "1", features = ["v7"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 thiserror = { workspace = true }

@@ -87,10 +87,19 @@ jobs:
           nats-server --version
       - name: harness real-infra self-tests
         run: cargo test -p br-test-harness --all-targets --locked -- --ignored
+      - name: scope-service anchor checks and build onto PATH
+        run: |
+          set -euo pipefail
+          make -C conformance-subjects/scope-service guard
+          go -C conformance-subjects/scope-service vet ./...
+          go -C conformance-subjects/scope-service test -count=1 ./...
+          mkdir -p "$RUNNER_TEMP/scope-service-bin"
+          CGO_ENABLED=0 go build -C conformance-subjects/scope-service -o "$RUNNER_TEMP/scope-service-bin/scope-service" .
+          echo "$RUNNER_TEMP/scope-service-bin" >> "$GITHUB_PATH"
       - name: scope-declaration conformance battery
-        run: cargo test -p conformance-scope --test conformance --locked -- --ignored
+        run: cargo test -p conformance-scope --all-targets --locked -- --ignored --test-threads=1
       - name: scope-declaration conformance battery via the CLI binary
-        run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
+        run: cargo test -p conformance-scope-cli --locked -- --ignored
       - name: scope-acceptance conformance battery
         run: cargo test -p conformance-identity --test conformance --locked -- --ignored
       - name: nats-fabric anchor checks and build onto PATH
@@ -106,7 +115,7 @@ jobs:
         run: cargo test -p conformance-nats-fabric --all-targets --locked -- --ignored --test-threads=1
       - name: nats-fabric conformance battery via the CLI binary
         run: cargo test -p conformance-nats-fabric-cli --all-targets --locked -- --include-ignored --test-threads=1
-      - name: no Go subject is built inside the passport and nats-fabric conformance crates
+      - name: no Go subject is built inside the passport, nats-fabric and scope conformance crates
         run: |
           set -euo pipefail
           bash .github/scripts/test-go-free-gate.sh
