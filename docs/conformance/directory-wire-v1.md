@@ -169,7 +169,7 @@ flat. It deliberately does **not** emit `organization_id` / orgs / memberships /
 any tenancy field:
 
 > **`organization_id` is an extension, NOT core** (epic #54). Mono- vs
-> multi-tenant is the dimension closest to domain → a seam (Hanshow has no orgs).
+> multi-tenant is the dimension closest to domain → a seam (a mono-tenant project has no orgs).
 > Conformance covers the **core + the generic extension mechanism only**, never a
 > project-specific extension — consistent with the tenancy-agnostic socle.
 
