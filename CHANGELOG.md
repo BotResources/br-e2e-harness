@@ -447,9 +447,9 @@ battery no longer asks any binary to seal, and needs no `go` on `PATH`).
 
 **Deferred.** The consumer-side follow-ups this release enables stay in their own
 repos and are not part of it: svc-jobs dropping the `Budget` / `ended_early`
-heuristic now that `Closed` is readable, svc-notifier's drain loops, bma-identity's
-five drain-to-quiet loops and its `assert_stream_stays_open` helper (now
-redundant), be-botresources.ai's svc-identity / svc-tasks helpers (optional:
+heuristic now that `Closed` is readable, svc-notifier's drain loops, a downstream
+identity service's five drain-to-quiet loops and its `assert_stream_stays_open`
+helper (now redundant), be-botresources.ai's svc-identity / svc-tasks helpers (optional:
 better panic messages), the deletion of the gateway's duplicated
 `crates/e2e/src/ws.rs` in favour of `WsCredential`, and un-ignoring svc-charter
 `s19` on `DeliveryOutage`. The Rust-side guard for
