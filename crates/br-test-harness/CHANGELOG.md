@@ -9,6 +9,14 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+### Fixed
+
+- `workspace_bin` (and so `spawn_fabric_provision`, which every conformance battery provisions through) finds the binary under the build-dir layout of Cargo 1.100, where a test executable runs from `<build-dir>/<profile>/build/<package>/<unit>/out/` and no longer from `<target-dir>/<profile>/deps/`. It popped the file name and one `deps` directory, so on Cargo 1.100 it looked for `fabric-nats` beside the test executable and every check that spawns the CLI panicked with `fabric-nats must be built by the workspace at .../build/<package>/<unit>/out/fabric-nats`. It now reads the directory of the test executable and up to four directories above it, nearest first, stopping below the Cargo output root (the directory holding `CACHEDIR.TAG`, when Cargo wrote one), and takes the first regular file of that name; the `deps/` layout of Cargo 1.99 and earlier, and of the `__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT` opt-out, resolves as before.
+- `workspace_bin` finds the binary when `build.build-dir` (`CARGO_BUILD_BUILD_DIR`) is not the target-dir: when nothing is found near the test executable it asks `cargo metadata` (the `CARGO` of the running test, in `CARGO_MANIFEST_DIR`) for `target_directory` and `build_directory` and reads the same profile path under the target-dir. A build-dir or target-dir given only on the command line (`--target-dir`, `--config`) is not visible to the test and is not covered; `BR_TEST_HARNESS_BIN_DIR` covers it.
+- `BR_TEST_HARNESS_BIN_DIR`, when set, names the one directory `workspace_bin` reads; nothing else is searched.
+- The panic of an absent binary lists every path read, the test executable and what `cargo metadata` answered, instead of one path. It still starts with `{name} must be built by the workspace`.
+- A directory named like the binary is no longer taken for the binary (`exists()` became `is_file()`).
+
 ## 0.1.2
 
 ### Fixed

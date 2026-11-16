@@ -32,6 +32,10 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --all-targets --locked
+      - name: workspace_bin finds fabric-nats across a separate build-dir
+        env:
+          CARGO_BUILD_BUILD_DIR: ${{ runner.temp }}/separate-build-dir
+        run: cargo test -p br-test-harness --test workspace_bin --locked
       - name: spawned-nats slice stays free of br-rust-common
         run: |
           set -euo pipefail

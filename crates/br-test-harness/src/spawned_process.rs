@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 #[cfg(feature = "http-client")]
@@ -7,6 +7,8 @@ use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
+
+pub use crate::bin_locator::workspace_bin;
 
 pub struct SpawnedProcess {
     child: Child,
@@ -174,21 +176,6 @@ fn append_log(logs: &Mutex<String>, text: &str) {
     logs.lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .push_str(text);
-}
-
-pub fn workspace_bin(name: &str) -> PathBuf {
-    let mut dir = std::env::current_exe().expect("test executable path");
-    dir.pop();
-    if dir.ends_with("deps") {
-        dir.pop();
-    }
-    let bin = dir.join(name);
-    assert!(
-        bin.exists(),
-        "{name} must be built by the workspace at {}",
-        bin.display()
-    );
-    bin
 }
 
 pub async fn spawn_fabric_provision(nats_url: &str, manifest_path: &Path) -> Result<(), String> {

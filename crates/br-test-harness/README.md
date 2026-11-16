@@ -683,6 +683,41 @@ or bucket check failed (`NoStream` on an absent gitops stream, `FilterMismatch`,
 absent or re-aimed durable, an absent bucket, or a broker error while probing the
 durable, reported with the broker's text — never read as "absent").
 
+#### Spawning it from a Rust test — `workspace_bin`
+
+`fabric-nats` is a binary of `br-test-harness`, which a service consumes as a
+git **dependency**: Cargo sets no `CARGO_BIN_EXE_fabric-nats` for the service's
+tests and `cargo test -p <service>` does not build it. Build it once, then let
+the harness find it:
+
+```sh
+cargo build --locked -p br-test-harness --bin fabric-nats
+```
+
+`workspace_bin("fabric-nats")` (which `spawn_fabric_provision` and every
+conformance battery go through) returns `<target-dir>/<profile>/fabric-nats`, or
+panics listing every path it read. Cargo documents the build-dir layout as
+internal, so the lookup matches no directory name:
+
+1. `BR_TEST_HARNESS_BIN_DIR`, when set, is the only directory read.
+2. Otherwise the directory of the test executable and up to four directories
+   above it are read, nearest first, stopping below the Cargo output root (the
+   directory holding `CACHEDIR.TAG`). That covers
+   `<profile>/deps/<exe>` (Cargo ≤ 1.99) and
+   `<profile>/build/<package>/<unit>/out/<exe>` (Cargo 1.100), with or without a
+   `--target` triple.
+3. When that finds nothing — `build.build-dir` is not the target-dir — the
+   harness asks `cargo metadata` for `target_directory` and `build_directory`
+   and reads the same profile path under the target-dir.
+
+Not covered: a target-dir or build-dir given only on the `cargo test` command
+line (`--target-dir`, `--config`), which the test process cannot see — put it in
+`.cargo/config.toml` or the environment, or set `BR_TEST_HARNESS_BIN_DIR` to an
+absolute path. When the output root has no `CACHEDIR.TAG` (Cargo writes it only
+in a target directory it created itself), step 2 has no root to stop at and a
+regular file named like the binary within four directories of the test
+executable is taken.
+
 ### The de-flake primitives
 
 These helpers exist specifically to kill the classic e2e flakes:
