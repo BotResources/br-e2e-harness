@@ -6,6 +6,14 @@ version = 2
 yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2023-0071" },
+    # chrono is unmaintained (RUSTSEC-2026-0543, published 2026-09-14; upstream
+    # discussion chronotope/chrono#1768). An abandonment notice, not a
+    # vulnerability: every version is affected, so there is no patched release.
+    # It reaches this workspace through br-rust-common (br-core-events,
+    # br-core-integration) and the dev-dependencies of conformance-identity and
+    # conformance-scope. Retire this ignore when br-rust-common replaces chrono
+    # (RustSec suggests jiff or time) or chrono is maintained again.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; no patched release; reached through br-rust-common" },
 ]
 
 [licenses]
