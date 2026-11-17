@@ -972,10 +972,10 @@ tags are the legacy line of this crate and are not moved forward.
 
 ```toml
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0" }
 
 # …or slim — only part of the toolbox, no `sqlx`/`axum`/`rsa` in your build:
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2", default-features = false, features = ["nats", "spawned-nats"] }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0", default-features = false, features = ["nats", "spawned-nats"] }
 ```
 
 With the default `full` feature, `br-test-harness` depends on `br-core-auth`

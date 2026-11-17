@@ -9,6 +9,10 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+Minor 0.2, a new line: the sealed intent of 0.1 described the `deps/` lookup word for word.
+
 ### Changed
 
 - The `nats-fabric` feature no longer pulls in `br-scope-declaration-contract`: the library never used it, only its own tests do, and they keep it as a dev-dependency. Cargo 1.100's `unused_dependencies` lint reported it.
