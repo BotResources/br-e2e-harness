@@ -176,19 +176,42 @@ fn append_log(logs: &Mutex<String>, text: &str) {
         .push_str(text);
 }
 
+/// The binary `name` the workspace built, in the profile directory
+/// (`<target>/<profile>/`) above the running test executable. Panics when it
+/// is not there.
 pub fn workspace_bin(name: &str) -> PathBuf {
-    let mut dir = std::env::current_exe().expect("test executable path");
-    dir.pop();
-    if dir.ends_with("deps") {
-        dir.pop();
-    }
-    let bin = dir.join(name);
+    let test_exe = std::env::current_exe().expect("test executable path");
+    let bin = profile_dir(&test_exe).join(name);
     assert!(
         bin.exists(),
         "{name} must be built by the workspace at {}",
         bin.display()
     );
     bin
+}
+
+/// The profile directory above a test executable. Cargo before 1.100 puts
+/// test executables in `<target>/<profile>/deps/`; Cargo 1.100's build-dir
+/// layout puts them in `<target>/<profile>/build/<package>/<hash>/out/`.
+/// Anywhere else, the executable's own directory is taken as the profile
+/// directory. A build dir set apart from the target dir (`build.build-dir`)
+/// is not supported: the binaries are not above the test executable there.
+fn profile_dir(test_exe: &Path) -> PathBuf {
+    let mut dir = test_exe.parent().map(Path::to_path_buf).unwrap_or_default();
+    if dir.ends_with("deps") {
+        dir.pop();
+    } else if dir.ends_with("out")
+        && dir
+            .ancestors()
+            .nth(3)
+            .is_some_and(|build| build.ends_with("build"))
+    {
+        // out, <hash>, <package>, build
+        for _ in 0..4 {
+            dir.pop();
+        }
+    }
+    dir
 }
 
 pub async fn spawn_fabric_provision(nats_url: &str, manifest_path: &Path) -> Result<(), String> {
@@ -299,5 +322,31 @@ mod tests {
         }
 
         assert_eq!(process.logs().trim(), "hello");
+    }
+
+    #[test]
+    fn the_profile_dir_is_above_a_test_executable_in_deps() {
+        assert_eq!(
+            profile_dir(Path::new("/w/target/debug/deps/spec-0123abcd")),
+            PathBuf::from("/w/target/debug")
+        );
+    }
+
+    #[test]
+    fn the_profile_dir_is_above_a_test_executable_in_the_cargo_1_100_build_dir() {
+        assert_eq!(
+            profile_dir(Path::new(
+                "/w/target/debug/build/br-test-harness/cf48c2adcc928678/out/spec-0123abcd"
+            )),
+            PathBuf::from("/w/target/debug")
+        );
+    }
+
+    #[test]
+    fn an_out_dir_that_is_not_under_build_is_taken_as_the_profile_dir() {
+        assert_eq!(
+            profile_dir(Path::new("/w/target/release/out/spec-0123abcd")),
+            PathBuf::from("/w/target/release/out")
+        );
     }
 }

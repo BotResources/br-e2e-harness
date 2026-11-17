@@ -9,6 +9,10 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+### Fixed
+
+- `workspace_bin` finds the workspace's binaries under Cargo 1.100 again. Cargo 1.100's build-dir layout moved test executables from `<target>/<profile>/deps/` to `<target>/<profile>/build/<package>/<hash>/out/`, and `workspace_bin` looked for the binary next to the test executable there, so it panicked with `{name} must be built by the workspace at <target>/<profile>/build/<package>/<hash>/out/{name}`. It now walks up to `<target>/<profile>/` from either layout. A build dir set apart from the target dir (`build.build-dir`) is still not supported.
+
 ## 0.1.2
 
 ### Fixed
