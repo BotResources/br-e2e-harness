@@ -91,6 +91,15 @@ jobs:
           nats-server --version
       - name: harness real-infra self-tests
         run: cargo test -p br-test-harness --all-targets --locked -- --ignored
+      # TRANSITIONAL — remove with the conformance crates' 0.2.0 releases.
+      # br-test-harness is 0.2.0 here while the conformance crates still pin
+      # br-test-harness/v0.1.x by tag, which the root [patch] no longer
+      # satisfies: they build against the released 0.1.0 / 0.1.2 from git,
+      # whose workspace_bin only finds fabric-nats in the deps/ layout. The
+      # harness self-tests above run on Cargo's current layout; the batteries
+      # below keep the legacy one until they pin br-test-harness/v0.2.0.
+      - name: keep the conformance batteries on the legacy build-dir layout
+        run: echo "__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT=1" >> "$GITHUB_ENV"
       - name: scope-declaration conformance battery
         run: cargo test -p conformance-scope --test conformance --locked -- --ignored
       - name: scope-declaration conformance battery via the CLI binary
