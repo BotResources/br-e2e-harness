@@ -47,13 +47,6 @@ fn cargo_says(target: PathBuf, build: PathBuf) -> impl FnOnce() -> Result<CargoD
     move || Ok(CargoDirs { target, build })
 }
 
-fn looked(miss: Miss) -> Vec<PathBuf> {
-    match miss {
-        Miss::Searched { looked, .. } => looked,
-        Miss::Pinned { bin, .. } => panic!("expected a search, got a pinned miss at {bin:?}"),
-    }
-}
-
 #[test]
 fn the_binary_is_found_from_a_test_executable_of_either_build_dir_layout() {
     for (exe, bin) in [
@@ -86,7 +79,7 @@ fn the_binary_is_found_from_a_test_executable_of_either_build_dir_layout() {
         let exe = tree.file(exe);
         let bin = tree.file(bin);
 
-        let found = locate("fabric-nats", &exe, None, no_cargo);
+        let found = locate("fabric-nats", &exe, no_cargo);
 
         assert_eq!(found.ok(), Some(bin), "{}", exe.display());
     }
@@ -102,7 +95,7 @@ fn a_package_named_like_a_layout_directory_does_not_hide_the_binary() {
         ));
         let bin = tree.file("target/debug/fabric-nats");
 
-        let found = locate("fabric-nats", &exe, None, no_cargo);
+        let found = locate("fabric-nats", &exe, no_cargo);
 
         assert_eq!(found.ok(), Some(bin), "{package}");
     }
@@ -114,7 +107,7 @@ fn an_absent_binary_names_every_path_looked_at_and_the_test_executable() {
     tree.file("target/CACHEDIR.TAG");
     let exe = tree.file("target/debug/build/svc-charter/0a1b2c3d/out/e2e-0a1b2c3d");
 
-    let miss = locate("fabric-nats", &exe, None, no_cargo).expect_err("nothing was built");
+    let miss = locate("fabric-nats", &exe, no_cargo).expect_err("nothing was built");
 
     let text = miss.to_string();
     for expected in [
@@ -128,7 +121,7 @@ fn an_absent_binary_names_every_path_looked_at_and_the_test_executable() {
         text.starts_with("fabric-nats must be built by the workspace"),
         "{text}"
     );
-    assert!(text.contains("BR_TEST_HARNESS_BIN_DIR"), "{text}");
+    assert!(text.contains(".cargo/config.toml"), "{text}");
     assert!(
         text.contains("cargo metadata: not asked in this test"),
         "{text}"
@@ -148,9 +141,9 @@ fn the_search_stops_below_the_cargo_output_root() {
         tree.file("fabric-nats");
         let exe = tree.file(exe);
 
-        let miss = locate("fabric-nats", &exe, None, no_cargo).expect_err("only strays exist");
+        let miss = locate("fabric-nats", &exe, no_cargo).expect_err("only strays exist");
 
-        let looked = looked(miss);
+        let looked = miss.looked;
         assert_eq!(
             looked.last(),
             Some(&tree.path("ws/target/debug/fabric-nats"))
@@ -170,10 +163,10 @@ fn without_an_output_root_marker_the_search_stops_four_directories_above_the_exe
     tree.file("a/fabric-nats");
     tree.file("fabric-nats");
 
-    let miss = locate("fabric-nats", &exe, None, no_cargo).expect_err("the strays are too far up");
+    let miss = locate("fabric-nats", &exe, no_cargo).expect_err("the strays are too far up");
 
     assert_eq!(
-        looked(miss),
+        miss.looked,
         ["a/b/c/d/e/out", "a/b/c/d/e", "a/b/c/d", "a/b/c", "a/b"]
             .map(|dir| tree.path(dir).join("fabric-nats"))
     );
@@ -187,7 +180,7 @@ fn a_directory_named_like_the_binary_is_not_the_binary() {
     tree.dir("target/debug/build/svc-charter/fabric-nats");
     let bin = tree.file("target/debug/fabric-nats");
 
-    let found = locate("fabric-nats", &exe, None, no_cargo);
+    let found = locate("fabric-nats", &exe, no_cargo);
 
     assert_eq!(found.ok(), Some(bin));
 }
@@ -215,7 +208,7 @@ fn a_separate_build_dir_is_bridged_to_the_target_dir_cargo_reports() {
         let bin = tree.file(bin);
         let cargo = cargo_says(tree.path("ws/target"), tree.path("cache/build"));
 
-        let found = locate("fabric-nats", &exe, None, cargo);
+        let found = locate("fabric-nats", &exe, cargo);
 
         assert_eq!(found.ok(), Some(bin), "{}", exe.display());
     }
@@ -228,10 +221,10 @@ fn a_separate_build_dir_never_reads_the_target_dir_root_itself() {
     tree.file("ws/target/fabric-nats");
     let cargo = cargo_says(tree.path("ws/target"), tree.path("cache/build"));
 
-    let miss = locate("fabric-nats", &exe, None, cargo).expect_err("only a stray exists");
+    let miss = locate("fabric-nats", &exe, cargo).expect_err("only a stray exists");
 
     let text = miss.to_string();
-    let looked = looked(miss);
+    let looked = miss.looked;
     assert!(looked.contains(&tree.path("ws/target/debug/fabric-nats")));
     assert!(!looked.contains(&tree.path("ws/target/fabric-nats")));
     assert!(text.contains("cargo metadata: target-dir"), "{text}");
@@ -249,28 +242,6 @@ fn a_test_executable_outside_the_reported_build_dir_adds_no_path() {
         ),
         Vec::<PathBuf>::new()
     );
-}
-
-#[test]
-fn a_pinned_directory_is_the_only_place_read() {
-    let tree = Tree::new();
-    tree.file("target/CACHEDIR.TAG");
-    let exe = tree.file("target/debug/deps/e2e-0a1b");
-    tree.file("target/debug/fabric-nats");
-    let pinned = tree.file("bin/fabric-nats");
-
-    let found = locate("fabric-nats", &exe, Some(&tree.path("bin")), no_cargo);
-    assert_eq!(found.ok(), Some(pinned));
-
-    let miss = locate("fabric-nats", &exe, Some(&tree.path("empty")), no_cargo)
-        .expect_err("the pinned directory holds nothing");
-    let text = miss.to_string();
-    assert!(
-        text.contains(&*tree.path("empty/fabric-nats").to_string_lossy()),
-        "{text}"
-    );
-    assert!(text.contains("BR_TEST_HARNESS_BIN_DIR"), "{text}");
-    assert!(matches!(miss, Miss::Pinned { .. }));
 }
 
 #[test]

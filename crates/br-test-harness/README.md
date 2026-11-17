@@ -699,22 +699,21 @@ conformance battery go through) returns `<target-dir>/<profile>/fabric-nats`, or
 panics listing every path it read. Cargo documents the build-dir layout as
 internal, so the lookup matches no directory name:
 
-1. `BR_TEST_HARNESS_BIN_DIR`, when set, is the only directory read.
-2. Otherwise the directory of the test executable and up to four directories
-   above it are read, nearest first, stopping below the Cargo output root (the
+1. The directory of the test executable and up to four directories above it
+   are read, nearest first, stopping below the Cargo output root (the
    directory holding `CACHEDIR.TAG`). That covers
    `<profile>/deps/<exe>` (Cargo ≤ 1.99) and
    `<profile>/build/<package>/<unit>/out/<exe>` (Cargo 1.100), with or without a
    `--target` triple.
-3. When that finds nothing — `build.build-dir` is not the target-dir — the
+2. When that finds nothing — `build.build-dir` is not the target-dir — the
    harness asks `cargo metadata` for `target_directory` and `build_directory`
    and reads the same profile path under the target-dir.
 
 Not covered: a target-dir or build-dir given only on the `cargo test` command
 line (`--target-dir`, `--config`), which the test process cannot see — put it in
-`.cargo/config.toml` or the environment, or set `BR_TEST_HARNESS_BIN_DIR` to an
-absolute path. When the output root has no `CACHEDIR.TAG` (Cargo writes it only
-in a target directory it created itself), step 2 has no root to stop at and a
+`.cargo/config.toml` or the environment. When the output root has no
+`CACHEDIR.TAG` (Cargo writes it only in a target directory it created itself),
+step 1 has no root to stop at and a
 regular file named like the binary within four directories of the test
 executable is taken.
 

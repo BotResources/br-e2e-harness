@@ -3,14 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-const BIN_DIR_ENV: &str = "BR_TEST_HARNESS_BIN_DIR";
 const OUTPUT_ROOT_MARKER: &str = "CACHEDIR.TAG";
 const PARENTS_SEARCHED: usize = 4;
 
 pub fn workspace_bin(name: &str) -> PathBuf {
     let exe = std::env::current_exe().expect("test executable path");
-    let pinned = std::env::var_os(BIN_DIR_ENV).map(PathBuf::from);
-    match locate(name, &exe, pinned.as_deref(), cargo_dirs) {
+    match locate(name, &exe, cargo_dirs) {
         Ok(bin) => bin,
         Err(miss) => panic!("{miss}"),
     }
@@ -23,66 +21,39 @@ struct CargoDirs {
 }
 
 #[derive(Debug)]
-enum Miss {
-    Pinned {
-        name: String,
-        bin: PathBuf,
-    },
-    Searched {
-        name: String,
-        exe: PathBuf,
-        looked: Vec<PathBuf>,
-        cargo: String,
-    },
+struct Miss {
+    name: String,
+    exe: PathBuf,
+    looked: Vec<PathBuf>,
+    cargo: String,
 }
 
 impl fmt::Display for Miss {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Miss::Pinned { name, bin } => write!(
-                f,
-                "{name} must be built by the workspace at {} ({BIN_DIR_ENV} names that directory)",
-                bin.display()
-            ),
-            Miss::Searched {
-                name,
-                exe,
-                looked,
-                cargo,
-            } => {
-                writeln!(f, "{name} must be built by the workspace; no file at:")?;
-                for path in looked {
-                    writeln!(f, "  {}", path.display())?;
-                }
-                writeln!(f, "test executable: {}", exe.display())?;
-                writeln!(f, "{cargo}")?;
-                write!(
-                    f,
-                    "build it (cargo build -p <its package> --bin {name}), or set {BIN_DIR_ENV} to the directory that holds it"
-                )
-            }
+        let Miss {
+            name,
+            exe,
+            looked,
+            cargo,
+        } = self;
+        writeln!(f, "{name} must be built by the workspace; no file at:")?;
+        for path in looked {
+            writeln!(f, "  {}", path.display())?;
         }
+        writeln!(f, "test executable: {}", exe.display())?;
+        writeln!(f, "{cargo}")?;
+        write!(
+            f,
+            "build it (cargo build -p <its package> --bin {name}); a target-dir or build-dir set only on the cargo command line is invisible to the test, so name it in .cargo/config.toml or the environment"
+        )
     }
 }
 
 fn locate(
     name: &str,
     exe: &Path,
-    pinned: Option<&Path>,
     cargo_dirs: impl FnOnce() -> Result<CargoDirs, String>,
 ) -> Result<PathBuf, Miss> {
-    if let Some(dir) = pinned {
-        let bin = dir.join(name);
-        return if bin.is_file() {
-            Ok(bin)
-        } else {
-            Err(Miss::Pinned {
-                name: name.to_owned(),
-                bin,
-            })
-        };
-    }
-
     let mut looked = beside(exe, name, |dir| dir.join(OUTPUT_ROOT_MARKER).is_file());
     if let Some(bin) = first_file(&looked) {
         return Ok(bin);
@@ -108,7 +79,7 @@ fn locate(
         Err(why) => format!("cargo metadata: {why}"),
     };
 
-    Err(Miss::Searched {
+    Err(Miss {
         name: name.to_owned(),
         exe: exe.to_path_buf(),
         looked,
