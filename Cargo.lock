@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "br-test-harness"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-nats",
  "axum",
@@ -647,18 +647,33 @@ dependencies = [
 
 [[package]]
 name = "conformance-nats-fabric"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "br-core-directory",
  "br-core-integration",
  "br-test-harness",
  "br-util-nats-fabric",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "conformance-nats-fabric-cli"
+version = "0.1.1"
+dependencies = [
+ "assert_cmd",
+ "br-test-harness",
+ "clap",
+ "conformance-nats-fabric",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3118,9 +3133,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.54.1"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",

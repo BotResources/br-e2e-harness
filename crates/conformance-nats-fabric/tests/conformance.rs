@@ -3,20 +3,19 @@ use std::time::Duration;
 use br_test_harness::{BareFabricNats, FabricTestNats, run_once, workspace_bin};
 use conformance_nats_fabric::anchor::frozen_wire;
 use conformance_nats_fabric::checks::integration::{
-    assert_dead_grammar_fails_loud, assert_missing_stream_fails_loud,
-    assert_missing_stream_fails_loud_on_bind, assert_no_fixed_stream_captured,
-    assert_widened_durable_converges, rust_command_subject, rust_event_subject, widen,
+    DEAD_COMMAND_SUBJECT, assert_anchor_subjects_match, assert_dead_grammar_fails_loud,
+    assert_missing_stream_fails_loud, assert_missing_stream_fails_loud_on_bind,
+    assert_no_fixed_stream_captured, assert_widened_durable_converges, widen,
 };
 use conformance_nats_fabric::checks::projection::{
     assert_bootstrap_then_watch_is_parallel_safe, assert_prefix_watch_delivery_gap,
 };
 use conformance_nats_fabric::checks::published_language::{
-    assert_decode_fails_closed_naming_the_key, assert_poison_from_anchor_names_the_key,
-    assert_reconcile_drift_converges, assert_retract_orphan_deletes,
-    parse_published_user_through_lib,
+    assert_anchor_users_deserialize, assert_decode_fails_closed_naming_the_key,
+    assert_poison_from_anchor_names_the_key, assert_reconcile_drift_converges,
+    assert_retract_orphan_deletes,
 };
 
-const DEAD_COMMAND_SUBJECT: &str = "identity.cmd.service_scope.declare.v1";
 const PROVISION_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn fixture(name: &str) -> String {
@@ -54,42 +53,17 @@ async fn published_language_subject(manifest: &str) -> FabricTestNats {
 }
 
 #[tokio::test]
-#[ignore = "requires go toolchain; renders the frozen wire from the anchor"]
+#[ignore = "requires the prebuilt nats-fabric anchor binary"]
 async fn anchor_subjects_match_the_lib_renderers_byte_for_byte() {
     let wire = frozen_wire().await.expect("anchor renders the frozen wire");
-
-    assert!(!wire.command_subjects.is_empty());
-    for go in &wire.command_subjects {
-        assert_eq!(
-            rust_command_subject(go).expect("lib renders command coords"),
-            go.subject,
-            "command subject drift for {go:?}"
-        );
-    }
-
-    assert!(!wire.event_subjects.is_empty());
-    for go in &wire.event_subjects {
-        assert_eq!(
-            rust_event_subject(go).expect("lib renders event coords"),
-            go.subject,
-            "event subject drift for {go:?}"
-        );
-    }
+    assert_anchor_subjects_match(&wire);
 }
 
 #[tokio::test]
-#[ignore = "requires go toolchain; deserializes the anchor users through the lib"]
+#[ignore = "requires the prebuilt nats-fabric anchor binary"]
 async fn anchor_published_users_deserialize_through_the_lib() {
     let wire = frozen_wire().await.expect("anchor renders the frozen wire");
-    assert!(!wire.published_users.is_empty());
-    for entry in &wire.published_users {
-        let user = parse_published_user_through_lib(&entry.value)
-            .unwrap_or_else(|e| panic!("anchor user {} is not a PublishedUser: {e}", entry.key));
-        assert!(
-            !user.email.is_empty(),
-            "the published user carries an email"
-        );
-    }
+    assert_anchor_users_deserialize(&wire);
 }
 
 #[tokio::test]
@@ -167,8 +141,7 @@ async fn prefix_watch_delivers_slash_keyed_directory_puts() {
         .expect("the gap probe runs");
     assert!(
         delivered,
-        "prefix-watch must deliver a live slash-keyed put within the deadline; \
-         br-util-nats-fabric v1.0.1 fixes the watch subject so the wildcard fires on real infra"
+        "prefix-watch must deliver a live slash-keyed put within the deadline on real infra"
     );
     harness.shutdown().await;
 }
@@ -184,7 +157,7 @@ async fn published_language_decode_fails_closed_naming_the_key() {
 }
 
 #[tokio::test]
-#[ignore = "requires a real nats-server + go toolchain"]
+#[ignore = "requires a real nats-server and the prebuilt nats-fabric anchor binary"]
 async fn published_language_anchor_poison_fails_closed_naming_the_key() {
     let wire = frozen_wire().await.expect("anchor renders the frozen wire");
     let harness = published_language_subject("published_language.toml").await;

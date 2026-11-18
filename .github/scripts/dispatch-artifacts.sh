@@ -26,6 +26,11 @@ case "$crate" in
         workflow="release-cli-passport.yml"
         ;;
     oidc-test-idp) workflow="cd.yml" ;;
+    conformance-nats-fabric)
+        gh workflow run "release-anchor-nats-fabric.yml" --ref "$line" -f "tag=${tag}"
+        echo "dispatched release-anchor-nats-fabric.yml for ${tag} on ${line}"
+        workflow="release-cli-nats-fabric.yml"
+        ;;
     conformance-scope) workflow="release-cli.yml" ;;
     conformance-directory | conformance-identity) workflow="release-anchor.yml" ;;
     *)

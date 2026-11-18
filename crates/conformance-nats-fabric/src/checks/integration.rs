@@ -5,7 +5,9 @@ use br_util_nats_fabric::{
 };
 
 use crate::error::Result;
-use crate::wire::{FrozenCommandSubject, FrozenEventSubject};
+use crate::wire::{FrozenCommandSubject, FrozenEventSubject, FrozenWire};
+
+pub const DEAD_COMMAND_SUBJECT: &str = "identity.cmd.service_scope.declare.v1";
 
 pub fn rust_command_subject(go: &FrozenCommandSubject) -> Result<String> {
     let coords = CommandCoords {
@@ -25,6 +27,31 @@ pub fn rust_event_subject(go: &FrozenEventSubject) -> Result<String> {
         version: go.version,
     };
     Ok(event_subject(&coords))
+}
+
+pub fn assert_anchor_subjects_match(wire: &FrozenWire) {
+    assert!(
+        !wire.command_subjects.is_empty(),
+        "the anchor renders no command subject"
+    );
+    for go in &wire.command_subjects {
+        assert_eq!(
+            rust_command_subject(go).expect("lib renders command coords"),
+            go.subject,
+            "command subject drift for {go:?}"
+        );
+    }
+    assert!(
+        !wire.event_subjects.is_empty(),
+        "the anchor renders no event subject"
+    );
+    for go in &wire.event_subjects {
+        assert_eq!(
+            rust_event_subject(go).expect("lib renders event coords"),
+            go.subject,
+            "event subject drift for {go:?}"
+        );
+    }
 }
 
 pub async fn assert_widened_durable_converges(harness: &FabricTestNats, marker: &WidenedDurable) {
@@ -93,10 +120,18 @@ fn assert_no_stream(err: &FabricError, what: &str) {
     );
 }
 
+async fn assert_fixed_streams_exist(harness: &FabricTestNats, proof: &str) {
+    assert!(
+        harness.fixed_streams_present().await,
+        "the fixed streams {INTEGRATION_CMD} and {INTEGRATION_EVT} must exist: {proof} proves nothing without them"
+    );
+}
+
 pub async fn assert_dead_grammar_fails_loud(
     harness: &FabricTestNats,
     dead_subject: &str,
 ) -> PublishErrorKind {
+    assert_fixed_streams_exist(harness, "the dead-grammar publish failure").await;
     let payload = serde_json::json!({ "probe": "dead-grammar" });
     let bytes = serde_json::to_vec(&payload).expect("probe serializes");
     let kind = harness.publish_dead_subject(dead_subject, &bytes).await;
@@ -112,6 +147,7 @@ pub async fn assert_no_fixed_stream_captured(
     harness: &FabricTestNats,
     dead_subject: &str,
 ) -> Result<()> {
+    assert_fixed_streams_exist(harness, "the absence of a captured message").await;
     for stream_name in [INTEGRATION_CMD, INTEGRATION_EVT] {
         assert!(
             harness.raw_message_absent(stream_name, dead_subject).await,

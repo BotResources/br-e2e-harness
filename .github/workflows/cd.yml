@@ -27,6 +27,16 @@ jobs:
     name: publish oidc-test-idp image
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # GitHub-hosted (free for public repos — self-hosted ARC runners refuse
+    # public repos by design), but inside the org runner image so the job
+    # gets the same baked toolchain as arc-ubuntu, Zig included.
+    container:
+      image: ghcr.io/botresources/br-arc-runner:latest
+      # root: the image's `runner` user is in docker gid 123, the hosted VM's
+      # /var/run/docker.sock is gid 118 — as `runner`, every docker call is
+      # "permission denied". The VM is discarded after the job, so running
+      # the throwaway container as root costs nothing.
+      options: --user root
     env:
       CRATE: oidc-test-idp
       IMAGE: ghcr.io/botresources/br-oidc-test-idp
@@ -35,14 +45,20 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
 
+      # The job runs as root inside br-arc-runner but the checkout is owned by
+      # the host's runner user: without this every git command below dies with
+      # "detected dubious ownership" (see svc-auth#44).
+      - name: trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -70,25 +86,23 @@ jobs:
           toolchain: stable
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
 
-      - name: setup zig
-        if: steps.ver.outputs.skip == 'false'
-        uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7 # v1.2.2
-        with:
-          version: 0.13.0
-
+      # Zig (cargo-zigbuild's linker) comes from the job container image rather
+      # than mlugg/setup-zig: that action's community-mirror download has no
+      # timeout and once held a publish job for 2h. See
+      # BotResources/infra.botresources.ai#241.
       - name: install cargo-zigbuild
         if: steps.ver.outputs.skip == 'false'
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: cargo-zigbuild
 
       - name: cargo cache
         if: steps.ver.outputs.skip == 'false'
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
 
       - name: setup buildx
         if: steps.ver.outputs.skip == 'false'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: cargo zigbuild (x86_64-musl)
         if: steps.ver.outputs.skip == 'false'
