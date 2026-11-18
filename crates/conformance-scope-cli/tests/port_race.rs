@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
@@ -13,10 +12,22 @@ fn stand_in(name: &str, body: &str) -> (PathBuf, PathBuf) {
         .join(format!("{name}-{}", uuid::Uuid::now_v7().simple()));
     std::fs::create_dir_all(&dir).expect("create the subject directory");
     let binary = dir.join("scope-service");
-    std::fs::write(&binary, format!("#!/bin/sh\n{body}")).expect("write the stand-in subject");
-    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755))
-        .expect("mark the stand-in executable");
+    write_from_a_child_process(&binary, &format!("#!/bin/sh\n{body}"));
     (dir, binary)
+}
+
+fn write_from_a_child_process(binary: &Path, script: &str) {
+    let written = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "printf '%s' \"$1\" > \"$2\" && chmod 755 \"$2\"",
+            "sh",
+            script,
+        ])
+        .arg(binary)
+        .status()
+        .expect("run /bin/sh to write the stand-in subject");
+    assert!(written.success(), "writing the stand-in subject: {written}");
 }
 
 fn attempts(dir: &Path) -> usize {
