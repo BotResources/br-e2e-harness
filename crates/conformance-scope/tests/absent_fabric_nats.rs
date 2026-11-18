@@ -11,7 +11,12 @@ const CHILD: &str = "CONFORMANCE_SCOPE_NO_FABRIC_NATS_CHILD";
 const PROVISION_TEST: &str = "provision_without_fabric_nats_is_a_typed_error_not_a_panic";
 const SPAWN_TEST: &str = "run_spawn_without_fabric_nats_is_a_typed_error_not_a_panic";
 
+static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn rerun_without_fabric_nats(test: &str) {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let isolated = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("no-fabric-nats-{}", uuid::Uuid::now_v7().simple()));
     std::fs::create_dir_all(&isolated).expect("create an empty executable directory");
