@@ -7,8 +7,8 @@ types against the frozen Go anchor.
 
 > ⚠️ **TEST FIXTURE ONLY.** Add it as a **dev-dependency**, never a runtime one.
 > The Px/Cx batteries stand up a real `nats-server` and a real Postgres on an
-> isolated, throwaway test network; the wire gate builds and runs a real Go
-> binary.
+> isolated, throwaway test network; the wire gate runs a real, prebuilt Go
+> binary. The crate never compiles anything.
 
 The on-wire contract these batteries enforce is documented in
 [`../../docs/conformance/directory-wire-v1.md`](../../docs/conformance/directory-wire-v1.md),
@@ -36,22 +36,22 @@ implementations**:
 
 ### Wire-deser gate — W1–W6 (offline, the gate)
 
-Builds + runs the Go anchor, then for each emitted `{key, value}` entry
+Runs the prebuilt Go anchor, then for each emitted `{key, value}` entry
 deserialises the `value` through the lib oracle. **Offline** — no NATS, no PG;
-only `go` on `PATH`. This is the gate that validates the lib's wire before its
+only the `identity-directory` binary (see below). This is the gate that validates the lib's wire before its
 tag is cut.
 
 | Id | Asserts |
 |---|---|
-| **W1** | every `users/{uuid}` value deserialises through `br_core_directory::PublishedUser`. |
-| **W2** | every `groups/{uuid}` value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
-| **W3** | `identity/_meta` deserialises through `DirectoryMeta` declaring users + groups. |
+| **W1** | every key is exactly `user_kv_key(id)` (`identity/users/` + the hyphenated lowercase uuid; uppercase, 32-hex, braced and `urn:uuid:` spellings fail) and unique, and every value deserialises through `br_core_directory::PublishedUser`. |
+| **W2** | every key is exactly `group_kv_key(id)` (`identity/groups/` + the hyphenated lowercase uuid; other spellings fail) and unique, and every value deserialises through `PublishedGroup`, and a memberless group proves `member_ids` is an array (never absent). |
+| **W3** | The meta key is exactly `META_KEY` (`identity/_meta`) and its value deserialises through `DirectoryMeta` declaring users + groups. |
 | **W4** | the neutral extension `x_custom` lands in `extensions` (flat), never leaking into a core field — the `#[serde(flatten)]` works. |
 | **W5** | a users-only manifest deserialises and **auto-degrades** groups (`publishes_groups() == false`). |
 | **W6** | an extensions map shadowing a reserved core key (`email`) is **rejected at `PublishedUser` construction** with `DirectoryError::ReservedExtensionKey` (fail-closed), never a silent overwrite. |
 
 The same logic has pure unit tests (`src/wire.rs`, inline JSON mirroring the
-anchor shape) so plain `cargo test` is green with **zero** toolchain.
+anchor shape) so plain `cargo test` is green with **zero** toolchain and no anchor binary.
 
 ### Px — publisher conformance (real NATS KV)
 
@@ -78,17 +78,27 @@ consume nothing.
 | **C2** | with groups in `_meta`, `is_member` / `group_name` resolve from the projected `known_groups` / `known_user_group`; with a users-only `_meta` they **auto-degrade** to empty. |
 | **C3** | a published user carrying an extension the consumer's `extract_user_extensions` selects is projected into `known_users.extensions` and read back **intact** — the sink is lossless and never force-drops extensions. |
 | **C4** | a user passing `filter_users` is projected; republishing it so it **fails** the filter makes the next `reconcile` **orphan-delete** its row (the copy filter is re-evaluated, a flip retracts). |
-| **C5** | a `ConsumptionScope::UsersOnly` consumer against a schema that **lacks** the group tables reconciles, then **watches** a live PUT: a fresh user published into the bucket while `watch()` runs is projected into `known_users` (polled to a deadline), and the group tables still do **not** exist — so the scope narrows a *live* change with **no** group DML (any group write would error on the missing tables). Because directory keys are slash-delimited, the live PUT also exercises `br-rust-common` v1.0.1's `watch_all` + client-side prefix filter on real NATS. |
+| **C5** | a `ConsumptionScope::UsersOnly` consumer against a schema that **lacks** the group tables reconciles, then **watches** a live PUT: a fresh user published into the bucket while `watch()` runs is projected into `known_users` (polled to a deadline), and the group tables still do **not** exist — so the scope narrows a *live* change with **no** group DML (any group write would error on the missing tables). Because directory keys are slash-delimited, the live PUT also exercises the `watch_all` + client-side prefix filter of `br-util-nats-fabric/v0.1.0` and `br-util-directory/v0.1.1` on real NATS. |
 | **C6** | a registered `ImpactStager` runs **on the sink's own connection, inside the roster transaction**: a committed roster write and its impacts are durable together (the stager reads the still-uncommitted roster row through the `conn` it is handed), a stager that **refuses** one key rolls that key's roster write back — **every column** of the pre-existing row unchanged — while a lower-ordered sibling key stays converged, a converged mirror stages nothing, and a projector with **no** stager registered converges the roster while staging nothing at all. The impact set is pinned for the **six** roster writes the Go anchor can drive: user upsert → that user; group upsert that **adds** members → the group only; group upsert that **drops** a member → the group **+** the removed member; group upsert renaming only → the group; user delete → that user **+** every group still holding it; group delete → the group **+** every member the cascade unlinks. Service-account writes are **not** exercised — the anchor publishes no `identity/service_accounts/…` key, so the battery cannot drive that sink without inventing a wire the Go anchor does not freeze. |
 
 ## Public helper surface (the reusable battery)
 
-The check functions return a structured `CheckOutcome` rather than panicking, so a
-consuming service's e2e can call them directly:
+The check functions return a structured `CheckOutcome` rather than panicking, and a
+missing prerequisite (`nats-server` not on `PATH`, the `fabric-nats` CLI not built where
+`workspace_bin` of `br-test-harness` finds it, no `E2E_PG_ADMIN_URL` / `DATABASE_URL`, an unreachable Postgres, a
+missing `identity-directory` binary, a missing `PUBLISHED_LANGUAGE` bucket, an unreachable NATS broker or a machine where `sh` cannot be spawned) comes back as a typed
+`ConformanceError`, so a consuming service's e2e can call them directly. A report is
+`is_conformant()` only with at least one outcome, no failed and no skipped outcome.
+A check returns `Err` only for a missing prerequisite or a fixture failure (the anchor
+binary, `nats-server`, `fabric-nats`, Postgres, seeding the KV, migrating, the
+throwaway database). The behaviour of the system under test is always a `CheckOutcome`:
+a failing `DirectoryPublisher` open or `reconcile`, a failing `DirectoryProjector`
+`reconcile`, and a published key or value that is not conformant are a failed outcome
+naming the stage and the key, never an `Err`.
 
-- `build_and_emit()` — builds the Go anchor and runs it once, returning the
-  parsed `DirectorySnapshotWire`. `build_anchor()` / `emit_snapshot(binary)` split
-  the two steps.
+- `locate_and_emit()` — locates the `identity-directory` binary (below) and runs it
+  once, returning the parsed `DirectorySnapshotWire`. `locate_anchor()` /
+  `emit_snapshot(binary)` split the two steps; `ANCHOR_BINARY` is the binary name. `emit_snapshot` hands the child a `PATH` led by the directory of the binary when that directory is absolute (so a sibling tool of the anchor resolves); a bare name is resolved only on the absolute entries of `PATH` (a relative entry such as `.` is never searched; an absent name is `AnchorBinaryUnavailable`), and a path with a directory part must be an executable file (a missing file, a directory or a file without the execute bit is `AnchorBinaryUnavailable`) and is run as given from the current directory. The archive of a download is extracted with the `tar` found on the absolute entries of `PATH`.
 - `run_wire_battery(&snapshot) -> ConformanceReport` — the W1–W5 offline gate
   (`reserved_key_rejected()` is the standalone W6 check);
   `deserialize_user` / `deserialize_group` / `deserialize_meta` are the per-entry
@@ -117,12 +127,45 @@ consuming service's e2e can call them directly:
   `StagerFault`, `StagedImpact` (the read-back row) and the
   `create_impact_table` / `staged_impacts` / `clear_impacts` helpers, all
   addressing `IMPACT_TABLE`.
+- `ALL_CHECKS`, `parse_checks(raw)` and `run_battery(&snapshot, &checks)` — the whole battery
+  as one call, the entry point of the `conformance-directory` CLI. `ALL_CHECKS` lists the 14
+  checks in battery order (W1..W5, W6, P1, P2, C1..C6); `parse_checks` turns a comma-separated
+  list of codes into a selection (an unknown code or an empty list is `InvalidInput`);
+  `run_battery` runs the selected checks in battery order whatever the order of the selection.
 - `reserved_key_rejected()` — the W6 offline guard; returns a `CheckOutcome` (no
   infra), asserting `PublishedUser::new` fails closed on a reserved-key extension.
 - `AnchorSource` — a `DirectorySource` built **from the anchor snapshot** (its
-  users/groups are the Go-frozen values re-deserialised through the lib), so the
+  users/groups are the Go-frozen values re-deserialised through the lib; an entry
+  under a key that is not exactly `user_kv_key(id)` / `group_kv_key(id)`, or a repeated id, is an
+  error, never dropped), so the
   wire the publisher emits is exactly the frozen anchor shape; `.without_groups()`
   drops groups to drive P2's manifest-gating.
+
+## The anchor binary
+
+The tests never compile anything. They assume the Go anchor is already built and look
+for an executable named `identity-directory`, in this order:
+
+1. on `PATH` (absolute entries only);
+2. in the cache directory `$XDG_CACHE_HOME/br-e2e-harness/conformance-directory-{version}`
+   (`~/Library/Caches/...` on macOS and `~/.cache/...` on Linux when `XDG_CACHE_HOME` is unset; a relative `XDG_CACHE_HOME` or `HOME` is ignored, and without an absolute one there is no cache directory and the lookup ends in the typed error);
+3. downloaded from this crate's own GitHub release,
+   `BotResources/br-e2e-harness` tag `conformance-directory/v{version}`, asset
+   `identity-directory-<os>-<arch>.tar.gz` with its sibling `.sha256`, into that cache
+   directory.
+
+Platforms with a release asset: `linux` and `darwin`, on `amd64` and `arm64`. The download
+fails closed: the archive must match the SHA-256 published beside it, every redirect must stay
+on an https `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com`
+host, and an archive over 64 MiB is refused. Only the `identity-directory` entry is extracted,
+and only if it is a regular file. The lookup, the download and this crate's own tests write nothing to the system temporary directory (the throwaway NATS store of `br-test-harness` is that crate's own).
+
+When none of the three succeeds, the call returns
+`ConformanceError::AnchorBinaryUnavailable` naming the binary and what to do: put it on
+`PATH`, or build it yourself with `make -C conformance-subjects/identity-directory build`
+and put `conformance-subjects/identity-directory` on `PATH`.
+
+CI also runs `.github/scripts/go-free-gate.sh`, which fails the build if this crate holds, in a `*.rs`, `*.toml`, `*.sh` or `*.yml` file, `go` or `make` followed by a build verb, a program literal `"go"` or `"make"`, the name of the removed Go-toolchain probe, or, in a `*.rs` file, `temp_dir`, `tempdir` or `tempfile`.
 
 ## Running it
 
@@ -130,12 +173,18 @@ The offline unit tests run with plain `cargo test -p conformance-directory`. The
 real batteries are `#[ignore]`-gated:
 
 ```sh
-# wire gate (needs `go`)
+# build the anchor once, outside the tests, and put it on PATH
+make -C conformance-subjects/identity-directory build
+export PATH="$PWD/conformance-subjects/identity-directory:$PATH"
+
+# the fabric-nats CLI of br-test-harness, once, in the same target directory
+cargo build -p br-test-harness --bin fabric-nats --features nats-fabric
+
+# wire gate (needs the identity-directory binary)
 cargo test -p conformance-directory --test conformance \
   -- --ignored wire_battery
 
-# the full Px + Cx + wire suite (needs `go`, `nats-server`, and a Postgres)
-NATS_URL=nats://localhost:4222 \
+# the full Px + Cx + wire suite (needs the binary, the `fabric-nats` CLI built above, `nats-server`, and a Postgres)
 E2E_PG_ADMIN_URL=postgresql://postgres@localhost:5432/postgres \
 cargo test -p conformance-directory --test conformance -- --ignored --test-threads=1
 ```
@@ -144,20 +193,61 @@ cargo test -p conformance-directory --test conformance -- --ignored --test-threa
 `CREATE ROLE` / `CREATE DATABASE` — the harness provisions a throwaway owner role
 and database per Cx test and drops them on cleanup.
 
-CI runs the full `--ignored` battery (`--test-threads=1`) in the `infra-e2e` job,
-which provides the Postgres service container, `nats-server` on `PATH`, a `go`
-toolchain, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
+CI runs `cargo test -p conformance-directory --all-targets -- --ignored --test-threads=1`
+in the `infra-e2e` job, so every ignored test of the crate runs there (the battery, the
+absent-bucket test, the ignored unit tests of `extensions.rs` and `publisher.rs`, and the
+ignored tests of `absent_fabric_nats.rs`, `malformed_published_keys.rs`, `unreachable_nats.rs` and `harness_start_failures.rs`), which provides the Postgres service container, `nats-server` on `PATH`, the
+`identity-directory` binary built by a workflow step onto `PATH`, the `fabric-nats` CLI built by an earlier step of the job (`cargo test -p br-test-harness --all-targets`) into the shared target directory, and `E2E_PG_ADMIN_URL` — so the real-infra gate is enforced on every
 PR, not just documented.
+
+## Run in CI
+
+A service in any language runs this battery with the published `conformance-directory`
+CLI ([`conformance-directory-cli`](../conformance-directory-cli/README.md)), with no Rust
+to write. The battery has no service binary to start (it checks the kit and the frozen
+wire), so the CLI has no spawn or attach mode. Download the release binary at a pinned
+version and run it; it fetches the Go anchor from the same release when it is not on
+`PATH`. The archive holds `conformance-directory` and `fabric-nats`; keep them together.
+The runner needs `nats-server` and, for the consumer checks, a Postgres.
+
+```yaml
+- name: download the directory conformance CLI
+  run: |
+    set -euo pipefail
+    version=0.1.1
+    asset="conformance-directory-${version}-x86_64-unknown-linux-musl.tar.gz"
+    base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-directory/v${version}"
+    curl -fsSLO "${base}/${asset}"
+    curl -fsSLO "${base}/${asset}.sha256"
+    sha256sum -c "${asset}.sha256"
+    mkdir conformance-bin
+    tar -xzf "${asset}" -C conformance-bin
+
+- name: directory conformance battery
+  env:
+    E2E_PG_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+  run: ./conformance-bin/conformance-directory run --format junit --output directory-conformance.xml
+```
+
+`nats-server` must be on `PATH`. A non-zero exit code fails the job; the CLI README lists
+the checks each prerequisite serves, the exit codes and the macOS asset.
 
 ## Install
 
 A **dev-dependency**, pinned to a release tag (git-tag distribution; no
-crates.io). Keep each `br-rust-common` crate tag identical to `br-test-harness`'s (per-crate `<crate>/v0.1.0`) so
-Cargo resolves a single source and never duplicates `br-core-*`:
+crates.io). The public API exposes types of four crates plus `sqlx` (`br-core-directory`: `PublishedUser`,
+`PublishedGroup`, `DirectoryMeta` in `deserialize_*`, `read_*` and `AnchorSource::users`;
+`br-util-directory`: `AnchorSource`, `RecordingStager`;
+`br-util-nats-fabric`: `Fabric` in `DirectoryHarness::fabric` and `publish_snapshot`;
+`br-test-harness`: `FabricTestNats` in `read_users`, `read_groups`, `read_meta` and
+`DirectoryHarness::nats`; `sqlx` 0.8: `PgPool` in `ConsumerDb::pool`). Align your own pins with these exact tags, so Cargo resolves a single
+copy of each crate and never reports a type or trait mismatch:
+`br-util-directory/v0.1.1`, `br-core-directory/v0.1.0`, `br-util-nats-fabric/v0.1.0`
+(all from `br-rust-common`) and `br-test-harness/v0.1.3` (from `br-e2e-harness`).
 
 ```toml
 [dev-dependencies]
-conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.0", version = "0.1.0" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.1", version = "0.1.1" }
 ```
 
 ## Why — the non-obvious bits
@@ -176,8 +266,12 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 | C6 re-converges with an accepting stager right after the rollback phase | It proves the refused key's new value was genuinely published and only the rollback kept it out of `known_users` — otherwise the "untouched row" assertion would also pass against a change that never reached KV. |
 | C6 deletes the group **after** deleting one of its users | A user retraction deliberately leaves the `known_user_group` rows in place, so the group still holds a link the delete has to unlink. That is what reaches the stager-only branch of `GroupSink::retract` (lock the group row, read the members, stage one impact each) — a group delete on an empty group would never enter it. |
 | C6's `plan()` refuses a snapshot where the refused user and the deleted user are the same id | The phases are ordered, and the last one renames the refused user. If the anchor ever made that user the group's lowest-id member, the delete phase would have removed the row the rename needs, and the check would report a lib defect that is really a fixture defect. |
-| C5 (UsersOnly) proves the narrowing by a schema that **lacks** the group tables | A `UsersOnly` consumer that merely *suppressed* output would pass even against a full schema. Dropping the group tables turns any stray group DML into a hard error, so a green C5 proves the scope genuinely never opens the group consumer — the narrowing is real, not cosmetic. `watch()` is run under a short `timeout` (a live subscription never returns on its own); the assertion is that it does not error and materialises no group tables within the window. |
-| The whole real battery is `#[ignore]`-gated | It drives real infra (`go` + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
+| C5 (UsersOnly) proves the narrowing by a schema that **lacks** the group tables | A `UsersOnly` consumer that merely *suppressed* output would pass even against a full schema. Dropping the group tables turns any stray group DML into a hard error, so a green C5 proves the scope genuinely never opens the group consumer — the narrowing is real, not cosmetic. `watch()` is spawned as a task (a live subscription never returns on its own); the check polls up to 5 s for the live user, then aborts the task (a drop guard aborts it on every error return too), and fails if the task had already ended with an error. There is no timeout around `watch()`. |
+| Every harness spawn (the `nats-server --version` probe, `provision`, the anchor run, the `tar` extraction of a download), the start of the throwaway NATS and database, the post-provisioning bucket probe and the bodies of `read_users`, `read_groups` and `read_meta` run under a panic guard (`catch_unwind`) | `br-test-harness` panics when its infrastructure cannot start (`nats-server` crashing, `CREATE DATABASE` refused) or cannot answer (a dead or unreachable broker makes the bucket probe, `pl_list`, `pl_get_meta` and `pl_reader` panic after about 10 s). The guard turns that panic into a `ConformanceError` (`Jetstream` naming `PUBLISHED_LANGUAGE` for the readers) instead of aborting the caller's test; the guard is `catch_unwind` on the calling task, not a spawned task, so it can wrap code that borrows the `&FabricTestNats`; the named prerequisites are probed first so the common cases never reach a panic. `run_once` of `br-test-harness` panics when it cannot spawn the `sh` orphan guard of a spawned process (an environment without `sh` on `PATH`); the spawns above return `ConformanceError::Jetstream` (probe, provision) or `ConformanceError::Run` (anchor run) naming the guard, and the extraction fails the download as `AnchorBinaryUnavailable`. |
+| The tests assume a prebuilt anchor and never run `go` | A test that compiles is slow, needs a toolchain on every machine and hides a build failure inside a test verdict. The `release-anchor` workflow builds the four per-platform assets, so a machine without Go still gets the anchor through the verified download. |
+| `harness_start_failures.rs` re-executes the test binary from a scratch `deps/` directory beside stub `fabric-nats` and `nats-server` scripts | The crate finds `fabric-nats` through `workspace_bin` of `br-test-harness` (the directory above `deps/`) and `nats-server` on `PATH`, so a copy of the executable with stubs reproduces each start failure (a broker that exits at once, a refused provisioning, an unprovisioned bucket, a broker killed before the bucket probe) against the real code, and the child checks that no throwaway `nats-server` is left running. The database case uses a real Postgres and a login role without `CREATEROLE`, dropped afterwards. |
+| `provision` embeds its manifest and writes it to the cache directory when the source tree has none | `CARGO_MANIFEST_DIR` is the source tree of the machine that compiled the crate; a released CLI binary runs elsewhere, where `tests/fixtures/` does not exist. `fabric-nats provision` reads a file, so when the source-tree file is absent (a released binary) the embedded fixture is written once under `$XDG_CACHE_HOME/br-e2e-harness/conformance-directory-{version}/manifests/` (never the system temporary directory) and replaced when its content differs. |
+| The whole real battery is `#[ignore]`-gated | It drives real infra (the anchor binary + `nats-server` + a Postgres); the default `cargo test` must stay green on a machine without them, exactly like the scope/passport conformance crates. |
 
 ## License
 

@@ -123,6 +123,17 @@ fn scope_key(service: &str, capability: &str) -> String {
     format!("{service}:{capability}")
 }
 
+pub(crate) fn require_selection(scenarios: &[Scenario]) -> Result<()> {
+    if scenarios.is_empty() {
+        Err(ConformanceError::InvalidInput(
+            "no scenarios selected: a battery that checks nothing cannot report conformance"
+                .to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 pub fn parse_scenarios(raw: &str) -> Result<Vec<Scenario>> {
     let mut scenarios = Vec::new();
     for part in raw.split(',') {

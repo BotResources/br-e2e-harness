@@ -86,8 +86,10 @@ make test       # go vet + go test (the golden-shape + KV-key + flatten tests)
 The offline golden tests (KV-key prefixes, the user/group/meta golden shapes,
 the flat-extension and omitted-names invariants) run with plain `go test` — no
 infra. Pairing the Go-frozen wire against the live `br-core-directory` types is
-the Rust conformance runner's job (WU9): it builds this binary, runs it once,
-and deserialises every `value` through the lib.
+the Rust conformance runner's job (WU9): it locates a prebuilt `identity-directory`
+(on `PATH`, then in its cache, then a verified release download), runs it once,
+and deserialises every `value` through the lib. The runner never builds the binary;
+the build is `make build`, done outside the tests.
 
 ## Why table
 

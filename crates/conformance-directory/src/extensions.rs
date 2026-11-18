@@ -8,8 +8,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
+use crate::check::{Check, Run, finish};
 use crate::error::{ConformanceError, Result};
-use crate::harness::DirectoryHarness;
+use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::pg::ConsumerDb;
 use crate::publish_fixture::publish_snapshot;
@@ -36,11 +37,10 @@ pub async fn extension_survives_projection(
     let id = CheckId::ConsumerExtensionSurvives;
     let expected = "a published user carrying an extension the consumer extracts is projected into \
                     known_users.extensions and read back intact (lossless sink)";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = extension_survives_inner(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome =
+        finish(extension_survives_inner(id, expected, &env.harness, &env.db, snapshot).await);
+    env.shutdown().await;
     outcome
 }
 
@@ -50,7 +50,8 @@ async fn extension_survives_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let mut source = AnchorSource::from_snapshot(snapshot)?;
     let Some((user_id, base)) = source.first_user() else {
         return Ok(CheckOutcome::fail(
@@ -73,25 +74,26 @@ async fn extension_survives_inner(
         db.pool().clone(),
         config_keeping_locale(ConsumptionScope::UsersAndGroups),
     );
-    projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile: {e}")))?;
+    check.system("reconcile", projector.reconcile().await)?;
 
-    let stored = read_extensions(db, user_id).await?;
-    if stored == json!({ "locale": "fr" }) {
-        Ok(CheckOutcome::pass(
+    match read_extensions(db, user_id).await? {
+        Some(stored) if stored == json!({ "locale": "fr" }) => Ok(CheckOutcome::pass(
             id,
             expected,
             format!("extensions for {user_id} survived intact: {stored}"),
-        ))
-    } else {
-        Ok(CheckOutcome::fail(
+        )),
+        Some(stored) => Ok(CheckOutcome::fail(
             id,
             expected,
             format!("stored extensions {stored}"),
             "the extracted extension was not projected losslessly into known_users.extensions",
-        ))
+        )),
+        None => Ok(CheckOutcome::fail(
+            id,
+            expected,
+            format!("no known_users row for {user_id}"),
+            "the projector wrote no row for the published user, so no extension could survive",
+        )),
     }
 }
 
@@ -99,11 +101,9 @@ pub async fn filter_flip_orphan_deletes(snapshot: &DirectorySnapshotWire) -> Res
     let id = CheckId::ConsumerFilterFlipOrphans;
     let expected = "a user passing .filter_users is projected; on republish FAILING the filter the \
                     next reconcile orphan-deletes its row";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = filter_flip_inner(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome = finish(filter_flip_inner(id, expected, &env.harness, &env.db, snapshot).await);
+    env.shutdown().await;
     outcome
 }
 
@@ -113,7 +113,8 @@ async fn filter_flip_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let mut source = AnchorSource::from_snapshot(snapshot)?;
     let Some((user_id, base)) = source.first_user() else {
         return Ok(CheckOutcome::fail(
@@ -137,10 +138,7 @@ async fn filter_flip_inner(
         db.pool().clone(),
         config.clone(),
     );
-    projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile: {e}")))?;
+    check.system("reconcile", projector.reconcile().await)?;
     if !user_row_exists(db, user_id).await? {
         return Ok(CheckOutcome::fail(
             id,
@@ -155,10 +153,7 @@ async fn filter_flip_inner(
     publish_snapshot(harness.fabric(), &source).await?;
     let projector_after =
         DirectoryProjector::with_config(harness.fabric().clone(), db.pool().clone(), config);
-    projector_after
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("reconcile after flip: {e}")))?;
+    check.system("reconcile after flip", projector_after.reconcile().await)?;
     if user_row_exists(db, user_id).await? {
         return Ok(CheckOutcome::fail(
             id,
@@ -217,13 +212,14 @@ fn with_extension(base: &PublishedUser, key: &str, value: Value) -> Result<Publi
     .map_err(|e| ConformanceError::Directory(format!("build user with extension: {e}")))
 }
 
-async fn read_extensions(db: &ConsumerDb, user_id: Uuid) -> Result<Value> {
-    let row: (Value,) = sqlx::query_as("SELECT extensions FROM known_users WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_one(db.pool())
-        .await
-        .map_err(|e| ConformanceError::Postgres(format!("read extensions: {e}")))?;
-    Ok(row.0)
+async fn read_extensions(db: &ConsumerDb, user_id: Uuid) -> Result<Option<Value>> {
+    let row: Option<(Value,)> =
+        sqlx::query_as("SELECT extensions FROM known_users WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(db.pool())
+            .await
+            .map_err(|e| ConformanceError::Postgres(format!("read extensions: {e}")))?;
+    Ok(row.map(|(extensions,)| extensions))
 }
 
 async fn user_row_exists(db: &ConsumerDb, user_id: Uuid) -> Result<bool> {
@@ -239,6 +235,22 @@ async fn user_row_exists(db: &ConsumerDb, user_id: Uuid) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs a Postgres"]
+    async fn reading_the_extensions_of_an_unprojected_user_is_not_a_fixture_error() {
+        let db = ConsumerDb::provision().await.expect("provision");
+        br_util_directory::migrate(db.pool())
+            .await
+            .expect("migrate");
+        let read = read_extensions(&db, Uuid::now_v7()).await;
+        db.cleanup().await;
+        assert_eq!(
+            read.expect("a missing row is not a Postgres error"),
+            None,
+            "a user the projector wrote no row for reads as absent"
+        );
+    }
 
     #[test]
     fn reserved_key_rejection_is_fail_closed() {

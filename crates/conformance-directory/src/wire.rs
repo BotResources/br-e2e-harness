@@ -1,4 +1,4 @@
-use br_core_directory::{DirectoryMeta, PublishedEntity, PublishedGroup, PublishedUser};
+use br_core_directory::{DirectoryMeta, META_KEY, PublishedEntity, PublishedGroup, PublishedUser};
 use serde_json::{Value, json};
 
 use crate::anchor::{DirectorySnapshotWire, KvEntry};
@@ -43,7 +43,7 @@ pub fn run_wire_battery(snapshot: &DirectorySnapshotWire) -> ConformanceReport {
 
 fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireUserDeserializes;
-    let expected = "every users/{uuid} value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
+    let expected = "every key is exactly `user_kv_key(id)` (identity/users/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedUser, and a populated user binds first_name + last_name (not silently None)";
     if snapshot.users.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -51,6 +51,9 @@ fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
             "no users in the snapshot",
             "the anchor must emit at least one user",
         );
+    }
+    if let Err(e) = snapshot.keyed_users() {
+        return CheckOutcome::fail(id, expected, "malformed users key", e.to_string());
     }
     let mut populated_names = false;
     for entry in &snapshot.users {
@@ -90,7 +93,7 @@ fn check_user_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
 
 fn check_group_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireGroupDeserializes;
-    let expected = "every groups/{uuid} value deserializes through br_core_directory::PublishedGroup with member_ids as an array";
+    let expected = "every key is exactly `group_kv_key(id)` (identity/groups/ + hyphenated lowercase uuid) and unique, and its value deserializes through br_core_directory::PublishedGroup with member_ids as an array";
     if snapshot.groups.is_empty() {
         return CheckOutcome::fail(
             id,
@@ -98,6 +101,9 @@ fn check_group_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
             "no groups in the snapshot",
             "the anchor must emit at least one group",
         );
+    }
+    if let Err(e) = snapshot.keyed_groups() {
+        return CheckOutcome::fail(id, expected, "malformed groups key", e.to_string());
     }
     let mut saw_empty_membership = false;
     for entry in &snapshot.groups {
@@ -127,8 +133,18 @@ fn check_group_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
 
 fn check_meta_deserializes(snapshot: &DirectorySnapshotWire) -> CheckOutcome {
     let id = CheckId::WireMetaDeserializes;
-    let expected =
-        "identity/_meta value deserializes through DirectoryMeta declaring users + groups";
+    let expected = "the key is exactly `META_KEY` (identity/_meta) and its value deserializes through DirectoryMeta declaring users + groups";
+    if snapshot.meta.key != META_KEY {
+        return CheckOutcome::fail(
+            id,
+            expected,
+            "malformed meta key",
+            format!(
+                "meta key {:?} != frozen META_KEY {META_KEY:?}",
+                snapshot.meta.key
+            ),
+        );
+    }
     let meta = match deserialize_meta(&snapshot.meta) {
         Ok(meta) => meta,
         Err(e) => return CheckOutcome::fail(id, expected, "deser failed", e.to_string()),
@@ -249,55 +265,7 @@ fn render_entities(entities: &[PublishedEntity]) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::anchor::KvEntry;
-
-    fn entry(key: &str, value: Value) -> KvEntry {
-        KvEntry {
-            key: key.to_string(),
-            value,
-        }
-    }
-
-    fn canonical_snapshot() -> DirectorySnapshotWire {
-        DirectorySnapshotWire {
-            meta: entry(
-                "identity/_meta",
-                json!({ "version": 1, "entities": ["users", "groups"] }),
-            ),
-            users: vec![
-                entry(
-                    "identity/users/01938c1f-0000-7000-8000-000000000001",
-                    json!({
-                        "email": "ada@example.com",
-                        "first_name": "Ada",
-                        "last_name": "Lovelace",
-                        "x_custom": { "nested": "value" }
-                    }),
-                ),
-                entry(
-                    "identity/users/01938c1f-0000-7000-8000-000000000002",
-                    json!({ "email": "grace@example.com", "first_name": null, "last_name": null }),
-                ),
-            ],
-            groups: vec![
-                entry(
-                    "identity/groups/01938c1f-0000-7000-8000-0000000000a1",
-                    json!({
-                        "name": "engineering",
-                        "member_ids": [
-                            "01938c1f-0000-7000-8000-000000000001",
-                            "01938c1f-0000-7000-8000-000000000002"
-                        ],
-                        "x_custom": false
-                    }),
-                ),
-                entry(
-                    "identity/groups/01938c1f-0000-7000-8000-0000000000a2",
-                    json!({ "name": "guilds", "member_ids": [] }),
-                ),
-            ],
-        }
-    }
+    use crate::test_snapshot::{canonical_snapshot, entry};
 
     #[test]
     fn the_canonical_anchor_shape_is_conformant() {
@@ -374,5 +342,143 @@ mod tests {
         .unwrap();
         assert!(meta.publishes_users());
         assert!(!meta.publishes_groups());
+    }
+
+    #[test]
+    fn a_user_under_a_malformed_key_fails_the_user_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.users[1].key = "identity/users/not-a-uuid".to_string();
+        let report = run_wire_battery(&snapshot);
+        assert!(
+            !report.is_conformant(),
+            "a user key that is not identity/users/{{uuid}} must fail W1: {:#?}",
+            report.outcomes
+        );
+    }
+
+    #[test]
+    fn a_group_under_a_foreign_key_fails_the_group_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.groups[1] = entry(
+            "identity/teams/01938c1f-0000-7000-8000-0000000000a2",
+            json!({ "name": "guilds", "member_ids": [] }),
+        );
+        let report = run_wire_battery(&snapshot);
+        assert!(
+            !report.is_conformant(),
+            "a group key that is not identity/groups/{{uuid}} must fail W2: {:#?}",
+            report.outcomes
+        );
+    }
+
+    fn failed_checks(report: &ConformanceReport) -> Vec<CheckId> {
+        report
+            .outcomes
+            .iter()
+            .filter(|o| o.status == crate::outcome::CheckStatus::Fail)
+            .map(|o| o.id)
+            .collect()
+    }
+
+    #[test]
+    fn a_non_canonical_twin_of_a_user_key_fails_exactly_the_user_check() {
+        let mut snapshot = canonical_snapshot();
+        let twin = entry(
+            "identity/users/01938C1F-0000-7000-8000-000000000001",
+            snapshot.users[0].value.clone(),
+        );
+        snapshot.users.push(twin);
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireUserDeserializes]);
+    }
+
+    #[test]
+    fn a_verbatim_repeated_user_key_fails_exactly_the_user_check() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.users[0].clone();
+        snapshot.users.push(repeated);
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireUserDeserializes]);
+        let outcome = report
+            .outcomes
+            .iter()
+            .find(|o| o.id == CheckId::WireUserDeserializes)
+            .unwrap();
+        assert!(
+            format!("{outcome:?}").contains("already carried by"),
+            "{outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_verbatim_repeated_group_key_fails_exactly_the_group_check() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.groups[0].clone();
+        snapshot.groups.push(repeated);
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireGroupDeserializes]);
+        let outcome = report
+            .outcomes
+            .iter()
+            .find(|o| o.id == CheckId::WireGroupDeserializes)
+            .unwrap();
+        assert!(
+            format!("{outcome:?}").contains("already carried by"),
+            "{outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_canonical_user_key_fails_exactly_the_user_check() {
+        let id = "01938c1f-0000-7000-8000-000000000001";
+        let spellings = [
+            id.to_uppercase(),
+            id.replace('-', ""),
+            format!("{{{id}}}"),
+            format!("urn:uuid:{id}"),
+        ];
+        for spelling in spellings {
+            let mut snapshot = canonical_snapshot();
+            snapshot.users[0].key = format!("identity/users/{spelling}");
+            let report = run_wire_battery(&snapshot);
+            let failed: Vec<_> = report
+                .outcomes
+                .iter()
+                .filter(|o| o.status == crate::outcome::CheckStatus::Fail)
+                .map(|o| o.id)
+                .collect();
+            assert_eq!(failed, vec![CheckId::WireUserDeserializes], "{spelling}");
+        }
+    }
+
+    #[test]
+    fn a_non_canonical_group_key_fails_exactly_the_group_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.groups[0].key = "identity/groups/01938C1F-0000-7000-8000-0000000000A1".to_string();
+        let report = run_wire_battery(&snapshot);
+        let failed: Vec<_> = report
+            .outcomes
+            .iter()
+            .filter(|o| o.status == crate::outcome::CheckStatus::Fail)
+            .map(|o| o.id)
+            .collect();
+        assert_eq!(failed, vec![CheckId::WireGroupDeserializes]);
+    }
+
+    #[test]
+    fn a_wrong_meta_key_fails_exactly_the_meta_check() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.meta.key = "identity/meta".to_string();
+        let report = run_wire_battery(&snapshot);
+        assert_eq!(failed_checks(&report), vec![CheckId::WireMetaDeserializes]);
+        let outcome = report
+            .outcomes
+            .iter()
+            .find(|o| o.id == CheckId::WireMetaDeserializes)
+            .unwrap();
+        assert!(
+            format!("{outcome:?}").contains("identity/meta"),
+            "{outcome:?}"
+        );
     }
 }

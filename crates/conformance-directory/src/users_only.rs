@@ -5,12 +5,14 @@ use br_util_directory::{ConsumptionScope, DirectoryConsumerConfig, DirectoryProj
 use uuid::Uuid;
 
 use crate::anchor::DirectorySnapshotWire;
+use crate::check::{Check, Run, finish};
 use crate::error::{ConformanceError, Result};
-use crate::harness::DirectoryHarness;
+use crate::harness::{ConsumerEnv, DirectoryHarness};
 use crate::outcome::{CheckId, CheckOutcome};
 use crate::pg::ConsumerDb;
 use crate::publish_fixture::{publish_added_user, publish_snapshot};
 use crate::source::AnchorSource;
+use crate::watch_task::WatchTask;
 
 pub async fn users_only_narrows_projection(
     snapshot: &DirectorySnapshotWire,
@@ -19,11 +21,9 @@ pub async fn users_only_narrows_projection(
     let expected = "a UsersOnly consumer against a schema lacking group tables reconciles + watches \
                     cleanly and projects users, emitting no group DML (any group write would error \
                     on the missing tables)";
-    let harness = DirectoryHarness::start().await?;
-    let db = ConsumerDb::provision().await?;
-    let outcome = users_only_inner(id, expected, &harness, &db, snapshot).await;
-    db.cleanup().await;
-    harness.shutdown().await;
+    let env = ConsumerEnv::start().await?;
+    let outcome = finish(users_only_inner(id, expected, &env.harness, &env.db, snapshot).await);
+    env.shutdown().await;
     outcome
 }
 
@@ -33,7 +33,8 @@ async fn users_only_inner(
     harness: &DirectoryHarness,
     db: &ConsumerDb,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let source = AnchorSource::from_snapshot(snapshot)?;
     if source.groups().is_empty() {
         return Ok(CheckOutcome::fail(
@@ -69,10 +70,7 @@ async fn users_only_inner(
         db.pool().clone(),
         config.clone(),
     );
-    projector
-        .reconcile()
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("users-only reconcile: {e}")))?;
+    check.system("users-only reconcile", projector.reconcile().await)?;
 
     if !user_row_exists(db, user_id).await? {
         return Ok(CheckOutcome::fail(
@@ -85,7 +83,7 @@ async fn users_only_inner(
 
     let watcher =
         DirectoryProjector::with_config(harness.fabric().clone(), db.pool().clone(), config);
-    let watch_task = tokio::spawn(async move { watcher.watch().await });
+    let watch_task = WatchTask::spawn(async move { watcher.watch().await });
 
     let live_id = Uuid::now_v7();
     let live_user = PublishedUser::new(
@@ -99,7 +97,7 @@ async fn users_only_inner(
 
     let live_projected = poll_user_row(db, live_id, Duration::from_secs(5)).await?;
 
-    if let Some(joined) = abort_watch(watch_task).await {
+    if let Some(joined) = watch_task.stop().await {
         return Ok(CheckOutcome::fail(
             id,
             expected,
@@ -146,18 +144,6 @@ async fn poll_user_row(db: &ConsumerDb, user_id: Uuid, deadline: Duration) -> Re
             return Ok(false);
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
-
-async fn abort_watch(
-    task: tokio::task::JoinHandle<std::result::Result<(), br_util_directory::DirectoryError>>,
-) -> Option<String> {
-    task.abort();
-    match task.await {
-        Ok(Ok(())) => None,
-        Ok(Err(e)) => Some(e.to_string()),
-        Err(joined) if joined.is_cancelled() => None,
-        Err(joined) => Some(joined.to_string()),
     }
 }
 

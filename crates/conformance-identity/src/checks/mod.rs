@@ -3,6 +3,7 @@ mod judged;
 use std::time::Duration;
 
 use crate::capture::ConfirmationCapture;
+use crate::containment::contained;
 use crate::declarer::Declarer;
 use crate::outcome::CheckOutcome;
 use crate::scenario::Scenario;
@@ -17,5 +18,13 @@ pub struct CheckContext<'a> {
 }
 
 pub async fn run_scenario(scenario: Scenario, ctx: &CheckContext<'_>) -> CheckOutcome {
-    run_judged_scenario(scenario, ctx).await
+    match contained(run_judged_scenario(scenario, ctx)).await {
+        Ok(outcome) => outcome,
+        Err(failure) => CheckOutcome::fail(
+            scenario.check_id(),
+            "a verdict observed from the subject",
+            "the harness failed while observing the subject",
+            failure,
+        ),
+    }
 }

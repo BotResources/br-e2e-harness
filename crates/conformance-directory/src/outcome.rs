@@ -131,6 +131,20 @@ impl CheckOutcome {
         }
     }
 
+    pub fn system_failed(
+        id: CheckId,
+        expected: impl Into<String>,
+        stage: &str,
+        error: impl fmt::Display,
+    ) -> Self {
+        Self::fail(
+            id,
+            expected,
+            format!("{stage} failed"),
+            format!("the system under test failed during {stage}: {error}"),
+        )
+    }
+
     pub fn skipped(id: CheckId, detail: impl Into<String>) -> Self {
         Self {
             id,
@@ -177,6 +191,72 @@ impl ConformanceReport {
     }
 
     pub fn is_conformant(&self) -> bool {
-        self.failed() == 0
+        !self.outcomes.is_empty() && self.failed() == 0 && self.skipped() == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::WireUserDeserializes, "e", "o")
+    }
+
+    fn fail() -> CheckOutcome {
+        CheckOutcome::fail(CheckId::WireUserDeserializes, "e", "o", "d")
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::WireUserDeserializes, "d")
+    }
+
+    fn report(outcomes: Vec<CheckOutcome>) -> ConformanceReport {
+        let mut report = ConformanceReport::default();
+        for outcome in outcomes {
+            report.push(outcome);
+        }
+        report
+    }
+
+    #[test]
+    fn a_system_failure_is_a_failed_outcome_naming_the_stage_and_the_error() {
+        let outcome = CheckOutcome::system_failed(
+            CheckId::PublisherFloor,
+            "e",
+            "first reconcile",
+            "decode error",
+        );
+        assert_eq!(outcome.status, CheckStatus::Fail);
+        assert_eq!(outcome.id, CheckId::PublisherFloor);
+        assert_eq!(outcome.expected, "e");
+        assert!(outcome.observed.contains("first reconcile"));
+        let detail = outcome.detail.unwrap();
+        assert!(detail.contains("first reconcile") && detail.contains("decode error"));
+    }
+
+    #[test]
+    fn a_report_with_no_outcome_is_not_conformant() {
+        assert!(!ConformanceReport::default().is_conformant());
+    }
+
+    #[test]
+    fn a_report_with_only_skipped_outcomes_is_not_conformant() {
+        assert!(!report(vec![skipped(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn a_report_of_passes_is_conformant() {
+        assert!(report(vec![pass(), pass()]).is_conformant());
+    }
+
+    #[test]
+    fn a_pass_beside_a_skip_is_not_conformant() {
+        assert!(!report(vec![pass(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn one_failure_makes_the_report_not_conformant() {
+        assert!(!report(vec![pass(), fail()]).is_conformant());
     }
 }

@@ -2,17 +2,16 @@
 
 > [!IMPORTANT]
 > **This repository is maintained for BotResources and its authorized clients.**
-> It is published under Apache-2.0 and made available read-only for visibility and
-> reuse. The Apache-2.0 license governs your rights to use, modify, and fork the code;
-> the rest of this notice describes our operational stance, not a legal
-> restriction.
+> It is published under Apache-2.0 and made available read-only for visibility
+> and dependency consumption. The Apache-2.0 license governs your rights to
+> use, modify, and fork the code; the rest of this notice describes our
+> operational stance, not a legal restriction.
 >
 > **We do not accept external pull requests, issues, or support requests.**
 > Issues and Discussions are disabled. PRs from accounts that are not on the
-> internal contributor allowlist will be closed without review. Forks are
-> permitted by Apache-2.0 and we do not (and cannot) prevent them; we simply do not
-> monitor, support, or accept contributions from forks outside the BR
-> commercial relationship.
+> internal contributor allowlist will be closed without review. The GitHub
+> fork button is disabled — you may still fork under Apache-2.0, but we
+> provide no support outside the BR commercial relationship.
 >
 > - Clients with a commercial relationship: contact your BR account manager.
 > - Security reports: see [SECURITY.md](SECURITY.md) (private email channel).
@@ -70,21 +69,21 @@ oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", packag
 
 | Fixture | Version | Gives you | Docs | Changelog |
 |---|---|---|---|---|
-| `br-test-harness` | 0.1.3 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
+| `br-test-harness` | 0.2.0 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
 | `conformance-scope` | 0.1.1 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
-| `conformance-identity` | 0.1.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
+| `conformance-identity` | 0.1.1 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
 | `conformance-passport` | 0.1.1 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
-| `conformance-directory` | 0.1.0 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
+| `conformance-directory` | 0.1.1 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
 | `conformance-nats-fabric` | 0.1.1 | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](crates/conformance-nats-fabric/CHANGELOG.md) |
 
 Install pins (dev-dependencies):
 
 ```toml
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.3", version = "0.1.3" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0" }
 conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.1", version = "0.1.1" }
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.1", version = "0.1.1" }
 conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
-conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.0", version = "0.1.0" }
+conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.1", version = "0.1.1" }
 conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.1", version = "0.1.1" }
 ```
 
@@ -99,6 +98,8 @@ against *an* identity without depending on any project's private one.
 | `conformance-scope-cli` (bin `conformance-scope`) | 0.1.1, always `conformance-scope`'s | GitHub Release binary (asset of the release `conformance-scope/v{version}`) | Run the scope-declaration conformance battery against any service, in any language, with no Rust to write | [README](crates/conformance-scope-cli/README.md) | [CHANGELOG](crates/conformance-scope-cli/CHANGELOG.md) |
 | `conformance-nats-fabric-cli` (bin `conformance-nats-fabric`) | 0.1.1, always `conformance-nats-fabric`'s | GitHub Release binary (asset of the release `conformance-nats-fabric/v{version}`) | Run the NATS Fabric conformance battery (subject grammar, `PUBLISHED_LANGUAGE` KV) against a throwaway or an existing NATS server, with no Rust to write | [README](crates/conformance-nats-fabric-cli/README.md) | [CHANGELOG](crates/conformance-nats-fabric-cli/CHANGELOG.md) |
 | `conformance-passport-cli` (bin `conformance-passport`) | 0.1.1, always `conformance-passport`'s | GitHub Release binary (asset of the release `conformance-passport/v{version}`) | Run the bearer/PAT to Passport conformance battery against any service binary, in any language, with no Rust to write | [README](crates/conformance-passport-cli/README.md) | [CHANGELOG](crates/conformance-passport-cli/CHANGELOG.md) |
+| `conformance-directory-cli` (bin `conformance-directory`) | 0.1.1, always `conformance-directory`'s | GitHub Release binary (asset of the release `conformance-directory/v{version}`, with `fabric-nats` beside it) | Run the identity Published Language (directory) wire, publisher and consumer batteries against the Go anchor, in any language's CI, with no Rust to write | [README](crates/conformance-directory-cli/README.md) | [CHANGELOG](crates/conformance-directory-cli/CHANGELOG.md) |
+| `conformance-identity-cli` (bin `conformance-identity`) | 0.1.1, always `conformance-identity`'s | GitHub Release binary (asset of the release `conformance-identity/v{version}`, with `fabric-nats` beside it) | Run the scope-acceptance conformance battery against any Identity acceptor binary or running acceptor, in any language, with no Rust to write | [README](crates/conformance-identity-cli/README.md) | [CHANGELOG](crates/conformance-identity-cli/CHANGELOG.md) |
 
 `conformance-scope-cli` is not a library of its own: it is versioned with
 `conformance-scope`, and its binaries ride that crate's release.
@@ -106,6 +107,12 @@ against *an* identity without depending on any project's private one.
 `conformance-passport-cli` follows the same rule with `conformance-passport`.
 A `conformance-passport` tag also starts `release-anchor-passport` (the Go binary) and
 `release-cli-passport` (the CLI binaries).
+
+`conformance-directory-cli` and `conformance-identity-cli` follow the same rule with
+`conformance-directory` and `conformance-identity`. A `conformance-directory` or
+`conformance-identity` tag also starts `release-anchor` (the Go binary) and
+`release-cli-directory` or `release-cli-identity` (the CLI binaries, each archive carrying
+`fabric-nats` beside the CLI).
 
 ## Distribution
 
@@ -125,6 +132,11 @@ depends on its kind:
 - **CLI tool** (`conformance-passport-cli`) ships as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-passport/v{version}`
   release, next to the Go subject binary below.
+- **CLI tools** (`conformance-directory-cli`, `conformance-identity-cli`) ship as
+  **GitHub Release binaries** (static musl-linux + macOS) attached to the
+  `conformance-directory/v{version}` and `conformance-identity/v{version}` releases.
+  Each archive holds the CLI and the `fabric-nats` binary it provisions NATS with,
+  which must stay beside it.
 - **Go subject binary** (`conformance-passport`) ships as a **GitHub Release asset**
   `identity-passport-<os>-<arch>.tar.gz` with a sibling `.sha256` (linux and darwin,
   amd64 and arm64), attached to the `conformance-passport/v{version}` release.
@@ -134,6 +146,14 @@ depends on its kind:
 - **CLI tools** (`conformance-scope-cli`) ship as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-scope/v{version}`
   release, the version being the one in that tag.
+- **Go anchor and subject binaries** (`conformance-directory`,
+  `conformance-identity`) ship as **GitHub Release assets**
+  `identity-directory-<os>-<arch>.tar.gz` and
+  `identity-acceptor-<os>-<arch>.tar.gz`, each with a sibling `.sha256` (linux
+  and darwin, amd64 and arm64), attached to the `conformance-directory/v{version}`
+  and `conformance-identity/v{version}` release. The crates never compile: each
+  looks for its binary on `PATH`, then in its cache directory, then downloads
+  and verifies the asset of its own release into that cache.
 - **The nats-fabric CLI** (`conformance-nats-fabric-cli`) ships as **GitHub Release binaries**
   (static musl-linux + macOS) attached to the `conformance-nats-fabric/v{version}`
   release by `release-cli-nats-fabric`, versioned with `conformance-nats-fabric`.
@@ -143,8 +163,8 @@ depends on its kind:
   release. The crate never compiles: it looks for its binary on `PATH`, then in
   its cache directory, then downloads and verifies the asset of its own release
   into that cache.
-  `go-free-gate.sh` runs in CI over the `conformance-nats-fabric` crates and the
-  `conformance-passport` crates (`GO_FREE_CRATES`). In `*.rs`, `*.toml`, `*.sh`
+  `go-free-gate.sh` runs in CI over the `conformance-nats-fabric`, `conformance-passport`,
+  `conformance-identity` and `conformance-directory` crates (`GO_FREE_CRATES`). In `*.rs`, `*.toml`, `*.sh`
   and `*.yml` files it fails the build on `ensure_go_available`, a `"go"` or
   `"make"` program literal (including in `run_once(...)` and `Command::new(...)`),
   a `go` or `make` command line with `build`, `run`, `install`, `test`, `vet`,
@@ -181,12 +201,15 @@ only after the siblings it pins have released.
    has no `{crate}/v{version}` tag, applies the release-line law, tags, creates
    the GitHub release and records the API listing and dependencies. It then
    starts `cd` (the `oidc-test-idp` image), `release-cli` (the
-   `conformance-scope` binaries), `release-anchor-nats-fabric` (the
-   `conformance-nats-fabric` Go binary) or `release-anchor-passport` (the
-   `identity-passport` Go binary) with the new tag.
-   A `conformance-nats-fabric` tag also starts `release-cli-nats-fabric` (the
-   `conformance-nats-fabric` CLI binaries); a `conformance-passport` tag also
-   starts `release-cli-passport` (the `conformance-passport` CLI binaries).
+   `conformance-scope` binaries), `release-anchor` (the
+   `conformance-directory` and `conformance-identity` Go binaries),
+   `release-anchor-nats-fabric` (the `conformance-nats-fabric` Go binary) or
+   `release-anchor-passport` (the `identity-passport` Go binary) with the new tag.
+   A `conformance-directory` or `conformance-identity` tag also starts
+   `release-cli-directory` or `release-cli-identity`; a `conformance-nats-fabric`
+   tag also starts `release-cli-nats-fabric` (the `conformance-nats-fabric` CLI
+   binaries); a `conformance-passport` tag also starts `release-cli-passport`
+   (the `conformance-passport` CLI binaries).
 
 ## Why
 
