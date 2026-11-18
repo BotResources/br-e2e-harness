@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use br_test_harness::{BootOutcome, SpawnedProcess};
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
 fn unbound_url() -> String {
@@ -13,17 +13,25 @@ fn unbound_url() -> String {
     format!("http://127.0.0.1:{port}/readyz")
 }
 
-async fn serve_one_ok() -> (String, tokio::task::JoinHandle<()>) {
+async fn serve_ok() -> (String, tokio::task::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind responder");
     let port = listener.local_addr().expect("read responder port").port();
     let handle = tokio::spawn(async move {
-        if let Ok((mut stream, _)) = listener.accept().await {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                match stream.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => request.extend_from_slice(&chunk[..read]),
+                }
+            }
             let _ = stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 .await;
-            let _ = stream.flush().await;
+            let _ = stream.shutdown().await;
         }
     });
     (format!("http://127.0.0.1:{port}/readyz"), handle)
@@ -69,7 +77,7 @@ async fn never_ready_process_times_out() {
 
 #[tokio::test]
 async fn readyz_returning_200_is_ready() {
-    let (url, responder) = serve_one_ok().await;
+    let (url, responder) = serve_ok().await;
     let mut proc = SpawnedProcess::spawn("/bin/sh", &["-c", "sleep 30"], &[]);
 
     let outcome = proc.await_boot(&url, Duration::from_secs(5)).await;
