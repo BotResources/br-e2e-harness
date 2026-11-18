@@ -2,16 +2,17 @@
 
 > [!IMPORTANT]
 > **This repository is maintained for BotResources and its authorized clients.**
-> It is published under Apache-2.0 and made available read-only for visibility
-> and dependency consumption. The Apache-2.0 license governs your rights to
-> use, modify, and fork the code; the rest of this notice describes our
-> operational stance, not a legal restriction.
+> It is published under Apache-2.0 and made available read-only for visibility and
+> reuse. The Apache-2.0 license governs your rights to use, modify, and fork the code;
+> the rest of this notice describes our operational stance, not a legal
+> restriction.
 >
 > **We do not accept external pull requests, issues, or support requests.**
 > Issues and Discussions are disabled. PRs from accounts that are not on the
-> internal contributor allowlist will be closed without review. The GitHub
-> fork button is disabled — you may still fork under Apache-2.0, but we
-> provide no support outside the BR commercial relationship.
+> internal contributor allowlist will be closed without review. Forks are
+> permitted by Apache-2.0 and we do not (and cannot) prevent them; we simply do not
+> monitor, support, or accept contributions from forks outside the BR
+> commercial relationship.
 >
 > - Clients with a commercial relationship: contact your BR account manager.
 > - Security reports: see [SECURITY.md](SECURITY.md) (private email channel).
@@ -69,7 +70,7 @@ oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", packag
 
 | Fixture | Version | Gives you | Docs | Changelog |
 |---|---|---|---|---|
-| `br-test-harness` | 0.1.2 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
+| `br-test-harness` | 0.1.3 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
 | `conformance-scope` | 0.1.1 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
 | `conformance-identity` | 0.1.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
 | `conformance-passport` | 0.1.1 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
@@ -79,7 +80,7 @@ oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", packag
 Install pins (dev-dependencies):
 
 ```toml
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.3", version = "0.1.3" }
 conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.1", version = "0.1.1" }
 conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.0", version = "0.1.0" }
 conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
