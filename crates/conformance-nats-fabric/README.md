@@ -126,7 +126,8 @@ The published-language tests in `tests/conformance.rs` **provision their KV
 topology by spawning the `fabric-nats` CLI** (`fabric-nats provision --manifest
 tests/fixtures/published_language.toml`) rather than calling
 `FabricTestNats::with_published_language()` in-process — the suite is the CLI's
-real-life testbed; the CLI must be built beside the test executable. The crate
+real-life testbed; the CLI must be built in the workspace target directory
+(`br_test_harness::workspace_bin` finds it from the test executable). The crate
 carries **no `async-nats` dependency**: it observes and mutates the fabric
 exclusively through the typed `FabricTestNats` surface (`fabric_owned`,
 `pl_reader` / `pl_publisher` / `pl_put_raw`, `assert_missing_stream` /

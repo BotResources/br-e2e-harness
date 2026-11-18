@@ -9,6 +9,21 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+Minor 0.2, a new line: the sealed intent of 0.1 names the directories of the `workspace_bin` lookup (`deps/`, `build/<package>/<unit>/out/`), and this line depends on none.
+
+### Changed
+
+- `workspace_bin` (and so `spawn_fabric_provision`, which every conformance battery provisions through) no longer matches a directory name of Cargo's build layout, which Cargo documents as internal. 0.1.3 popped `deps`, or `out/<unit>/<package>/build`. It now reads the directory of the test executable and up to four directories above it, nearest first, stopping below the Cargo output root (the directory holding `CACHEDIR.TAG`, when Cargo wrote one), and takes the first regular file of that name. The two layouts 0.1.3 knows resolve as before: the `deps/` layout of Cargo 1.99 and earlier and of the `__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT` opt-out, and the `build/<package>/<unit>/out/` layout of Cargo 1.100.
+- The `nats-fabric` feature no longer pulls in `br-scope-declaration-contract`: the library never used it, only its own tests do, and they keep it as a dev-dependency. Cargo 1.100's `unused_dependencies` lint reported it.
+
+### Fixed
+
+- `workspace_bin` finds the binary when `build.build-dir` (`CARGO_BUILD_BUILD_DIR`) is not the target-dir: when nothing is found near the test executable it asks `cargo metadata` (the `CARGO` of the running test, in `CARGO_MANIFEST_DIR`) for `target_directory` and `build_directory` and reads the same profile path under the target-dir. A build-dir or target-dir given only on the command line (`--target-dir`, `--config`) is not visible to the test and is not covered: name it in `.cargo/config.toml` or the environment.
+- The panic of an absent binary lists every path read, the test executable and what `cargo metadata` answered, instead of one path. It still starts with `{name} must be built by the workspace`.
+- A directory named like the binary is no longer taken for the binary (`exists()` became `is_file()`).
+
 ## 0.1.3
 
 ### Fixed
