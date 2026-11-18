@@ -22,7 +22,12 @@ fn write_executable(path: &Path, body: &[u8]) {
         .expect("make the stub executable");
 }
 
+static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn run_without_sh(test: &str) {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("no-sh");
     let deps = isolated.join("deps");

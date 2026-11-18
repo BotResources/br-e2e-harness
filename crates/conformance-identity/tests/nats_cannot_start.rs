@@ -18,7 +18,12 @@ fn write_executable(path: &Path, body: &[u8]) {
         .expect("make the stub executable");
 }
 
+static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn run_in_isolated_copy() {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("nats-cannot-start");
     let deps = isolated.join("deps");
@@ -43,6 +48,9 @@ const NO_SH_CHILD: &str = "CONFORMANCE_IDENTITY_NATS_PROBE_WITHOUT_SH_CHILD";
 const NO_SH_TEST: &str = "a_nats_probe_that_cannot_spawn_its_guard_is_a_typed_error";
 
 fn run_without_sh() {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("nats-probe-no-sh");
     let deps = isolated.join("deps");

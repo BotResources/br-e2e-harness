@@ -15,7 +15,12 @@ const ISOLATED: &str = "CONFORMANCE_DIRECTORY_ISOLATED_COPY";
 const OFFLINE: &str = "provision_without_the_fabric_nats_cli_is_a_typed_error";
 const REAL_INFRA: &str = "batteries_without_the_fabric_nats_cli_are_a_typed_error";
 
+static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn run_in_isolated_copy(test: &str, ignored: bool) {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("no-fabric-nats");
     let deps = isolated.join("deps");

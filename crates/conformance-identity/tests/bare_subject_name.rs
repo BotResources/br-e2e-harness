@@ -29,7 +29,12 @@ fn write_executable(path: &Path, body: &[u8]) {
         .expect("make the stand-in executable");
 }
 
+static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn run_isolated(test: &str, on_path: bool, in_cwd: bool) {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("bare-subject-name");
     let deps = isolated.join("deps");

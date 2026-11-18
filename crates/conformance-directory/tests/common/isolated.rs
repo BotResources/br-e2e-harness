@@ -34,7 +34,12 @@ fn real_nats_server() -> PathBuf {
         .expect("a real nats-server must be on PATH for this real-infra test")
 }
 
+static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn run(isolation: &Isolation) {
+    let _one_at_a_time = ONE_COPY_THEN_RUN_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = crate::scratch::scratch(isolation.label);
     let deps = isolated.join("deps");
