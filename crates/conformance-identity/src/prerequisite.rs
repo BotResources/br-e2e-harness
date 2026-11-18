@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use br_test_harness::run_once;
+use br_test_harness::{run_once, workspace_bin};
 
-use crate::containment::contained;
+use crate::containment::{contained, panic_message};
 use crate::error::{ConformanceError, Result};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -25,30 +25,13 @@ pub(crate) async fn nats_server() -> Result<()> {
 }
 
 pub(crate) fn fabric_nats() -> Result<PathBuf> {
-    let exe = std::env::current_exe().map_err(|e| {
+    std::panic::catch_unwind(|| workspace_bin("fabric-nats")).map_err(|panic| {
         ConformanceError::Jetstream(format!(
-            "cannot locate the running executable to find the fabric-nats CLI: {e}"
+            "the fabric-nats CLI is not where br-test-harness looks for it: build \
+             br-test-harness with its nats-fabric feature in the same target directory ({})",
+            panic_message(panic)
         ))
-    })?;
-    fabric_nats_beside(&exe)
-}
-
-pub(crate) fn fabric_nats_beside(exe: &Path) -> Result<PathBuf> {
-    let mut dir = exe.to_path_buf();
-    dir.pop();
-    if dir.ends_with("deps") {
-        dir.pop();
-    }
-    let binary = dir.join("fabric-nats");
-    if binary.exists() {
-        Ok(binary)
-    } else {
-        Err(ConformanceError::Jetstream(format!(
-            "the fabric-nats CLI is not built at {}: build br-test-harness with its nats-fabric \
-             feature in the same target directory",
-            binary.display()
-        )))
-    }
+    })
 }
 
 pub(crate) fn subject_binary(binary: &Path) -> Result<()> {
@@ -66,29 +49,6 @@ pub(crate) fn subject_binary(binary: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::test_scratch::scratch;
-
-    #[test]
-    fn a_missing_fabric_nats_binary_is_a_typed_error() {
-        let target = scratch("no-fabric-nats");
-        let exe = target.join("deps").join("conformance-test");
-        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-        match fabric_nats_beside(&exe) {
-            Err(ConformanceError::Jetstream(detail)) => assert!(detail.contains("fabric-nats")),
-            other => panic!("expected a typed fabric-nats error: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn fabric_nats_is_found_beside_the_deps_directory() {
-        let target = scratch("with-fabric-nats");
-        let exe = target.join("deps").join("conformance-test");
-        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-        std::fs::write(target.join("fabric-nats"), b"").unwrap();
-        assert_eq!(
-            fabric_nats_beside(&exe).unwrap(),
-            target.join("fabric-nats")
-        );
-    }
 
     #[test]
     fn a_missing_subject_binary_is_a_typed_input_error() {
