@@ -1,12 +1,21 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use br_core_directory::{META_KEY, group_id_from_kv_key, user_id_from_kv_key};
+use br_core_directory::{
+    GROUPS_KEY_PREFIX, META_KEY, USERS_KEY_PREFIX, group_id_from_kv_key, group_kv_key,
+    user_id_from_kv_key, user_kv_key,
+};
 use br_test_harness::run_once;
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::binary::{
+    ANCHOR_BINARY, find_in_path, is_executable_file, locate_anchor, path_with_directory_first,
+    unavailable,
+};
+use crate::containment::contained;
 use crate::error::{ConformanceError, Result};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -30,12 +39,108 @@ impl DirectorySnapshotWire {
     pub fn group_id(entry: &KvEntry) -> Option<Uuid> {
         group_id_from_kv_key(&entry.key)
     }
+
+    pub(crate) fn keyed_users(&self) -> Result<BTreeMap<Uuid, &KvEntry>> {
+        keyed(
+            &self.users,
+            Self::user_id,
+            user_kv_key,
+            "PublishedUser",
+            USERS_KEY_PREFIX,
+        )
+    }
+
+    pub(crate) fn keyed_groups(&self) -> Result<BTreeMap<Uuid, &KvEntry>> {
+        keyed(
+            &self.groups,
+            Self::group_id,
+            group_kv_key,
+            "PublishedGroup",
+            GROUPS_KEY_PREFIX,
+        )
+    }
+}
+
+fn keyed<'a>(
+    entries: &'a [KvEntry],
+    id_of: fn(&KvEntry) -> Option<Uuid>,
+    key_of: fn(Uuid) -> String,
+    ty: &'static str,
+    prefix: &str,
+) -> Result<BTreeMap<Uuid, &'a KvEntry>> {
+    let mut keyed = BTreeMap::new();
+    for entry in entries {
+        let Some(id) = id_of(entry) else {
+            return Err(ConformanceError::NonConformantWire {
+                key: entry.key.clone(),
+                ty,
+                cause: format!("the key is not an {prefix}{{uuid}} key"),
+            });
+        };
+        let canonical = key_of(id);
+        if entry.key != canonical {
+            return Err(ConformanceError::NonConformantWire {
+                key: entry.key.clone(),
+                ty,
+                cause: format!("the key is not the canonical form {canonical}"),
+            });
+        }
+        if let Some(first) = keyed.insert(id, entry) {
+            return Err(ConformanceError::NonConformantWire {
+                key: entry.key.clone(),
+                ty,
+                cause: format!("the key resolves to {id}, already carried by {}", first.key),
+            });
+        }
+    }
+    Ok(keyed)
 }
 
 pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
-    let output = run_once(&binary.to_string_lossy(), &[], &[], Duration::from_secs(60))
-        .await
-        .map_err(ConformanceError::Run)?;
+    let inherited = std::env::var_os("PATH");
+    let program = match binary.parent() {
+        Some(parent) if parent.as_os_str().is_empty() => {
+            let name = binary.to_string_lossy();
+            inherited
+                .as_deref()
+                .and_then(|path| find_in_path(&name, path))
+                .ok_or_else(|| {
+                    unavailable(
+                        ANCHOR_BINARY,
+                        "the name is not an executable in an absolute PATH entry",
+                    )
+                })?
+        }
+        _ => binary.to_path_buf(),
+    };
+    if !is_executable_file(&program) {
+        return Err(unavailable(
+            ANCHOR_BINARY,
+            &format!(
+                "{} is not an executable file; put the binary on PATH, or build it from \
+                 conformance-subjects/identity-directory outside the tests",
+                program.display()
+            ),
+        ));
+    }
+    let path = match program.parent().filter(|dir| dir.is_absolute()) {
+        Some(directory) => Some(path_with_directory_first(directory, inherited.as_deref())?),
+        None => None,
+    };
+    let envs: Vec<(&str, &str)> = path.iter().map(|path| ("PATH", path.as_str())).collect();
+    let output = contained(run_once(
+        &program.to_string_lossy(),
+        &[],
+        &envs,
+        Duration::from_secs(60),
+    ))
+    .await
+    .map_err(|panic| {
+        ConformanceError::Run(format!(
+            "the anchor could not be run (a spawnable `sh` is required): {panic}"
+        ))
+    })?
+    .map_err(ConformanceError::Run)?;
 
     if !output.status.success() {
         return Err(ConformanceError::Run(format!(
@@ -58,8 +163,8 @@ pub async fn emit_snapshot(binary: &Path) -> Result<DirectorySnapshotWire> {
     Ok(snapshot)
 }
 
-pub async fn build_and_emit() -> Result<DirectorySnapshotWire> {
-    let binary = crate::build::build_anchor().await?;
+pub async fn locate_and_emit() -> Result<DirectorySnapshotWire> {
+    let binary = locate_anchor().await?;
     emit_snapshot(&binary).await
 }
 

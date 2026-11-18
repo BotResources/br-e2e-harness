@@ -1,7 +1,8 @@
 use br_util_directory::DirectoryPublisher;
 
 use crate::anchor::DirectorySnapshotWire;
-use crate::error::{ConformanceError, Result};
+use crate::check::{Check, Exit, Run, finish};
+use crate::error::Result;
 use crate::harness::DirectoryHarness;
 use crate::kv_read::{read_groups, read_meta, read_users};
 use crate::outcome::{CheckId, CheckOutcome};
@@ -12,7 +13,7 @@ pub async fn publisher_floor(snapshot: &DirectorySnapshotWire) -> Result<CheckOu
     let expected = "reconcile publishes _meta + every user, a second reconcile is a no-op, the published wire \
                     matches the source, and dropping a user orphan-deletes its KV key";
     let harness = DirectoryHarness::start().await?;
-    let outcome = publisher_floor_inner(id, expected, &harness, snapshot).await;
+    let outcome = finish(publisher_floor_inner(id, expected, &harness, snapshot).await);
     harness.shutdown().await;
     outcome
 }
@@ -22,18 +23,17 @@ async fn publisher_floor_inner(
     expected: &str,
     harness: &DirectoryHarness,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let mut source = AnchorSource::from_snapshot(snapshot)?;
-    let publisher = DirectoryPublisher::open(harness.fabric())
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
+    let publisher = check.system(
+        "open publisher",
+        DirectoryPublisher::open(harness.fabric()).await,
+    )?;
 
-    publisher
-        .reconcile(&source)
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("first reconcile: {e}")))?;
+    check.system("first reconcile", publisher.reconcile(&source).await)?;
 
-    match read_meta(harness.nats()).await? {
+    match check.read_back("read the manifest", read_meta(harness.nats()).await)? {
         Some(meta) if meta.publishes_users() => {}
         Some(_) => {
             return Ok(CheckOutcome::fail(
@@ -53,7 +53,7 @@ async fn publisher_floor_inner(
         }
     }
 
-    let published_users = read_users(harness.nats()).await?;
+    let published_users = check.read_back("read the users", read_users(harness.nats()).await)?;
     if &published_users != source.users() {
         return Ok(CheckOutcome::fail(
             id,
@@ -63,7 +63,7 @@ async fn publisher_floor_inner(
         ));
     }
 
-    let ops_second = before_after_keys(harness, &source).await?;
+    let ops_second = before_after_keys(&check, harness, &source).await?;
     if ops_second != 0 {
         return Ok(CheckOutcome::fail(
             id,
@@ -82,11 +82,8 @@ async fn publisher_floor_inner(
         ));
     };
     source.drop_user(&orphan_id);
-    publisher
-        .reconcile(&source)
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("orphan reconcile: {e}")))?;
-    let after_drop = read_users(harness.nats()).await?;
+    check.system("orphan reconcile", publisher.reconcile(&source).await)?;
+    let after_drop = check.read_back("read the users", read_users(harness.nats()).await)?;
     if after_drop.contains_key(&orphan_id) {
         return Ok(CheckOutcome::fail(
             id,
@@ -114,16 +111,18 @@ async fn publisher_floor_inner(
     ))
 }
 
-async fn before_after_keys(harness: &DirectoryHarness, source: &AnchorSource) -> Result<usize> {
-    let before = read_users(harness.nats()).await?;
-    let publisher = DirectoryPublisher::open(harness.fabric())
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
-    publisher
-        .reconcile(source)
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("idempotency reconcile: {e}")))?;
-    let after = read_users(harness.nats()).await?;
+async fn before_after_keys(
+    check: &Check<'_>,
+    harness: &DirectoryHarness,
+    source: &AnchorSource,
+) -> std::result::Result<usize, Exit> {
+    let before = check.read_back("read the users", read_users(harness.nats()).await)?;
+    let publisher = check.system(
+        "open publisher",
+        DirectoryPublisher::open(harness.fabric()).await,
+    )?;
+    check.system("idempotency reconcile", publisher.reconcile(source).await)?;
+    let after = check.read_back("read the users", read_users(harness.nats()).await)?;
     Ok(symmetric_diff(&before, &after))
 }
 
@@ -150,7 +149,7 @@ pub async fn publisher_groups_optional(snapshot: &DirectorySnapshotWire) -> Resu
     let id = CheckId::PublisherGroupsOptional;
     let expected = "a users-only source publishes no groups and a _meta that omits groups (groups are optional, gated on _meta)";
     let harness = DirectoryHarness::start().await?;
-    let outcome = publisher_groups_optional_inner(id, expected, &harness, snapshot).await;
+    let outcome = finish(publisher_groups_optional_inner(id, expected, &harness, snapshot).await);
     harness.shutdown().await;
     outcome
 }
@@ -160,17 +159,16 @@ async fn publisher_groups_optional_inner(
     expected: &str,
     harness: &DirectoryHarness,
     snapshot: &DirectorySnapshotWire,
-) -> Result<CheckOutcome> {
+) -> Run {
+    let check = Check::new(id, expected);
     let source = AnchorSource::from_snapshot(snapshot)?.without_groups();
-    let publisher = DirectoryPublisher::open(harness.fabric())
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("open publisher: {e}")))?;
-    publisher
-        .reconcile(&source)
-        .await
-        .map_err(|e| ConformanceError::Directory(format!("users-only reconcile: {e}")))?;
+    let publisher = check.system(
+        "open publisher",
+        DirectoryPublisher::open(harness.fabric()).await,
+    )?;
+    check.system("users-only reconcile", publisher.reconcile(&source).await)?;
 
-    match read_meta(harness.nats()).await? {
+    match check.read_back("read the manifest", read_meta(harness.nats()).await)? {
         Some(meta) if meta.publishes_groups() => {
             return Ok(CheckOutcome::fail(
                 id,
@@ -198,7 +196,7 @@ async fn publisher_groups_optional_inner(
         }
     }
 
-    let groups = read_groups(harness.nats()).await?;
+    let groups = check.read_back("read the groups", read_groups(harness.nats()).await)?;
     if !groups.is_empty() {
         return Ok(CheckOutcome::fail(
             id,
@@ -207,7 +205,7 @@ async fn publisher_groups_optional_inner(
             "a users-only source must write no group keys",
         ));
     }
-    let users = read_users(harness.nats()).await?;
+    let users = check.read_back("read the users", read_users(harness.nats()).await)?;
     if users.is_empty() {
         return Ok(CheckOutcome::fail(
             id,
@@ -221,4 +219,58 @@ async fn publisher_groups_optional_inner(
         expected,
         format!("{} user(s), no groups, manifest gated", users.len()),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use br_core_directory::USERS_KEY_PREFIX;
+    use br_util_nats_fabric::KvKey;
+
+    use super::*;
+    use crate::outcome::CheckStatus;
+    use crate::test_snapshot::canonical_snapshot;
+
+    async fn harness_with_stray_user_key() -> DirectoryHarness {
+        let harness = DirectoryHarness::start().await.expect("start the harness");
+        let stray = KvKey::new(format!("{USERS_KEY_PREFIX}not-a-uuid").as_str()).unwrap();
+        harness.nats().pl_put_raw(&stray, b"{}").await;
+        harness
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH and the `fabric-nats` CLI built in the same target directory"]
+    async fn p1_reports_a_publisher_that_cannot_reconcile_as_a_failed_check() {
+        let harness = harness_with_stray_user_key().await;
+        let outcome = finish(
+            publisher_floor_inner(
+                CheckId::PublisherFloor,
+                "expected",
+                &harness,
+                &canonical_snapshot(),
+            )
+            .await,
+        );
+        harness.shutdown().await;
+        let outcome = outcome.expect("the behaviour of the publisher is a verdict, not an error");
+        assert_eq!(outcome.status, CheckStatus::Fail);
+        assert!(outcome.detail.unwrap().contains("first reconcile"));
+    }
+
+    #[tokio::test]
+    #[ignore = "real-infra: needs `nats-server` on PATH and the `fabric-nats` CLI built in the same target directory"]
+    async fn p2_reports_a_publisher_that_cannot_reconcile_as_a_failed_check() {
+        let harness = harness_with_stray_user_key().await;
+        let outcome = finish(
+            publisher_groups_optional_inner(
+                CheckId::PublisherGroupsOptional,
+                "expected",
+                &harness,
+                &canonical_snapshot(),
+            )
+            .await,
+        );
+        harness.shutdown().await;
+        let outcome = outcome.expect("the behaviour of the publisher is a verdict, not an error");
+        assert_eq!(outcome.status, CheckStatus::Fail);
+    }
 }

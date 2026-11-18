@@ -4,6 +4,8 @@ use std::path::Path;
 use br_test_harness::SpawnedProcess;
 use reqwest::StatusCode;
 
+use crate::binary::{child_path, resolve_subject};
+
 pub struct SubjectConfig {
     pub nats_url: String,
     pub enabled: bool,
@@ -35,11 +37,18 @@ impl Subject {
         let addr = free_loopback_addr();
         let base_url = format!("http://{addr}");
         let enabled = config.enabled.to_string();
-        let envs = [
+        let inherited = std::env::var_os("PATH");
+        let binary = resolve_subject(binary.to_path_buf(), inherited.as_deref())
+            .unwrap_or_else(|e| panic!("{e}"));
+        let path = child_path(&binary, inherited.as_deref());
+        let mut envs = vec![
             ("NATS_URL", config.nats_url.as_str()),
             ("HTTP_ADDR", addr.as_str()),
             ("SCOPE_ACCEPTANCE_ENABLED", enabled.as_str()),
         ];
+        if let Some(path) = path.as_deref() {
+            envs.push(("PATH", path));
+        }
 
         let process = SpawnedProcess::spawn(&binary.to_string_lossy(), &[], &envs);
         let client = reqwest::Client::builder()

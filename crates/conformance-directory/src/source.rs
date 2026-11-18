@@ -20,16 +20,12 @@ pub struct AnchorSource {
 impl AnchorSource {
     pub fn from_snapshot(snapshot: &DirectorySnapshotWire) -> Result<Self> {
         let mut users = BTreeMap::new();
-        for entry in &snapshot.users {
-            if let Some(id) = DirectorySnapshotWire::user_id(entry) {
-                users.insert(id, deserialize_user(entry)?);
-            }
+        for (id, entry) in snapshot.keyed_users()? {
+            users.insert(id, deserialize_user(entry)?);
         }
         let mut groups = BTreeMap::new();
-        for entry in &snapshot.groups {
-            if let Some(id) = DirectorySnapshotWire::group_id(entry) {
-                groups.insert(id, deserialize_group(entry)?);
-            }
+        for (id, entry) in snapshot.keyed_groups()? {
+            groups.insert(id, deserialize_group(entry)?);
         }
         Ok(Self {
             users,
@@ -99,5 +95,144 @@ impl DirectorySource for AnchorSource {
         &self,
     ) -> std::result::Result<BTreeMap<Uuid, PublishedGroup>, DirectoryError> {
         Ok(self.groups.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::error::ConformanceError;
+    use crate::test_snapshot::{canonical_snapshot, entry};
+
+    #[test]
+    fn the_canonical_snapshot_loads_every_entry() {
+        let source = AnchorSource::from_snapshot(&canonical_snapshot()).unwrap();
+        assert_eq!(source.users().len(), 2);
+        assert_eq!(source.groups().len(), 2);
+    }
+
+    #[test]
+    fn a_user_under_a_malformed_key_is_refused_not_dropped() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.users[1].key = "identity/users/not-a-uuid".to_string();
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, ty, .. }) => {
+                assert_eq!(key, "identity/users/not-a-uuid");
+                assert_eq!(ty, "PublishedUser");
+            }
+            other => panic!("a malformed user key must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_group_under_a_foreign_key_is_refused_not_dropped() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.groups.push(entry(
+            "identity/teams/01938c1f-0000-7000-8000-0000000000a3",
+            json!({ "name": "teams", "member_ids": [] }),
+        ));
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, ty, .. }) => {
+                assert_eq!(key, "identity/teams/01938c1f-0000-7000-8000-0000000000a3");
+                assert_eq!(ty, "PublishedGroup");
+            }
+            other => panic!("a foreign group key must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_malformed_key_is_refused_even_when_its_value_is_garbage() {
+        let mut snapshot = canonical_snapshot();
+        snapshot
+            .users
+            .push(entry("identity/users/nope", json!("not a user")));
+        assert!(matches!(
+            AnchorSource::from_snapshot(&snapshot),
+            Err(ConformanceError::NonConformantWire { .. })
+        ));
+    }
+
+    #[test]
+    fn a_non_canonical_spelling_of_a_user_id_is_refused_whatever_the_spelling() {
+        let id = "01938c1f-0000-7000-8000-000000000001";
+        let spellings = [
+            id.to_uppercase(),
+            id.replace('-', ""),
+            format!("{{{id}}}"),
+            format!("urn:uuid:{id}"),
+        ];
+        for spelling in spellings {
+            let mut snapshot = canonical_snapshot();
+            snapshot.users[0].key = format!("identity/users/{spelling}");
+            match AnchorSource::from_snapshot(&snapshot) {
+                Err(ConformanceError::NonConformantWire { key, ty, .. }) => {
+                    assert_eq!(key, format!("identity/users/{spelling}"));
+                    assert_eq!(ty, "PublishedUser");
+                }
+                other => panic!("{spelling} must be refused: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_non_canonical_spelling_of_a_group_id_is_refused() {
+        let mut snapshot = canonical_snapshot();
+        snapshot.groups[0].key = "identity/groups/01938C1F-0000-7000-8000-0000000000A1".to_string();
+        assert!(matches!(
+            AnchorSource::from_snapshot(&snapshot),
+            Err(ConformanceError::NonConformantWire {
+                ty: "PublishedGroup",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_non_canonical_twin_of_a_user_key_is_refused_by_the_canonical_form_check() {
+        let mut snapshot = canonical_snapshot();
+        let twin = entry(
+            "identity/users/01938C1F-0000-7000-8000-000000000001",
+            snapshot.users[0].value.clone(),
+        );
+        snapshot.users.push(twin);
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, cause, .. }) => {
+                assert_eq!(key, "identity/users/01938C1F-0000-7000-8000-000000000001");
+                assert!(cause.contains("canonical form"), "{cause}");
+            }
+            other => panic!("a non-canonical twin must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_verbatim_repeated_user_key_is_refused_not_merged() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.users[0].clone();
+        snapshot.users.push(repeated);
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, ty, cause }) => {
+                assert_eq!(key, "identity/users/01938c1f-0000-7000-8000-000000000001");
+                assert_eq!(ty, "PublishedUser");
+                assert!(cause.contains("already carried by"), "{cause}");
+            }
+            other => panic!("a repeated user key must be refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_verbatim_repeated_group_key_is_refused_not_merged() {
+        let mut snapshot = canonical_snapshot();
+        let repeated = snapshot.groups[0].clone();
+        snapshot.groups.push(repeated);
+        match AnchorSource::from_snapshot(&snapshot) {
+            Err(ConformanceError::NonConformantWire { key, ty, cause }) => {
+                assert_eq!(key, "identity/groups/01938c1f-0000-7000-8000-0000000000a1");
+                assert_eq!(ty, "PublishedGroup");
+                assert!(cause.contains("already carried by"), "{cause}");
+            }
+            other => panic!("a repeated group key must be refused: {other:?}"),
+        }
     }
 }

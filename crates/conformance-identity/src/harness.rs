@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
-use crate::build::build_subject;
+use crate::binary::{locate_subject, resolve_subject};
 use crate::capture::ConfirmationCapture;
+use crate::containment::contained;
 use crate::declarer::Declarer;
-use crate::error::Result;
+use crate::error::{ConformanceError, Result};
+use crate::prerequisite;
 
 pub const COMMAND_STREAM_NAME: &str = INTEGRATION_CMD;
 pub const EVENT_STREAM_NAME: &str = INTEGRATION_EVT;
@@ -18,12 +20,18 @@ pub struct IdentityHarness {
 
 impl IdentityHarness {
     pub async fn start() -> Result<Self> {
-        let binary = build_subject().await?;
+        let binary = locate_subject().await?;
         Self::start_with_binary(binary).await
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
-        let fabric_nats = FabricTestNats::start().await;
+        let binary = resolve_subject(binary, std::env::var_os("PATH").as_deref())?;
+        prerequisite::subject_binary(&binary)?;
+        prerequisite::fabric_nats()?;
+        prerequisite::nats_server().await?;
+        let fabric_nats = contained(FabricTestNats::start())
+            .await
+            .map_err(|e| ConformanceError::Jetstream(format!("start the throwaway NATS: {e}")))?;
         Ok(Self {
             fabric_nats,
             binary,

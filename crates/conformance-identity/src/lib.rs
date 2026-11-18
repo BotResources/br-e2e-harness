@@ -1,27 +1,32 @@
-pub mod build;
+pub mod binary;
 pub mod capture;
 pub mod checks;
+mod containment;
 pub mod declarer;
 pub mod error;
 pub mod harness;
 pub mod oracle;
 pub mod outcome;
+mod prerequisite;
 pub mod provision;
 pub mod readyz;
+mod release_asset;
 pub mod runner;
 pub mod scenario;
 pub mod spawn;
 pub mod subject;
 pub mod subjects;
+#[cfg(test)]
+mod test_scratch;
 pub mod wire;
 
-pub use build::{build_subject, ensure_go_available, subject_dir};
-pub use capture::{CapturedConfirmation, ConfirmationCapture, Verdict};
+pub use binary::{SUBJECT_BINARY, locate_subject};
+pub use capture::{CapturedConfirmation, ConfirmationCapture, DecodedConfirmation, Verdict};
 pub use checks::{CheckContext, run_scenario};
 pub use declarer::Declarer;
 pub use error::{ConformanceError, Result};
 pub use harness::{COMMAND_STREAM_NAME, EVENT_STREAM_NAME, IdentityHarness};
-pub use oracle::{expected_step_verdicts, expected_verdict};
+pub use oracle::{expected_step_confirmations, expected_step_verdicts, expected_verdict};
 pub use outcome::{CheckId, CheckOutcome, CheckStatus, ConformanceReport};
 pub use provision::provision;
 pub use readyz::ReadyzProbe;
