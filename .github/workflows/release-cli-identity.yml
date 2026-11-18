@@ -69,7 +69,7 @@ jobs:
             runner: ubuntu-latest
             builder: zigbuild
           - target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-latest
             builder: native
     defaults:
       run:
