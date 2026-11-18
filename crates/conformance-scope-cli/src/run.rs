@@ -1,7 +1,6 @@
 use conformance_scope::{
-    AcceptorBehavior, AttachTarget, ExpectedDeclaration, SAMPLE_FALLBACK_SCOPE, Scenario,
-    SpawnTarget, attach_default, parse_platform_only, parse_scenarios, parse_scope_keys,
-    run_attach, run_spawn, spawn_default,
+    AcceptorBehavior, AttachTarget, ExpectedDeclaration, Scenario, SpawnTarget, attach_default,
+    parse_platform_only, parse_scenarios, parse_scope_keys, run_attach, run_spawn, spawn_default,
 };
 
 use crate::cli::RunArgs;
@@ -32,23 +31,16 @@ pub async fn run_single(args: &RunArgs) -> Result<ServiceReport> {
 fn build_expected(args: &RunArgs) -> Result<ExpectedDeclaration> {
     let scope_keys = parse_scope_keys(&args.scopes);
     let platform_only = parse_platform_only(&args.platform_only)?;
-    Ok(ExpectedDeclaration::from_parts(
+    Ok(ExpectedDeclaration::try_from_parts(
         &args.service_key,
         &scope_keys,
         &platform_only,
-    ))
+    )?)
 }
 
 fn build_behavior(args: &RunArgs, expected: &ExpectedDeclaration) -> Result<AcceptorBehavior> {
     match &args.reject {
-        Some(reason_code) => {
-            let sample = expected
-                .scopes
-                .first()
-                .map(|s| s.key.as_str())
-                .unwrap_or(SAMPLE_FALLBACK_SCOPE);
-            Ok(AcceptorBehavior::reject(Some(reason_code), sample)?)
-        }
+        Some(reason_code) => Ok(AcceptorBehavior::reject_for(expected, Some(reason_code))?),
         None => Ok(AcceptorBehavior::Accept),
     }
 }

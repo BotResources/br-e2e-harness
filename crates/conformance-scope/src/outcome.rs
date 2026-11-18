@@ -161,6 +161,52 @@ impl ConformanceReport {
     }
 
     pub fn is_conformant(&self) -> bool {
-        self.failed() == 0
+        !self.outcomes.is_empty() && self.failed() == 0 && self.skipped() == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::DeclareWellFormed, "e", "o")
+    }
+
+    fn fail() -> CheckOutcome {
+        CheckOutcome::fail(CheckId::ReadinessGated, "e", "o", "d")
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::RejectionStopsReadiness, "d")
+    }
+
+    fn report(outcomes: Vec<CheckOutcome>) -> ConformanceReport {
+        ConformanceReport { outcomes }
+    }
+
+    #[test]
+    fn a_report_with_no_outcome_is_not_conformant() {
+        assert!(!ConformanceReport::default().is_conformant());
+    }
+
+    #[test]
+    fn a_report_of_only_skipped_outcomes_is_not_conformant() {
+        assert!(!report(vec![skipped(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn a_skipped_outcome_next_to_passes_is_not_conformant() {
+        assert!(!report(vec![pass(), skipped()]).is_conformant());
+    }
+
+    #[test]
+    fn a_failed_outcome_is_not_conformant() {
+        assert!(!report(vec![pass(), fail()]).is_conformant());
+    }
+
+    #[test]
+    fn passes_only_are_conformant() {
+        assert!(report(vec![pass(), pass()]).is_conformant());
     }
 }

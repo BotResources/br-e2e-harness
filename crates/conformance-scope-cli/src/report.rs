@@ -26,8 +26,16 @@ pub struct OutcomeView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct IncompleteService {
+    pub service_key: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AggregateReport {
     pub services: Vec<ServiceReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incomplete: Option<IncompleteService>,
     pub passed: usize,
     pub failed: usize,
     pub skipped: usize,
@@ -66,11 +74,20 @@ impl AggregateReport {
         let failed = services.iter().map(|s| s.failed).sum();
         let skipped = services.iter().map(|s| s.skipped).sum();
         Self {
-            conformant: failed == 0,
+            conformant: !services.is_empty() && services.iter().all(|s| s.conformant),
             passed,
             failed,
             skipped,
             services,
+            incomplete: None,
+        }
+    }
+
+    pub fn interrupted(services: Vec<ServiceReport>, incomplete: IncompleteService) -> Self {
+        Self {
+            conformant: false,
+            incomplete: Some(incomplete),
+            ..Self::from_services(services)
         }
     }
 
@@ -84,5 +101,69 @@ impl AggregateReport {
             Format::Json => crate::render::json(self),
             Format::Junit => crate::render::junit(self),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use conformance_scope::{CheckId, CheckOutcome};
+
+    use super::*;
+
+    fn service(outcomes: Vec<CheckOutcome>) -> ServiceReport {
+        ServiceReport::from_report("svc", &ConformanceReport { outcomes })
+    }
+
+    fn pass() -> CheckOutcome {
+        CheckOutcome::pass(CheckId::DeclareWellFormed, "e", "o")
+    }
+
+    fn skipped() -> CheckOutcome {
+        CheckOutcome::skipped(CheckId::RejectionStopsReadiness, "d")
+    }
+
+    #[test]
+    fn an_aggregate_of_no_service_is_not_conformant() {
+        assert!(!AggregateReport::from_services(Vec::new()).conformant);
+    }
+
+    #[test]
+    fn a_service_that_ran_nothing_is_not_conformant_and_neither_is_the_aggregate() {
+        let empty = service(Vec::new());
+        assert!(!empty.conformant);
+        assert!(!AggregateReport::single(empty).conformant);
+    }
+
+    #[test]
+    fn a_service_with_only_skipped_checks_is_not_conformant_and_neither_is_the_aggregate() {
+        let skipped_only = service(vec![skipped()]);
+        assert!(!skipped_only.conformant);
+        assert!(!AggregateReport::single(skipped_only).conformant);
+    }
+
+    #[test]
+    fn one_non_conformant_service_makes_the_aggregate_non_conformant() {
+        let aggregate =
+            AggregateReport::from_services(vec![service(vec![pass()]), service(vec![skipped()])]);
+        assert!(!aggregate.conformant);
+        assert_eq!((aggregate.passed, aggregate.skipped), (1, 1));
+    }
+
+    #[test]
+    fn an_interrupted_aggregate_is_never_conformant_whatever_the_finished_services_say() {
+        let incomplete = IncompleteService {
+            service_key: "second".to_string(),
+            error: "broker unreachable".to_string(),
+        };
+        let aggregate = AggregateReport::interrupted(vec![service(vec![pass()])], incomplete);
+        assert!(!aggregate.conformant);
+        assert_eq!(aggregate.passed, 1);
+    }
+
+    #[test]
+    fn conformant_services_make_a_conformant_aggregate() {
+        let aggregate =
+            AggregateReport::from_services(vec![service(vec![pass()]), service(vec![pass()])]);
+        assert!(aggregate.conformant);
     }
 }

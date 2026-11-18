@@ -101,10 +101,19 @@ jobs:
       # below keep the legacy one until then.
       - name: keep the conformance batteries on the legacy build-dir layout
         run: echo "__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT=1" >> "$GITHUB_ENV"
+      - name: scope-service anchor checks and build onto PATH
+        run: |
+          set -euo pipefail
+          make -C conformance-subjects/scope-service guard
+          go -C conformance-subjects/scope-service vet ./...
+          go -C conformance-subjects/scope-service test -count=1 ./...
+          mkdir -p "$RUNNER_TEMP/scope-service-bin"
+          CGO_ENABLED=0 go build -C conformance-subjects/scope-service -o "$RUNNER_TEMP/scope-service-bin/scope-service" .
+          echo "$RUNNER_TEMP/scope-service-bin" >> "$GITHUB_PATH"
       - name: scope-declaration conformance battery
-        run: cargo test -p conformance-scope --test conformance --locked -- --ignored
+        run: cargo test -p conformance-scope --all-targets --locked -- --ignored --test-threads=1
       - name: scope-declaration conformance battery via the CLI binary
-        run: cargo test -p conformance-scope-cli --test spawn_cli --locked -- --ignored
+        run: cargo test -p conformance-scope-cli --locked -- --ignored
       - name: identity-acceptor anchor checks and build onto PATH
         run: |
           set -euo pipefail
@@ -131,7 +140,7 @@ jobs:
         run: cargo test -p conformance-nats-fabric --all-targets --locked -- --ignored --test-threads=1
       - name: nats-fabric conformance battery via the CLI binary
         run: cargo test -p conformance-nats-fabric-cli --all-targets --locked -- --include-ignored --test-threads=1
-      - name: no Go subject is built inside the passport, nats-fabric, identity and directory conformance crates
+      - name: no Go subject is built inside the passport, nats-fabric, scope, identity and directory conformance crates
         run: |
           set -euo pipefail
           bash .github/scripts/test-go-free-gate.sh

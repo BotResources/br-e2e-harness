@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use br_test_harness::FabricTestNats;
 use br_util_nats_fabric::{Fabric, INTEGRATION_CMD, INTEGRATION_EVT};
 
-use crate::build::build_subject;
+use crate::binary::locate_subject;
 use crate::capture::DeclareCapture;
-use crate::error::Result;
+use crate::error::{ConformanceError, Result};
+use crate::prerequisite;
 
 pub const COMMAND_STREAM_NAME: &str = INTEGRATION_CMD;
 pub const EVENT_STREAM_NAME: &str = INTEGRATION_EVT;
@@ -17,12 +18,15 @@ pub struct ScopeHarness {
 
 impl ScopeHarness {
     pub async fn start() -> Result<Self> {
-        let binary = build_subject().await?;
+        let binary = locate_subject().await?;
         Self::start_with_binary(binary).await
     }
 
     pub async fn start_with_binary(binary: PathBuf) -> Result<Self> {
-        let nats = FabricTestNats::start().await;
+        let binary = prerequisite::subject_binary(&binary)?;
+        let nats = prerequisite::contained(FabricTestNats::start())
+            .await
+            .map_err(|e| ConformanceError::Jetstream(format!("start the throwaway NATS: {e}")))?;
         Ok(Self { nats, binary })
     }
 

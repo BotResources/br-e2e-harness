@@ -10,3 +10,4 @@ export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-passport conformance-pass
 export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-directory-cli"
 export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-identity-cli"
 export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-nats-fabric conformance-nats-fabric-cli"
+export GO_FREE_CRATES="${GO_FREE_CRATES:-} conformance-scope conformance-scope-cli"
