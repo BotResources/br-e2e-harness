@@ -1,6 +1,6 @@
 [package]
 name = "br-test-harness"
-version = "0.1.3"
+version = "0.2.0"
 description = "Real-infra end-to-end test harness for BotResources platform services — TEST FIXTURE ONLY"
 edition.workspace = true
 rust-version.workspace = true
@@ -21,7 +21,7 @@ full = ["nats", "spawned-nats", "nats-fabric", "e2e-db", "server", "passport", "
 
 nats = ["dep:async-nats", "dep:dotenvy", "dep:url", "dep:percent-encoding", "dep:futures-util"]
 spawned-nats = ["dep:tempfile"]
-nats-fabric = ["nats", "spawned-nats", "passport", "dep:br-util-nats-fabric", "dep:br-core-integration", "dep:br-core-directory", "dep:br-scope-declaration-contract", "dep:clap", "dep:toml", "dep:thiserror"]
+nats-fabric = ["nats", "spawned-nats", "passport", "dep:br-util-nats-fabric", "dep:br-core-integration", "dep:br-core-directory", "dep:clap", "dep:toml", "dep:thiserror"]
 e2e-db = ["dep:sqlx", "dep:dotenvy"]
 server = ["dep:axum", "http-client"]
 passport = ["dep:br-core-auth"]
@@ -37,7 +37,6 @@ br-core-auth = { git = "https://github.com/BotResources/br-rust-common", package
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "br-util-nats-fabric/v0.1.0", version = "0.1.0", optional = true }
 br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "br-core-integration/v0.1.0", version = "0.1.0", optional = true }
 br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "br-core-directory/v0.1.0", version = "0.1.0", optional = true }
-br-scope-declaration-contract = { git = "https://github.com/BotResources/br-rust-common", package = "br-scope-declaration-contract", tag = "br-scope-declaration-contract/v0.1.0", version = "0.1.0", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 toml = { version = "0.8", optional = true }
 thiserror = { workspace = true, optional = true }
