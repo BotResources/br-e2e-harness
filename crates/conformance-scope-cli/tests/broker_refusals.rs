@@ -119,9 +119,16 @@ async fn spawn_from_a_released_layout_without_fabric_nats_exits_2_naming_it() {
     .expect("cli task");
 
     std::fs::remove_dir_all(&released).ok();
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error: "))
+        .collect();
+    let [error] = errors.as_slice() else {
+        panic!("the refusal must be one `error:` line: {stderr}");
+    };
     assert!(
-        stderr.contains("fabric-nats must be built by the workspace"),
+        error.contains("fabric-nats must be built by the workspace"),
         "{stderr}"
     );
-    assert!(stderr.contains("attach mode"), "{stderr}");
+    assert!(error.contains("attach mode"), "{stderr}");
 }
