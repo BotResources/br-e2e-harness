@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -11,9 +10,15 @@ const SHORT: Duration = Duration::from_secs(2);
 fn stand_in(label: &str, mode: u32, body: &[u8]) -> (scratch::Scratch, PathBuf) {
     let dir = scratch::scratch(label);
     let binary = dir.join("identity-acceptor");
-    std::fs::write(&binary, body).expect("write the stand-in subject");
-    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(mode))
-        .expect("set the stand-in mode");
+    let written = std::process::Command::new("/bin/sh")
+        .args(["-c", "printf '%s' \"$1\" > \"$2\" && chmod \"$3\" \"$2\""])
+        .arg("sh")
+        .arg(std::str::from_utf8(body).expect("a text stand-in"))
+        .arg(&binary)
+        .arg(format!("{mode:o}"))
+        .status()
+        .expect("run /bin/sh to write the stand-in subject");
+    assert!(written.success(), "writing the stand-in subject: {written}");
     (dir, binary)
 }
 

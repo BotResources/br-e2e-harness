@@ -37,11 +37,10 @@ fn run_isolated(test: &str, on_path: bool, in_cwd: bool) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("bare-subject-name");
-    let deps = isolated.join("deps");
     let stub_bin = isolated.join("stub-bin");
     let path_dir = isolated.join("path-dir");
     let cwd = isolated.join("cwd");
-    for dir in [&deps, &stub_bin, &path_dir, &cwd] {
+    for dir in [&stub_bin, &path_dir, &cwd] {
         std::fs::create_dir_all(dir).expect("create an isolated directory");
     }
     std::fs::write(isolated.join("fabric-nats"), b"").expect("write a stub fabric-nats");
@@ -52,7 +51,7 @@ fn run_isolated(test: &str, on_path: bool, in_cwd: bool) {
     if in_cwd {
         write_executable(&cwd.join(SUBJECT_BINARY), CWD_STAND_IN);
     }
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
     let output = Command::new(&copy)

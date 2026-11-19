@@ -175,7 +175,7 @@ programmatic runners call it.
   selected (`InvalidInput`), a path handed to `start_with_binary` / `run_spawn` that is
   not an executable file (`InvalidInput`), no `identity-acceptor` binary on `PATH`, in the cache or
   in the release (`SubjectBinaryUnavailable`), `nats-server` not on `PATH`, the
-  `fabric-nats` CLI not built beside the test executable, a harness start or an
+  `fabric-nats` CLI not built where `workspace_bin` of `br-test-harness` 0.2 finds it, a harness start or an
   unreachable NATS (`Jetstream`). A harness panic while observing a scenario is contained and reported as a failed check.
   `ConfirmationCapture::verdict_for` and `confirmation_decoded_for` return `Some(Err(Jetstream(..)))` when the capture recorded a malformed frame or the NATS client is gone; `try_confirmation_for` and `try_count` are the non-panicking forms of `confirmation_for` and `count`, which panic in those cases.
 
@@ -240,7 +240,7 @@ The runner needs `nats-server` and nothing else (no Go).
 - name: download the identity conformance CLI
   run: |
     set -euo pipefail
-    version=0.1.1
+    version=0.2.0
     asset="conformance-identity-${version}-x86_64-unknown-linux-musl.tar.gz"
     base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-identity/v${version}"
     curl -fsSLO "${base}/${asset}"
@@ -274,8 +274,8 @@ the type and fails with a type mismatch:
 
 ```toml
 [dev-dependencies]
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.1", version = "0.1.1" }
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.3", version = "0.1.3" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.2.0", version = "0.2.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0" }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "br-util-nats-fabric/v0.1.0", version = "0.1.0" }
 br-core-integration = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-integration", tag = "br-core-integration/v0.1.0", version = "0.1.0" }
 br-core-scope = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-scope", tag = "br-core-scope/v0.1.0", version = "0.1.0" }

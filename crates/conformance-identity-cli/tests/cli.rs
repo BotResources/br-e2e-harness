@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -26,9 +25,27 @@ fn scratch(label: &str) -> PathBuf {
 
 fn executable_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
-    std::fs::write(&path, body).expect("write the script");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let written = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "printf '%s' \"$1\" > \"$2\" && chmod 755 \"$2\"",
+            "sh",
+            body,
+        ])
+        .arg(&path)
+        .status()
+        .expect("run /bin/sh to write the script");
+    assert!(written.success(), "writing the script: {written}");
     path
+}
+
+fn copy_from_a_child_process(from: &Path, to: &Path) {
+    let copied = std::process::Command::new("/bin/cp")
+        .arg(from)
+        .arg(to)
+        .status()
+        .expect("run /bin/cp to copy the executable");
+    assert!(copied.success(), "copying the executable: {copied}");
 }
 
 #[test]
@@ -81,14 +98,17 @@ fn a_missing_go_anchor_exits_2_with_the_typed_error() {
 fn a_missing_fabric_nats_beside_the_executable_exits_2_with_one_error_line() {
     let dir = scratch("no-fabric-nats");
     let copy = dir.join("conformance-identity");
-    std::fs::copy(assert_cmd::cargo::cargo_bin("conformance-identity"), &copy).expect("copy");
+    copy_from_a_child_process(&assert_cmd::cargo::cargo_bin("conformance-identity"), &copy);
     let assert = Command::new(&copy)
         .args(["run", "--spawn", "/bin/sh"])
         .assert()
         .code(2);
     let stderr = stderr_of(assert);
     assert!(stderr.starts_with("error: "), "{stderr}");
-    assert!(stderr.contains("fabric-nats"), "{stderr}");
+    assert!(
+        stderr.contains("fabric-nats must be built by the workspace"),
+        "{stderr}"
+    );
     assert!(!stderr.contains("panicked"), "{stderr}");
     assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
 }
@@ -188,7 +208,7 @@ fn help_names_the_three_modes() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built in the same target directory"]
 async fn anchor_run_passes_every_scenario_against_the_go_reference_acceptor() {
     let stdout = tokio::task::spawn_blocking(|| {
         cli()
@@ -212,7 +232,7 @@ async fn anchor_run_passes_every_scenario_against_the_go_reference_acceptor() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built in the same target directory"]
 async fn spawn_run_writes_a_conformant_junit_report_for_a_subset_of_scenarios() {
     let acceptor = locate_subject().await.expect("the acceptor binary");
     let report_path = scratch("junit").join("identity-junit.xml");
@@ -252,7 +272,7 @@ async fn spawn_run_writes_a_conformant_junit_report_for_a_subset_of_scenarios() 
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built in the same target directory"]
 async fn attach_run_against_a_live_acceptor_is_conformant() {
     let harness = IdentityHarness::start().await.expect("harness");
     provision(&harness.nats_url(), "scope_declaration.toml")
@@ -300,7 +320,7 @@ async fn attach_run_against_a_live_acceptor_is_conformant() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server` and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server` and `fabric-nats` built in the same target directory"]
 async fn an_attached_acceptor_that_never_reports_ready_exits_2_with_the_readiness_sentence() {
     let harness = IdentityHarness::start_with_binary(PathBuf::from("/bin/sh"))
         .await
@@ -335,7 +355,7 @@ async fn an_attached_acceptor_that_never_reports_ready_exits_2_with_the_readines
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built in the same target directory"]
 async fn an_acceptor_that_answers_nothing_is_non_conformant_with_exit_1() {
     let acceptor = locate_subject().await.expect("the acceptor binary");
     let dir = scratch("silent-acceptor");
@@ -376,7 +396,7 @@ async fn an_acceptor_that_answers_nothing_is_non_conformant_with_exit_1() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `fabric-nats` built in the same target directory"]
 async fn a_missing_nats_server_exits_2_with_one_error_line_and_no_panic_text() {
     let stderr = tokio::task::spawn_blocking(|| {
         let assert = cli()
@@ -395,7 +415,7 @@ async fn a_missing_nats_server_exits_2_with_one_error_line_and_no_panic_text() {
 }
 
 #[test]
-#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-acceptor` on PATH and `fabric-nats` built in the same target directory"]
 fn a_closed_stdout_exits_2_with_one_error_line_instead_of_a_silent_101() {
     let (reader, writer) = std::io::pipe().expect("pipe");
     let bin = assert_cmd::cargo::cargo_bin("conformance-identity");
