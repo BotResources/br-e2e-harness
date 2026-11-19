@@ -16,6 +16,10 @@ form to decide whether a version ships.
 
 - Released with `conformance-passport` 0.2.0 under the tag `conformance-passport/v0.2.0`, built on `br-test-harness` 0.2. Flags, scenarios, report formats and exit codes are those of 0.1.1.
 
+### Fixed
+
+- `tests/cli.rs` writes the two scripts it then runs with a child `/bin/sh`. A script written in the test process and run right after can fail with "Text file busy" (os error 26) when another test of the binary forks while the file is still open for writing.
+
 ## 0.1.1
 
 ### Added
