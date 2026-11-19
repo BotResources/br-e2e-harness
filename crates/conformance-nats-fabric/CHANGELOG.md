@@ -19,6 +19,10 @@ Minor 0.2, a new line: the public signatures name types of `br-test-harness` (`F
 - The library never looks for a program of the build; its own `tests/conformance.rs` does, through `workspace_bin`, to provision with the `fabric-nats` CLI. `br-test-harness` 0.1.2 found that CLI under the `deps/` layout only, so those tests failed on Cargo 1.100 unless the legacy layout was forced; `workspace_bin` of 0.2 matches no directory name of Cargo's build layout.
 - CI: the step that kept the conformance batteries on the legacy build-dir layout (`__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT`) is removed. This crate was the last one whose tests needed it; every battery of the repository runs on Cargo's current layout.
 
+### Fixed
+
+- The unit test of `anchor.rs` writes the scripts it then runs with a child `/bin/sh`. A script written in the test process and run right after can fail with "Text file busy" (os error 26) when another test of the binary forks while the file is still open for writing; the library's unit tests run in one binary, in parallel.
+
 ## 0.1.1
 
 ### Fixed
