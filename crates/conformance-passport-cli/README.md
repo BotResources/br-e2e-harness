@@ -69,7 +69,7 @@ the battery against it. The CLI boots the service binary itself; the runner need
 - name: download the passport conformance CLI
   run: |
     set -euo pipefail
-    version=0.1.1
+    version=0.2.0
     asset="conformance-passport-${version}-x86_64-unknown-linux-musl.tar.gz"
     base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-passport/v${version}"
     curl -fsSLO "${base}/${asset}"
