@@ -15,6 +15,15 @@ use fixture::{SCOPES, SERVICE_KEY};
 use scratch::scratch;
 use stderr::stderr_of;
 
+fn copy_from_a_child_process(from: &std::path::Path, to: &std::path::Path) {
+    let copied = std::process::Command::new("/bin/cp")
+        .arg(from)
+        .arg(to)
+        .status()
+        .expect("run /bin/cp to copy the executable");
+    assert!(copied.success(), "copying the executable: {copied}");
+}
+
 #[tokio::test]
 #[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn attach_to_a_broker_without_the_handshake_streams_exits_2_and_creates_none() {
@@ -87,7 +96,7 @@ async fn attach_to_a_broker_with_only_the_command_stream_exits_2_and_creates_no_
 async fn spawn_from_a_released_layout_without_fabric_nats_exits_2_naming_it() {
     let released = scratch("released-layout");
     let executable = released.join("conformance-scope");
-    std::fs::copy(cargo_bin("conformance-scope"), &executable).expect("copy the executable");
+    copy_from_a_child_process(&cargo_bin("conformance-scope"), &executable);
     let binary = cargo_bin("conformance-scope");
 
     let stderr = tokio::task::spawn_blocking(move || {

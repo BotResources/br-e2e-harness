@@ -19,6 +19,7 @@ form to decide whether a version ships.
 ### Fixed
 
 - `--spawn` without `fabric-nats` prints its error on one line: `conformance-scope` 0.2.0 folds the list of paths the harness read into the line. `tests/broker_refusals.rs` checks that the lookup found nothing, not only that the line names `fabric-nats`.
+- `tests/spawn_bare_name.rs` and `tests/broker_refusals.rs` copy the executable they then run with a child `/bin/cp`. A copy made in the test process and run right after can fail with "Text file busy" (os error 26) when another test of the binary forks while the copy is still open for writing; CI runs the ignored tests of this crate in parallel.
 
 ## 0.1.1
 
