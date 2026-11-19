@@ -41,10 +41,13 @@ fn run_in_isolated_copy(test: &str, ignored: bool) {
 
 fn assert_names_the_missing_cli<T: Debug>(what: &str, result: Result<T>) {
     match result {
-        Err(ConformanceError::Jetstream(detail)) => assert!(
-            detail.contains(NOT_FOUND),
-            "{what} must say the lookup found no CLI, not that a CLI it found failed: {detail}"
-        ),
+        Err(ConformanceError::Jetstream(detail)) => {
+            assert!(
+                detail.contains(NOT_FOUND),
+                "{what} must say the lookup found no CLI, not that a CLI it found failed: {detail}"
+            );
+            assert_eq!(detail.lines().count(), 1, "{what}: {detail}");
+        }
         other => panic!("{what} without the fabric-nats CLI must be a typed error: {other:?}"),
     }
 }

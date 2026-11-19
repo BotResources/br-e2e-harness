@@ -93,8 +93,10 @@ Every conformance crate pins `br-test-harness` by tag, and all but
 tags as two sources, so pin `br-test-harness` with the tag that the conformance
 crates you use pin, or the build holds two copies of the harness and the shared
 types do not match. A conformance crate at 0.2.0 pins `br-test-harness/v0.2.0`,
-the pin above. A conformance crate at 0.1.1 pins a 0.1 tag, named in its README,
-and cannot be mixed with one at 0.2.0.
+the pin above. At 0.1.1, `conformance-scope`, `conformance-identity` and
+`conformance-directory` pin `br-test-harness/v0.1.3`, and `conformance-passport`
+and `conformance-nats-fabric` pin `br-test-harness/v0.1.2`: a crate at 0.1.1 and
+a crate at 0.2.0 that both name harness types do not go in one build.
 
 Planned: `identity-test` - a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested

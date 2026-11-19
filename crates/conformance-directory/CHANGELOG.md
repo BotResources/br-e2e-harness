@@ -21,7 +21,7 @@ Minor 0.2, a new line: the public API names `FabricTestNats` of `br-test-harness
 ### Fixed
 
 - The `ConformanceError::Jetstream` of a `fabric-nats` CLI that is not found stays on one line. `workspace_bin` of `br-test-harness` 0.2 reports the paths it read on several lines; the crate folds that report before it puts it in the error text.
-- `tests/absent_fabric_nats.rs` passes only when the lookup found no CLI (it checks for the text `fabric-nats must be built by the workspace`). It used to accept any `Jetstream` error naming `fabric-nats`, and a CLI the lookup had found, failing to provision a dead broker, gave one.
+- `tests/absent_fabric_nats.rs` passes only when the lookup found no CLI (it checks for the text `fabric-nats must be built by the workspace`) and the error is one line. It used to accept any `Jetstream` error naming `fabric-nats`, and a CLI the lookup had found, failing to provision a dead broker, gave one.
 - The tests that re-execute a copy of the test executable (`absent_fabric_nats.rs`, `absent_postgres.rs`, `spawn_guard_unavailable.rs`, `harness_start_failures.rs`) put the copy in the scratch directory itself, beside the stub `fabric-nats` when the case has one; the `deps/` directory around the copy served the lookup of `br-test-harness` 0.1 only.
 
 ## 0.1.1
