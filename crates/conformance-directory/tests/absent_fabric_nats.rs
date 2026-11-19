@@ -14,6 +14,7 @@ use conformance_directory::{
 const ISOLATED: &str = "CONFORMANCE_DIRECTORY_ISOLATED_COPY";
 const OFFLINE: &str = "provision_without_the_fabric_nats_cli_is_a_typed_error";
 const REAL_INFRA: &str = "batteries_without_the_fabric_nats_cli_are_a_typed_error";
+const NOT_FOUND: &str = "fabric-nats must be built by the workspace";
 
 static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -23,9 +24,7 @@ fn run_in_isolated_copy(test: &str, ignored: bool) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("no-fabric-nats");
-    let deps = isolated.join("deps");
-    std::fs::create_dir_all(&deps).expect("create the isolated target directory");
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside no fabric-nats");
 
     let mut command = Command::new(&copy);
@@ -43,8 +42,8 @@ fn run_in_isolated_copy(test: &str, ignored: bool) {
 fn assert_names_the_missing_cli<T: Debug>(what: &str, result: Result<T>) {
     match result {
         Err(ConformanceError::Jetstream(detail)) => assert!(
-            detail.contains("fabric-nats"),
-            "{what} must name the missing CLI: {detail}"
+            detail.contains(NOT_FOUND),
+            "{what} must say the lookup found no CLI, not that a CLI it found failed: {detail}"
         ),
         other => panic!("{what} without the fabric-nats CLI must be a typed error: {other:?}"),
     }

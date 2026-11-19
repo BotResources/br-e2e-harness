@@ -30,13 +30,11 @@ fn system_path_after(stubs: &std::path::Path) -> std::ffi::OsString {
 fn run_in_isolated_copy() {
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("no-postgres");
-    let deps = isolated.join("deps");
     let stubs = isolated.join("stubs");
-    std::fs::create_dir_all(&deps).expect("create the isolated target directory");
     std::fs::create_dir_all(&stubs).expect("create the stub directory");
     write_stub(&stubs.join("nats-server"));
     write_stub(&isolated.join("fabric-nats"));
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
     let output = Command::new(&copy)

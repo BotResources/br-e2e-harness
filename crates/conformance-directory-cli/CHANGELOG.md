@@ -10,6 +10,16 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+### Changed
+
+- Released with `conformance-directory` 0.2.0 under the tag `conformance-directory/v0.2.0`, built on `br-test-harness` 0.2. The archive still holds `conformance-directory` and `fabric-nats` side by side: `workspace_bin` of `br-test-harness` 0.2 reads the directory of the running executable first. Flags, checks, report formats and exit codes are those of 0.1.1.
+
+### Fixed
+
+- A `fabric-nats` that is not found exits 2 with one `error:` line, like every other missing prerequisite. Built on `br-test-harness` 0.2 without the fold `conformance-directory` 0.2.0 applies, the line would have been followed by the list of paths the harness read. `tests/cli.rs` pins it with a copy of the binary in an empty directory.
+
 ## 0.1.1
 
 ### Added

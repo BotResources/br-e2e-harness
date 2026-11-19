@@ -9,6 +9,21 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+Minor 0.2, a new line: the public API names `FabricTestNats` of `br-test-harness`, and this line is built on `br-test-harness` 0.2. The batteries, the checks and the error vocabulary are those of 0.1.1.
+
+### Changed
+
+- The crate pins `br-test-harness/v0.2.0` (0.1.1 pinned `v0.1.3`). `read_users`, `read_groups`, `read_meta` and `DirectoryHarness::nats` take or return the `FabricTestNats` of `br-test-harness` 0.2, so an importer pins `br-test-harness/v0.2.0` beside this crate: with a 0.1 harness the build holds two copies of the type and fails with a type mismatch.
+- The `fabric-nats` CLI is the one `workspace_bin` of `br-test-harness` 0.2 finds. That lookup matches no directory name of Cargo's build layout: it reads the directory of the running executable and up to four directories above it, then the same path under the target directory that `cargo metadata` names, so a build directory set apart from the target directory is covered. A CLI that is not found is still `ConformanceError::Jetstream`; its text now carries every path the harness read.
+
+### Fixed
+
+- The `ConformanceError::Jetstream` of a `fabric-nats` CLI that is not found stays on one line. `workspace_bin` of `br-test-harness` 0.2 reports the paths it read on several lines; the crate folds that report before it puts it in the error text.
+- `tests/absent_fabric_nats.rs` passes only when the lookup found no CLI (it checks for the text `fabric-nats must be built by the workspace`). It used to accept any `Jetstream` error naming `fabric-nats`, and a CLI the lookup had found, failing to provision a dead broker, gave one.
+- The tests that re-execute a copy of the test executable (`absent_fabric_nats.rs`, `absent_postgres.rs`, `spawn_guard_unavailable.rs`, `harness_start_failures.rs`) put the copy in the scratch directory itself, beside the stub `fabric-nats` when the case has one; the `deps/` directory around the copy served the lookup of `br-test-harness` 0.1 only.
+
 ## 0.1.1
 
 ### Fixed

@@ -70,7 +70,7 @@ steps:
   - name: download the directory conformance CLI
     run: |
       set -euo pipefail
-      version=0.1.1
+      version=0.2.0
       asset="conformance-directory-${version}-x86_64-unknown-linux-musl.tar.gz"
       base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-directory/v${version}"
       curl -fsSLO "${base}/${asset}"
