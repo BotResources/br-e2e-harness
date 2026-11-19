@@ -35,10 +35,13 @@ fn assert_typed_errors() {
         .expect("runtime");
     runtime.block_on(async {
         match provision("nats://127.0.0.1:1", "scope_declaration.toml").await {
-            Err(ConformanceError::Jetstream(detail)) => assert!(
-                detail.contains(NOT_FOUND),
-                "provision must say the lookup found no CLI, not that a CLI it found failed: {detail}"
-            ),
+            Err(ConformanceError::Jetstream(detail)) => {
+                assert!(
+                    detail.contains(NOT_FOUND),
+                    "provision must say the lookup found no CLI, not that a CLI it found failed: {detail}"
+                );
+                assert_eq!(detail.lines().count(), 1, "{detail}");
+            }
             other => panic!("provision without the fabric-nats CLI must be typed: {other:?}"),
         }
         match IdentityHarness::start_with_binary(std::env::current_exe().expect("exe")).await {
