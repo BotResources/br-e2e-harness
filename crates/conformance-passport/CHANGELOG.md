@@ -9,6 +9,15 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+Minor 0.2, a new line: the crate is built on `br-test-harness` 0.2. The scenarios, the wire vectors, the runner and the error vocabulary are those of 0.1.1.
+
+### Changed
+
+- The crate pins `br-test-harness/v0.2.0` (0.1.1 pinned `v0.1.2`). No public signature names a type of the harness (`unknown_bearer` is re-exported from it), so an importer's code does not change; an importer that uses `br-test-harness` too pins `br-test-harness/v0.2.0`, or the build holds two copies of the harness.
+- `br-test-harness` 0.2 changes `workspace_bin` only (it matches no directory name of Cargo's build layout). This crate never calls it: the harness provisions the fabric of the battery's `nats-server` in process, with no `fabric-nats` CLI, and the subject binary comes from `PATH`, the cache or the release.
+
 ## 0.1.1
 
 ### Fixed

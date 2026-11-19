@@ -1,6 +1,6 @@
 [package]
 name = "conformance-passport-cli"
-version = "0.1.1"
+version = "0.2.0"
 description = "Language-agnostic CLI for the BotResources bearer/PAT to Passport conformance battery"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-conformance-passport = { path = "../conformance-passport", version = "0.1.1" }
+conformance-passport = { path = "../conformance-passport", version = "0.2.0" }
 
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }

@@ -284,7 +284,7 @@ with its `.sha256`). The CLI spawns the service binary itself, so the job needs 
 and the service binary, nothing else:
 
 ```sh
-version=0.1.1
+version=0.2.0
 asset="conformance-passport-${version}-x86_64-unknown-linux-musl.tar.gz"
 base="https://github.com/BotResources/br-e2e-harness/releases/download/conformance-passport/v${version}"
 curl -fsSLO "${base}/${asset}" && curl -fsSLO "${base}/${asset}.sha256"
@@ -305,8 +305,11 @@ single source of `br-core-*`:
 
 ```toml
 [dev-dependencies]
-conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
+conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.2.0", version = "0.2.0" }
 ```
+
+The crate is built on `br-test-harness/v0.2.0`. If your tests use `br-test-harness` too,
+pin that tag, so the build holds one copy of the harness.
 
 ## License
 

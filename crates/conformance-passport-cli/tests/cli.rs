@@ -1,5 +1,4 @@
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
 use conformance_passport::{ALL, locate_subject};
@@ -248,15 +247,13 @@ async fn spawn_run_writes_a_conformant_junit_report_for_a_subset_of_scenarios() 
 async fn a_subject_that_cannot_open_the_seal_is_non_conformant_with_exit_1() {
     let anchor = locate_subject().await.expect("the anchor binary");
     let twin = scratch().join("wrong-seal-key-twin.sh");
-    std::fs::write(
+    write_script_from_a_child_process(
         &twin,
-        format!(
+        &format!(
             "#!/bin/sh\nexport BEARER_SEAL_KEY={WRONG_SEAL_KEY}\nexec \"{}\"\n",
             anchor.display()
         ),
-    )
-    .expect("write the twin script");
-    std::fs::set_permissions(&twin, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    );
 
     let stdout = tokio::task::spawn_blocking(move || {
         cli()
@@ -288,8 +285,7 @@ async fn a_subject_that_cannot_open_the_seal_is_non_conformant_with_exit_1() {
 #[ignore = "real-infra: needs `nats-server` on PATH"]
 async fn a_subject_that_never_reports_ready_exits_2_with_the_readiness_sentence() {
     let script = scratch().join("never-ready.sh");
-    std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").expect("write the script");
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    write_script_from_a_child_process(&script, "#!/bin/sh\nexec sleep 30\n");
 
     let stderr = tokio::task::spawn_blocking(move || {
         cli()
@@ -340,6 +336,20 @@ fn a_closed_stdout_exits_2_with_one_error_line_instead_of_a_silent_101() {
         "{stderr}"
     );
     assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
+}
+
+fn write_script_from_a_child_process(path: &Path, body: &str) {
+    let written = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "printf '%s' \"$1\" > \"$2\" && chmod 755 \"$2\"",
+            "sh",
+            body,
+        ])
+        .arg(path)
+        .status()
+        .expect("run /bin/sh to write the script");
+    assert!(written.success(), "writing the script: {written}");
 }
 
 fn scratch() -> PathBuf {
