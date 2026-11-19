@@ -17,8 +17,17 @@ async fn bare_subject_in_a_working_directory() -> (PathBuf, PathBuf) {
         .await
         .expect("locate the reference subject");
     let dir = scratch("bare-subject");
-    std::fs::copy(&reference, dir.join("subject")).expect("copy the subject");
+    copy_from_a_child_process(&reference, &dir.join("subject"));
     (reference, dir)
+}
+
+fn copy_from_a_child_process(from: &Path, to: &Path) {
+    let copied = std::process::Command::new("/bin/cp")
+        .arg(from)
+        .arg(to)
+        .status()
+        .expect("run /bin/cp to copy the executable");
+    assert!(copied.success(), "copying the executable: {copied}");
 }
 
 fn report_of(stdout: Vec<u8>) -> serde_json::Value {

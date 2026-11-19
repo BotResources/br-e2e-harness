@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use br_test_harness::spawn_fabric_provision;
 
 use crate::error::{ConformanceError, Result};
-use crate::prerequisite::contained;
+use crate::prerequisite::{contained, on_one_line};
 
 pub fn manifest_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -23,7 +23,9 @@ pub(crate) async fn provision_with(nats_url: &str, manifest: &Path) -> Result<()
     }
     contained(spawn_fabric_provision(nats_url, manifest))
         .await
-        .map_err(|panic| ConformanceError::FabricProvisionUnavailable { detail: panic })?
+        .map_err(|panic| ConformanceError::FabricProvisionUnavailable {
+            detail: on_one_line(&panic),
+        })?
         .map_err(ConformanceError::Jetstream)
 }
 

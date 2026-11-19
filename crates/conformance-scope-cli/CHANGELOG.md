@@ -10,6 +10,17 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+### Changed
+
+- Released with `conformance-scope` 0.2.0 under the tag `conformance-scope/v0.2.0`, built on `br-test-harness` 0.2. `--spawn` still needs `fabric-nats` in the directory of this executable: `workspace_bin` of `br-test-harness` 0.2 reads that directory first. Flags, manifest, report formats and exit codes are those of 0.1.1.
+
+### Fixed
+
+- `--spawn` without `fabric-nats` keeps its refusal on one `error:` line: `conformance-scope` 0.2.0 folds the list of paths the harness read into it. The panic text of the harness still precedes that line on stderr, as in 0.1.1, and under `br-test-harness` 0.2 it lists every path read. `tests/broker_refusals.rs` checks that there is one `error:` line and that it says the lookup found nothing, not only that stderr names `fabric-nats`.
+- `tests/spawn_bare_name.rs` and `tests/broker_refusals.rs` copy the executable they then run with a child `/bin/cp`. A copy made in the test process and run right after can fail with "Text file busy" (os error 26) when another test of the binary forks while the copy is still open for writing; CI runs the ignored tests of this crate in parallel.
+
 ## 0.1.1
 
 ### Fixed

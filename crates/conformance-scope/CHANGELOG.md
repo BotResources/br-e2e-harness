@@ -9,6 +9,23 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+Minor 0.2, a new line: the public signatures name types of `br-test-harness`, and this line is built on `br-test-harness` 0.2. The checks, the scenarios, the runners and the error vocabulary are those of 0.1.1.
+
+This is the first `conformance-scope` 0.2.0 of the per-crate tags: its tag is `conformance-scope/v0.2.0`. The repository also holds a tag `conformance-scope-v0.2.0` (hyphen, 2026-06-13) from before the per-crate versions restarted at 0.1.0; that older release is another code base and is not this version.
+
+### Changed
+
+- The crate pins `br-test-harness/v0.2.0` (0.1.1 pinned `v0.1.3`). `DeclareCapture::start` takes the `FabricTestNats` of `br-test-harness` 0.2 and `CapturedDeclare` converts from its `CapturedMessage`, so an importer that also depends on the harness pins `br-test-harness/v0.2.0`: with a 0.1 harness the build holds two copies of the type and fails with a type mismatch.
+- `provision` and `run_spawn` run the `fabric-nats` program that `workspace_bin` of `br-test-harness` 0.2 finds. That lookup matches no directory name of Cargo's build layout: it reads the directory of the running executable and up to four directories above it, then the same path under the target directory that `cargo metadata` names, so a build directory set apart from the target directory is covered.
+- The text of `ConformanceError::FabricProvisionUnavailable` says where the program is looked for (where `workspace_bin` of `br-test-harness` finds it: the Cargo build of the importer, or the directory of the running executable). It said "in the directory of the running executable" only.
+
+### Fixed
+
+- `ConformanceError::FabricProvisionUnavailable` stays on one line when `fabric-nats` is not found. `workspace_bin` of `br-test-harness` 0.2 reports the paths it read on several lines; the crate folds that report before it puts it in `detail`.
+- `tests/absent_fabric_nats.rs` checks that the lookup found no program (the text `fabric-nats must be built by the workspace`) and that the error is one line; it used to check the variant and two phrases of its fixed text.
+
 ## 0.1.1
 
 ### Added
