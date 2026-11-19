@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -26,9 +25,27 @@ fn scratch(label: &str) -> PathBuf {
 
 fn executable_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
-    std::fs::write(&path, body).expect("write the script");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let written = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "printf '%s' \"$1\" > \"$2\" && chmod 755 \"$2\"",
+            "sh",
+            body,
+        ])
+        .arg(&path)
+        .status()
+        .expect("run /bin/sh to write the script");
+    assert!(written.success(), "writing the script: {written}");
     path
+}
+
+fn copy_from_a_child_process(from: &Path, to: &Path) {
+    let copied = std::process::Command::new("/bin/cp")
+        .arg(from)
+        .arg(to)
+        .status()
+        .expect("run /bin/cp to copy the executable");
+    assert!(copied.success(), "copying the executable: {copied}");
 }
 
 #[test]
@@ -81,7 +98,7 @@ fn a_missing_go_anchor_exits_2_with_the_typed_error() {
 fn a_missing_fabric_nats_beside_the_executable_exits_2_with_one_error_line() {
     let dir = scratch("no-fabric-nats");
     let copy = dir.join("conformance-identity");
-    std::fs::copy(assert_cmd::cargo::cargo_bin("conformance-identity"), &copy).expect("copy");
+    copy_from_a_child_process(&assert_cmd::cargo::cargo_bin("conformance-identity"), &copy);
     let assert = Command::new(&copy)
         .args(["run", "--spawn", "/bin/sh"])
         .assert()

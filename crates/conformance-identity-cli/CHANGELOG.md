@@ -19,6 +19,7 @@ form to decide whether a version ships.
 ### Fixed
 
 - A `fabric-nats` that is not found still exits 2 with one `error:` line. Built on `br-test-harness` 0.2 without the fold `conformance-identity` 0.2.0 applies, the line would have been followed by the list of paths the harness read. The test of that case now checks that the lookup found nothing, not only that the line names `fabric-nats`.
+- `tests/cli.rs` copies the CLI it then runs with a child `/bin/cp` and writes its twin script with a child `/bin/sh`. Done in the test process, either can fail with "Text file busy" (os error 26) when another test of the binary forks while the file is still open for writing; the copy case is a non-ignored test that the workspace test job runs beside sixteen others.
 
 ## 0.1.1
 
