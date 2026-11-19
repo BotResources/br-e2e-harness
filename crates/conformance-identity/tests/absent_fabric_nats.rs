@@ -7,6 +7,7 @@ use conformance_identity::{ConformanceError, IdentityHarness, provision};
 
 const ISOLATED: &str = "CONFORMANCE_IDENTITY_ISOLATED_COPY";
 const TEST: &str = "fabric_nats_cli_absent_is_a_typed_error";
+const NOT_FOUND: &str = "fabric-nats must be built by the workspace";
 
 #[test]
 fn fabric_nats_cli_absent_is_a_typed_error() {
@@ -16,9 +17,7 @@ fn fabric_nats_cli_absent_is_a_typed_error() {
     }
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("no-fabric-nats");
-    let deps = isolated.join("deps");
-    std::fs::create_dir_all(&deps).expect("create the isolated target directory");
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside no fabric-nats");
 
     let output = Command::new(&copy)
@@ -37,15 +36,15 @@ fn assert_typed_errors() {
     runtime.block_on(async {
         match provision("nats://127.0.0.1:1", "scope_declaration.toml").await {
             Err(ConformanceError::Jetstream(detail)) => assert!(
-                detail.contains("fabric-nats"),
-                "provision must name the missing CLI: {detail}"
+                detail.contains(NOT_FOUND),
+                "provision must say the lookup found no CLI, not that a CLI it found failed: {detail}"
             ),
             other => panic!("provision without the fabric-nats CLI must be typed: {other:?}"),
         }
         match IdentityHarness::start_with_binary(std::env::current_exe().expect("exe")).await {
             Err(ConformanceError::Jetstream(detail)) => assert!(
-                detail.contains("fabric-nats"),
-                "start_with_binary must name the missing CLI: {detail}"
+                detail.contains(NOT_FOUND),
+                "start_with_binary must say the lookup found no CLI: {detail}"
             ),
             Err(other) => panic!("start_with_binary must name the missing CLI: {other:?}"),
             Ok(_) => panic!("start_with_binary must not succeed without the fabric-nats CLI"),

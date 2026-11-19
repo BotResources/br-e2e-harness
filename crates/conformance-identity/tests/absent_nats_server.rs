@@ -25,12 +25,10 @@ fn assert_names_the_missing_server<T: Debug>(what: &str, result: Result<T>) {
 fn run_in_isolated_copy() {
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("no-nats-server");
-    let deps = isolated.join("deps");
     let empty = isolated.join("empty-path");
-    std::fs::create_dir_all(&deps).expect("create the isolated target directory");
     std::fs::create_dir_all(&empty).expect("create an empty PATH directory");
     std::fs::write(isolated.join("fabric-nats"), b"").expect("write a stub fabric-nats");
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
     let output = Command::new(&copy)

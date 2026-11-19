@@ -10,6 +10,16 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+### Changed
+
+- Released with `conformance-identity` 0.2.0 under the tag `conformance-identity/v0.2.0`, built on `br-test-harness` 0.2. The archive still holds `conformance-identity` and `fabric-nats` side by side: `workspace_bin` of `br-test-harness` 0.2 reads the directory of the running executable first. Flags, scenarios, report formats and exit codes are those of 0.1.1.
+
+### Fixed
+
+- A `fabric-nats` that is not found still exits 2 with one `error:` line. Built on `br-test-harness` 0.2 without the fold `conformance-identity` 0.2.0 applies, the line would have been followed by the list of paths the harness read. The test of that case now checks that the lookup found nothing, not only that the line names `fabric-nats`.
+
 ## 0.1.1
 
 ### Added

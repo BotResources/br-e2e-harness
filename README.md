@@ -71,7 +71,7 @@ oidc-test-idp = { git = "https://github.com/BotResources/br-e2e-harness", packag
 |---|---|---|---|---|
 | `br-test-harness` | 0.2.0 | Real PG + NATS/KV + spawned binary + Passport/GraphQL/WS/SSE clients (re-exports `oidc-test-idp` in-process) | [README](crates/br-test-harness/README.md) | [CHANGELOG](crates/br-test-harness/CHANGELOG.md) |
 | `conformance-scope` | 0.1.1 | Black-box S1-S6 scope-declaration conformance battery; drive it against your own service binary via `start_with_binary` | [README](crates/conformance-scope/README.md) | [CHANGELOG](crates/conformance-scope/CHANGELOG.md) |
-| `conformance-identity` | 0.1.1 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
+| `conformance-identity` | 0.2.0 | Black-box G2 battery: the scope-*acceptance* side, driving an Identity registry against the frozen Go declaring subject | [README](crates/conformance-identity/README.md) | [CHANGELOG](crates/conformance-identity/CHANGELOG.md) |
 | `conformance-passport` | 0.1.1 | Black-box G1 battery: sealed bearer -> `Passport` on `GET /internal/passport`, seeded from the Go anchor's committed wire vectors | [README](crates/conformance-passport/README.md) | [CHANGELOG](crates/conformance-passport/CHANGELOG.md) |
 | `conformance-directory` | 0.1.1 | Identity published-language batteries: **Px** publisher, **Cx** consumer (real NATS + Postgres), plus the offline wire-deser gate on `br-core-directory` | [README](crates/conformance-directory/README.md) | [CHANGELOG](crates/conformance-directory/CHANGELOG.md) |
 | `conformance-nats-fabric` | 0.1.1 | Black-box battery for the v1 integration subject grammar and the `PUBLISHED_LANGUAGE` KV, anchored against an independent Go renderer | [README](crates/conformance-nats-fabric/README.md) | [CHANGELOG](crates/conformance-nats-fabric/CHANGELOG.md) |
@@ -81,11 +81,18 @@ Install pins (dev-dependencies):
 ```toml
 br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0" }
 conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.1", version = "0.1.1" }
-conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.1.1", version = "0.1.1" }
+conformance-identity = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-identity", tag = "conformance-identity/v0.2.0", version = "0.2.0" }
 conformance-passport = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-passport", tag = "conformance-passport/v0.1.1", version = "0.1.1" }
 conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-directory", tag = "conformance-directory/v0.1.1", version = "0.1.1" }
 conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.1", version = "0.1.1" }
 ```
+
+Every conformance crate names types of `br-test-harness` in its public API and
+pins it by tag. Cargo treats two tags as two sources, so pin `br-test-harness`
+with the tag that the conformance crates you use pin, or the build holds two
+copies of the harness and the shared types do not match. A conformance crate
+at 0.2.0 pins `br-test-harness/v0.2.0`, the pin above. A conformance crate at
+0.1.1 pins a 0.1 tag, named in its README, and cannot be mixed with one at 0.2.0.
 
 Planned: `identity-test` - a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested
@@ -99,7 +106,7 @@ against *an* identity without depending on any project's private one.
 | `conformance-nats-fabric-cli` (bin `conformance-nats-fabric`) | 0.1.1, always `conformance-nats-fabric`'s | GitHub Release binary (asset of the release `conformance-nats-fabric/v{version}`) | Run the NATS Fabric conformance battery (subject grammar, `PUBLISHED_LANGUAGE` KV) against a throwaway or an existing NATS server, with no Rust to write | [README](crates/conformance-nats-fabric-cli/README.md) | [CHANGELOG](crates/conformance-nats-fabric-cli/CHANGELOG.md) |
 | `conformance-passport-cli` (bin `conformance-passport`) | 0.1.1, always `conformance-passport`'s | GitHub Release binary (asset of the release `conformance-passport/v{version}`) | Run the bearer/PAT to Passport conformance battery against any service binary, in any language, with no Rust to write | [README](crates/conformance-passport-cli/README.md) | [CHANGELOG](crates/conformance-passport-cli/CHANGELOG.md) |
 | `conformance-directory-cli` (bin `conformance-directory`) | 0.1.1, always `conformance-directory`'s | GitHub Release binary (asset of the release `conformance-directory/v{version}`, with `fabric-nats` beside it) | Run the identity Published Language (directory) wire, publisher and consumer batteries against the Go anchor, in any language's CI, with no Rust to write | [README](crates/conformance-directory-cli/README.md) | [CHANGELOG](crates/conformance-directory-cli/CHANGELOG.md) |
-| `conformance-identity-cli` (bin `conformance-identity`) | 0.1.1, always `conformance-identity`'s | GitHub Release binary (asset of the release `conformance-identity/v{version}`, with `fabric-nats` beside it) | Run the scope-acceptance conformance battery against any Identity acceptor binary or running acceptor, in any language, with no Rust to write | [README](crates/conformance-identity-cli/README.md) | [CHANGELOG](crates/conformance-identity-cli/CHANGELOG.md) |
+| `conformance-identity-cli` (bin `conformance-identity`) | 0.2.0, always `conformance-identity`'s | GitHub Release binary (asset of the release `conformance-identity/v{version}`, with `fabric-nats` beside it) | Run the scope-acceptance conformance battery against any Identity acceptor binary or running acceptor, in any language, with no Rust to write | [README](crates/conformance-identity-cli/README.md) | [CHANGELOG](crates/conformance-identity-cli/CHANGELOG.md) |
 
 `conformance-scope-cli` is not a library of its own: it is versioned with
 `conformance-scope`, and its binaries ride that crate's release.

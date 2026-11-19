@@ -26,13 +26,11 @@ fn run_in_isolated_copy() {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("nats-cannot-start");
-    let deps = isolated.join("deps");
     let stub_bin = isolated.join("stub-bin");
-    std::fs::create_dir_all(&deps).expect("create the isolated target directory");
     std::fs::create_dir_all(&stub_bin).expect("create the stub PATH directory");
     std::fs::write(isolated.join("fabric-nats"), b"").expect("write a stub fabric-nats");
     write_executable(&stub_bin.join("nats-server"), STUB_NATS_SERVER);
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
     let output = Command::new(&copy)
@@ -53,13 +51,11 @@ fn run_without_sh() {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let exe = std::env::current_exe().expect("test executable");
     let isolated = scratch::scratch("nats-probe-no-sh");
-    let deps = isolated.join("deps");
     let stub_bin = isolated.join("stub-bin");
-    std::fs::create_dir_all(&deps).expect("create the isolated target directory");
     std::fs::create_dir_all(&stub_bin).expect("create the stub PATH directory");
     std::fs::write(isolated.join("fabric-nats"), b"").expect("write a stub fabric-nats");
     write_executable(&stub_bin.join("nats-server"), STUB_NATS_SERVER);
-    let copy = deps.join(exe.file_name().expect("test executable name"));
+    let copy = isolated.join(exe.file_name().expect("test executable name"));
     std::fs::copy(&exe, &copy).expect("copy the test executable beside the stub fabric-nats");
 
     let output = Command::new(&copy)

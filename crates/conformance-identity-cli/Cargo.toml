@@ -1,6 +1,6 @@
 [package]
 name = "conformance-identity-cli"
-version = "0.1.1"
+version = "0.2.0"
 description = "Language-agnostic CLI for the BotResources Identity scope-acceptance conformance battery"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-conformance-identity = { path = "../conformance-identity", version = "0.1.1" }
+conformance-identity = { path = "../conformance-identity", version = "0.2.0" }
 
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }
