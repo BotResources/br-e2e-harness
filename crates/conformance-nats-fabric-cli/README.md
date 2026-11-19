@@ -41,7 +41,7 @@ Spawn mode starts a throwaway `nats-server`, which a stock runner does not have:
 
 - name: NATS Fabric conformance
   env:
-    CONFORMANCE_NATS_FABRIC_VERSION: 0.1.1
+    CONFORMANCE_NATS_FABRIC_VERSION: 0.2.0
   run: |
     set -euo pipefail
     version="${CONFORMANCE_NATS_FABRIC_VERSION}"

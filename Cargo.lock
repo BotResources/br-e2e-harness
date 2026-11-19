@@ -699,12 +699,12 @@ dependencies = [
 
 [[package]]
 name = "conformance-nats-fabric"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "br-core-directory",
  "br-core-integration",
- "br-test-harness 0.1.2",
+ "br-test-harness 0.2.0",
  "br-util-nats-fabric",
  "reqwest",
  "serde",
@@ -717,10 +717,10 @@ dependencies = [
 
 [[package]]
 name = "conformance-nats-fabric-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
- "br-test-harness 0.1.2",
+ "br-test-harness 0.2.0",
  "clap",
  "conformance-nats-fabric",
  "serde",

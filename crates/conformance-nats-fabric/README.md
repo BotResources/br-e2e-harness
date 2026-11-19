@@ -109,8 +109,8 @@ copies of the type and fails with a type mismatch:
 
 ```toml
 [dev-dependencies]
-conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.1", version = "0.1.1" }
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2" }
+conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.2.0", version = "0.2.0" }
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0" }
 br-util-nats-fabric = { git = "https://github.com/BotResources/br-rust-common", package = "br-util-nats-fabric", tag = "br-util-nats-fabric/v0.1.0", version = "0.1.0" }
 br-core-directory = { git = "https://github.com/BotResources/br-rust-common", package = "br-core-directory", tag = "br-core-directory/v0.1.0", version = "0.1.0" }
 ```
@@ -127,7 +127,8 @@ topology by spawning the `fabric-nats` CLI** (`fabric-nats provision --manifest
 tests/fixtures/published_language.toml`) rather than calling
 `FabricTestNats::with_published_language()` in-process — the suite is the CLI's
 real-life testbed; the CLI must be built in the workspace target directory
-(`br_test_harness::workspace_bin` finds it from the test executable). The crate
+(`workspace_bin` of `br-test-harness` 0.2 finds it from the test executable, whatever
+the layout of Cargo's build directory). The crate
 carries **no `async-nats` dependency**: it observes and mutates the fabric
 exclusively through the typed `FabricTestNats` surface (`fabric_owned`,
 `pl_reader` / `pl_publisher` / `pl_put_raw`, `assert_missing_stream` /
@@ -178,7 +179,7 @@ Spawn mode starts a throwaway `nats-server`, which a stock runner does not have:
 
 - name: NATS Fabric conformance
   env:
-    CONFORMANCE_NATS_FABRIC_VERSION: 0.1.1
+    CONFORMANCE_NATS_FABRIC_VERSION: 0.2.0
   run: |
     set -euo pipefail
     version="${CONFORMANCE_NATS_FABRIC_VERSION}"
