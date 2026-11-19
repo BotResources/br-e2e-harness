@@ -110,6 +110,9 @@ async fn spawn_from_a_released_layout_without_fabric_nats_exits_2_naming_it() {
     .expect("cli task");
 
     std::fs::remove_dir_all(&released).ok();
-    assert!(stderr.contains("fabric-nats"), "{stderr}");
+    assert!(
+        stderr.contains("fabric-nats must be built by the workspace"),
+        "{stderr}"
+    );
     assert!(stderr.contains("attach mode"), "{stderr}");
 }

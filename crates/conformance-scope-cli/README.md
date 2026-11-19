@@ -41,7 +41,7 @@ The Linux build is a static musl binary (runs on any glibc/musl distro). Each
 asset ships a matching `.sha256`:
 
 ```sh
-version=0.1.1
+version=0.2.0
 target=x86_64-unknown-linux-musl
 asset="conformance-scope-${version}-${target}.tar.gz"
 
@@ -105,7 +105,7 @@ run makes the battery read a dead correlation id, so the recipe starts
 ```yaml
 - name: scope-declaration conformance
   env:
-    CONFORMANCE_SCOPE_VERSION: "0.1.1"
+    CONFORMANCE_SCOPE_VERSION: "0.2.0"
     NATS_SERVER_VERSION: "v2.14.1"
     NATSCLI_VERSION: "0.3.1"
   run: |

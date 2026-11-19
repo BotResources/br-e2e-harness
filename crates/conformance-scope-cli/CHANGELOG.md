@@ -10,6 +10,16 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+### Changed
+
+- Released with `conformance-scope` 0.2.0 under the tag `conformance-scope/v0.2.0`, built on `br-test-harness` 0.2. `--spawn` still needs `fabric-nats` in the directory of this executable: `workspace_bin` of `br-test-harness` 0.2 reads that directory first. Flags, manifest, report formats and exit codes are those of 0.1.1.
+
+### Fixed
+
+- `--spawn` without `fabric-nats` prints its error on one line: `conformance-scope` 0.2.0 folds the list of paths the harness read into the line. `tests/broker_refusals.rs` checks that the lookup found nothing, not only that the line names `fabric-nats`.
+
 ## 0.1.1
 
 ### Fixed

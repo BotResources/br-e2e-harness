@@ -213,7 +213,7 @@ The suite **provisions the scope-declaration handshake topology by spawning the
 `fabric-nats` CLI** (`fabric-nats provision --manifest
 tests/fixtures/scope_declaration.toml`) — the conformance suite is the CLI's
 real-life testbed. Spawn mode therefore needs the `fabric-nats` binary (the
-`fabric-nats` bin of the `br-test-harness` package, built outside the tests) in the directory of the running executable, and
+`fabric-nats` bin of the `br-test-harness` package, built outside the tests) where `workspace_bin` of `br-test-harness` 0.2 finds it (the Cargo build of the importer, or the directory of the running executable), and
 the manifest `tests/fixtures/scope_declaration.toml` of the conformance-scope source tree
 the executable was built from (its path is fixed at build time). When either is missing,
 `run_spawn` and `provision` return `ConformanceError::FabricProvisionUnavailable`, naming
@@ -246,7 +246,7 @@ run makes the battery read a dead correlation id, so the recipe starts
 ```yaml
 - name: scope-declaration conformance
   env:
-    CONFORMANCE_SCOPE_VERSION: "0.1.1"
+    CONFORMANCE_SCOPE_VERSION: "0.2.0"
     NATS_SERVER_VERSION: "v2.14.1"
     NATSCLI_VERSION: "0.3.1"
   run: |
@@ -317,8 +317,12 @@ crates.io). Keep each `br-rust-common` crate tag identical to `br-test-harness`'
 
 ```toml
 [dev-dependencies]
-conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.1.1", version = "0.1.1" }
+conformance-scope = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-scope", tag = "conformance-scope/v0.2.0", version = "0.2.0" }
 ```
+
+The public signatures name types of `br-test-harness` 0.2. If your tests also depend on
+`br-test-harness` directly, pin `br-test-harness/v0.2.0`: a 0.1 tag gives the build two
+copies of the harness and a type mismatch.
 
 ## Why — the non-obvious bits
 

@@ -15,7 +15,8 @@ pub enum ConformanceError {
     #[error(
         "spawn mode cannot provision the handshake topology: {detail}. It needs the `fabric-nats` \
          binary (the `fabric-nats` bin of the `br-test-harness` package, built outside the tests) \
-         in the directory of the running executable, and the manifest \
+         where `workspace_bin` of `br-test-harness` finds it (the Cargo build of the importer, or \
+         the directory of the running executable), and the manifest \
          `tests/fixtures/scope_declaration.toml` from the conformance-scope source tree it was \
          built from; use attach mode against a service that owns its streams otherwise"
     )]

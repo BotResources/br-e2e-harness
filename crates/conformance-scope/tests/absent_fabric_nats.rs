@@ -10,6 +10,7 @@ use conformance_scope::{
 const CHILD: &str = "CONFORMANCE_SCOPE_NO_FABRIC_NATS_CHILD";
 const PROVISION_TEST: &str = "provision_without_fabric_nats_is_a_typed_error_not_a_panic";
 const SPAWN_TEST: &str = "run_spawn_without_fabric_nats_is_a_typed_error_not_a_panic";
+const NOT_FOUND: &str = "fabric-nats must be built by the workspace";
 
 static ONE_COPY_THEN_RUN_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -36,8 +37,12 @@ fn assert_names_fabric_nats(error: ConformanceError) {
     match error {
         ConformanceError::FabricProvisionUnavailable { .. } => {
             let message = error.to_string();
-            assert!(message.contains("fabric-nats"), "{message}");
+            assert!(
+                message.contains(NOT_FOUND),
+                "the error must say the lookup found no fabric-nats: {message}"
+            );
             assert!(message.contains("attach mode"), "{message}");
+            assert_eq!(message.lines().count(), 1, "{message}");
         }
         other => panic!("expected a typed provisioning error: {other:?}"),
     }
