@@ -30,9 +30,24 @@ pub(crate) fn fabric_nats() -> Result<PathBuf> {
         ConformanceError::Jetstream(format!(
             "the fabric-nats CLI is not where br-test-harness looks for it: build \
              br-test-harness with its nats-fabric feature in the same target directory ({})",
-            panic_message(panic)
+            on_one_line(&panic_message(panic))
         ))
     })
+}
+
+fn on_one_line(report: &str) -> String {
+    let mut line = String::new();
+    for part in report
+        .lines()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        if !line.is_empty() {
+            line.push_str(if line.ends_with(':') { " " } else { "; " });
+        }
+        line.push_str(part);
+    }
+    line
 }
 
 pub(crate) async fn postgres() -> Result<()> {
@@ -85,6 +100,18 @@ fn admin_url_from(lookup: impl Fn(&str) -> Option<String>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lookup_report_of_the_harness_is_folded_into_one_line() {
+        let report = "fabric-nats must be built by the workspace; no file at:\n  /a/out/fabric-nats\n  /a/fabric-nats\ntest executable: /a/out/battery\ncargo metadata: target-dir /a, build-dir /a\nbuild it";
+        assert_eq!(
+            on_one_line(report),
+            "fabric-nats must be built by the workspace; no file at: /a/out/fabric-nats; \
+             /a/fabric-nats; test executable: /a/out/battery; cargo metadata: target-dir /a, \
+             build-dir /a; build it"
+        );
+        assert_eq!(on_one_line("one line"), "one line");
+    }
 
     #[test]
     fn an_unset_postgres_admin_url_is_a_typed_error() {

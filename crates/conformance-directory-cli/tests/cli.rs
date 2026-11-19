@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
@@ -23,9 +22,27 @@ fn scratch(label: &str) -> PathBuf {
 
 fn executable_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
-    std::fs::write(&path, body).expect("write the script");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let written = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "printf '%s' \"$1\" > \"$2\" && chmod 755 \"$2\"",
+            "sh",
+            body,
+        ])
+        .arg(&path)
+        .status()
+        .expect("run /bin/sh to write the script");
+    assert!(written.success(), "writing the script: {written}");
     path
+}
+
+fn copy_from_a_child_process(from: &Path, to: &Path) {
+    let copied = std::process::Command::new("/bin/cp")
+        .arg(from)
+        .arg(to)
+        .status()
+        .expect("run /bin/cp to copy the executable");
+    assert!(copied.success(), "copying the executable: {copied}");
 }
 
 #[test]
@@ -123,7 +140,7 @@ async fn the_offline_checks_pass_against_the_go_anchor() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server`, a Postgres (E2E_PG_ADMIN_URL), the prebuilt `identity-directory` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, a Postgres (E2E_PG_ADMIN_URL), the prebuilt `identity-directory` on PATH and `fabric-nats` built in the same target directory"]
 async fn the_full_battery_is_conformant_against_the_go_anchor() {
     let stdout = tokio::task::spawn_blocking(|| {
         cli()
@@ -160,7 +177,7 @@ async fn the_full_battery_is_conformant_against_the_go_anchor() {
 }
 
 #[tokio::test]
-#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-directory` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs `nats-server`, the prebuilt `identity-directory` on PATH and `fabric-nats` built in the same target directory"]
 async fn the_publisher_checks_write_a_conformant_junit_report_with_an_explicit_anchor() {
     let anchor = locate_anchor().await.expect("the anchor binary");
     let report_path = scratch("junit").join("directory-junit.xml");
@@ -265,7 +282,7 @@ fn a_closed_stdout_exits_2_with_one_error_line_instead_of_a_silent_101() {
 }
 
 #[test]
-#[ignore = "real-infra: needs the prebuilt `identity-directory` on PATH and `fabric-nats` built beside the test executable"]
+#[ignore = "real-infra: needs the prebuilt `identity-directory` on PATH and `fabric-nats` built in the same target directory"]
 fn a_missing_nats_server_exits_2_with_one_error_line_and_no_panic_text() {
     let anchor = locate_anchor_blocking();
     let only_sh = scratch("only-sh");
@@ -284,6 +301,36 @@ fn a_missing_nats_server_exits_2_with_one_error_line_and_no_panic_text() {
     let stderr = stderr_of(assert);
     assert!(stderr.starts_with("error: "), "{stderr}");
     assert!(stderr.contains("nats-server"), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
+}
+
+#[test]
+#[ignore = "real-infra: needs `nats-server` and the prebuilt `identity-directory` on PATH"]
+fn a_missing_fabric_nats_exits_2_with_one_error_line_and_no_panic_text() {
+    let anchor = locate_anchor_blocking();
+    let dir = scratch("no-fabric-nats");
+    let copy = dir.join("conformance-directory");
+    copy_from_a_child_process(
+        &assert_cmd::cargo::cargo_bin("conformance-directory"),
+        &copy,
+    );
+    let assert = Command::new(&copy)
+        .args([
+            "run",
+            "--anchor-binary",
+            &anchor.to_string_lossy(),
+            "--checks",
+            "p1",
+        ])
+        .assert()
+        .code(2);
+    let stderr = stderr_of(assert);
+    assert!(stderr.starts_with("error: "), "{stderr}");
+    assert!(
+        stderr.contains("fabric-nats must be built by the workspace"),
+        "{stderr}"
+    );
     assert!(!stderr.contains("panicked"), "{stderr}");
     assert_eq!(stderr.trim_end().lines().count(), 1, "{stderr}");
 }
