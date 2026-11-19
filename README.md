@@ -87,12 +87,13 @@ conformance-directory = { git = "https://github.com/BotResources/br-e2e-harness"
 conformance-nats-fabric = { git = "https://github.com/BotResources/br-e2e-harness", package = "conformance-nats-fabric", tag = "conformance-nats-fabric/v0.1.1", version = "0.1.1" }
 ```
 
-Every conformance crate names types of `br-test-harness` in its public API and
-pins it by tag. Cargo treats two tags as two sources, so pin `br-test-harness`
-with the tag that the conformance crates you use pin, or the build holds two
-copies of the harness and the shared types do not match. A conformance crate
-at 0.2.0 pins `br-test-harness/v0.2.0`, the pin above. A conformance crate at
-0.1.1 pins a 0.1 tag, named in its README, and cannot be mixed with one at 0.2.0.
+Every conformance crate pins `br-test-harness` by tag, and all but
+`conformance-passport` name its types in their public API. Cargo treats two
+tags as two sources, so pin `br-test-harness` with the tag that the conformance
+crates you use pin, or the build holds two copies of the harness and the shared
+types do not match. A conformance crate at 0.2.0 pins `br-test-harness/v0.2.0`,
+the pin above. A conformance crate at 0.1.1 pins a 0.1 tag, named in its README,
+and cannot be mixed with one at 0.2.0.
 
 Planned: `identity-test` - a minimal, contract-conformant identity service
 (Passport + claim declaration) so that platform services can be e2e-tested
