@@ -1,6 +1,6 @@
 [package]
 name = "conformance-nats-fabric-cli"
-version = "0.1.1"
+version = "0.2.0"
 description = "Language-agnostic CLI for the BotResources NATS Fabric conformance battery"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-conformance-nats-fabric = { path = "../conformance-nats-fabric", version = "0.1.1" }
+conformance-nats-fabric = { path = "../conformance-nats-fabric", version = "0.2.0" }
 
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }
@@ -21,7 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.1.2", version = "0.1.2", default-features = false, features = [
+br-test-harness = { git = "https://github.com/BotResources/br-e2e-harness", package = "br-test-harness", tag = "br-test-harness/v0.2.0", version = "0.2.0", default-features = false, features = [
     "nats-fabric",
 ] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

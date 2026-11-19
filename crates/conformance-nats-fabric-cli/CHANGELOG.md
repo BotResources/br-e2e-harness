@@ -10,6 +10,12 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+### Changed
+
+- Released with `conformance-nats-fabric` 0.2.0 under the tag `conformance-nats-fabric/v0.2.0`, built on `br-test-harness` 0.2 (the dev-dependency of the tests too). Flags, checks, report formats and exit codes are those of 0.1.1.
+
 ## 0.1.1
 
 ### Added

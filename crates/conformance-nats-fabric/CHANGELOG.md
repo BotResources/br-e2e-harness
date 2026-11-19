@@ -9,6 +9,16 @@ form to decide whether a version ships.
 
 ## Unreleased
 
+## 0.2.0
+
+Minor 0.2, a new line: the public signatures name types of `br-test-harness` (`FabricTestNats`, `BareFabricNats`, `WidenedDurable`), and this line is built on `br-test-harness` 0.2. The checks, the runner and the error vocabulary are those of 0.1.1.
+
+### Changed
+
+- The crate pins `br-test-harness/v0.2.0` with the feature `nats-fabric` (0.1.1 pinned `v0.1.2`). An importer pins `br-test-harness/v0.2.0` beside this crate: with a 0.1 harness the build holds two copies of the harness types and fails with a type mismatch.
+- The library never looks for a program of the build; its own `tests/conformance.rs` does, through `workspace_bin`, to provision with the `fabric-nats` CLI. `br-test-harness` 0.1.2 found that CLI under the `deps/` layout only, so those tests failed on Cargo 1.100 unless the legacy layout was forced; `workspace_bin` of 0.2 matches no directory name of Cargo's build layout.
+- CI: the step that kept the conformance batteries on the legacy build-dir layout (`__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT`) is removed. This crate was the last one whose tests needed it; every battery of the repository runs on Cargo's current layout.
+
 ## 0.1.1
 
 ### Fixed
